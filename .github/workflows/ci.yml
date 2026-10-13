@@ -1,0 +1,69 @@
+# CI: PRs and pushes to dev/main. Stale runs are cancelled when new commits arrive.
+# ubuntu: cheap lint + test for everything that builds without WebKit.
+# macos: the Tauri shell (clippy + debug bundle), the only job that needs the full toolchain.
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (fmt, clippy, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      # The Tauri shell (package `patchroom`) needs WebKit; the macOS job covers it.
+      - run: cargo clippy --workspace --exclude patchroom --all-targets -- -D warnings
+      - run: cargo test --workspace --exclude patchroom
+
+  ui:
+    name: UI (lint, typecheck, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C ui lint
+      - run: pnpm -C ui build
+
+  tauri-macos:
+    name: Tauri (macOS debug build)
+    runs-on: macos-latest
+    needs: [rust, ui]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: pnpm tauri build --debug --bundles app

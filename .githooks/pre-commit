@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Local pre-commit guard. Enable once per clone: bash scripts/setup-hooks.sh
+# Runs only the checks relevant to staged files. CI is the backstop.
+# Emergency bypass: git commit --no-verify (use sparingly).
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+export PATH="$HOME/.cargo/bin:$PATH"
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+has() { printf '%s\n' "$staged" | grep -qE "$1"; }
+
+if has '\.(rs|toml)$' && command -v cargo >/dev/null 2>&1; then
+  echo "pre-commit: cargo fmt --check"
+  cargo fmt --check
+  echo "pre-commit: cargo clippy"
+  cargo clippy --workspace --all-targets -- -D warnings
+fi
+
+if has '^ui/' && [ -d ui/node_modules ] && command -v pnpm >/dev/null 2>&1; then
+  echo "pre-commit: ui lint (eslint + prettier)"
+  pnpm -C ui lint
+fi
+
+if command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks"
+  gitleaks git --staged --redact --config .gitleaks.toml
+else
+  echo "pre-commit: gitleaks not installed, skipping (CI still scans). brew install gitleaks"
+fi

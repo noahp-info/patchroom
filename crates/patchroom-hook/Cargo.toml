@@ -1,0 +1,14 @@
+[package]
+name = "patchroom-hook"
+description = "Tiny binary that forwards CLI hook JSON to the Patchroom bridge socket."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+patchroom-core = { path = "../patchroom-core" }

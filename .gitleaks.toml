@@ -1,0 +1,19 @@
+# gitleaks config for Patchroom. Extends the default ruleset.
+# Every allowlist entry needs a comment saying WHY it is a confirmed false positive.
+
+title = "patchroom gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known non-secrets"
+paths = [
+  # Lock files hold package integrity hashes, not credentials.
+  '''(^|/)pnpm-lock\.yaml$''',
+  '''(^|/)Cargo\.lock$''',
+  # Binary assets produce false positives on binary data.
+  '''.*\.(png|icns|ico|woff2?|ttf)$''',
+  # Raw research dumps are git-ignored and never committed.
+  '''^docs/research/raw-doc-dumps/''',
+]
