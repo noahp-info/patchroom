@@ -1,0 +1,38 @@
+/*
+ * Base: Homeroom (default). Slack-faithful layout: spruce title bar and sidebar band, compact rows,
+ * Figtree for UI and JetBrains Mono for code. It is the shared chrome kit with no overrides beyond
+ * the few below, so the kit's defaults ARE Homeroom's dimensions.
+ */
+[data-base='homeroom'] {
+  --side-w: 264px;
+  --art-w: 440px;
+  --r: 8px;
+  --r-sm: 5px;
+  --f-ui: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+  --f-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+}
+[data-base='homeroom'] .row.active .dot.needs {
+  box-shadow:
+    0 0 0 2px var(--side-active),
+    0 0 0 3.5px var(--needs);
+}
+[data-base='homeroom'] .row.active .bdg.needs {
+  box-shadow: 0 0 0 1.5px var(--side-active);
+}
+[data-base='homeroom'] .ws strong {
+  color: var(--side-strong);
+}
+[data-base='homeroom'] .ws button {
+  border-color: var(--side-line);
+  color: var(--side-fg);
+}
+[data-base='homeroom'] .thread {
+  padding-left: 0;
+}
+[data-base='homeroom'] .chip {
+  border-radius: 14px;
+}
+[data-base='homeroom'] .row .bdg.unr {
+  background: color-mix(in srgb, var(--side-strong) 15%, transparent);
+  color: var(--side-strong);
+}

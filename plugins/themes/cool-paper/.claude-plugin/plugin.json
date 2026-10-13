@@ -1,0 +1,23 @@
+{
+  "name": "patchroom-theme-cool-paper",
+  "version": "0.1.0",
+  "description": "Cool Paper color theme for Patchroom. Cool grey paper with copy-editor blue and red pencil.",
+  "author": {
+    "name": "Patchroom"
+  },
+  "license": "MIT",
+  "keywords": [
+    "patchroom",
+    "theme"
+  ],
+  "patchroom": {
+    "kind": "data",
+    "themes": [
+      {
+        "id": "cool-paper",
+        "name": "Cool Paper",
+        "file": "themes/cool-paper.json"
+      }
+    ]
+  }
+}

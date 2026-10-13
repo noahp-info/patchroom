@@ -1,0 +1,47 @@
+//! Embedded, forward-only migration runner keyed on `PRAGMA user_version`.
+
+use rusqlite::Connection;
+
+use crate::error::{Error, Result};
+
+/// One migration step. `version` values are 1, 2, 3, ... with no gaps.
+struct Migration {
+    version: u32,
+    sql: &'static str,
+}
+
+const MIGRATIONS: &[Migration] = &[Migration {
+    version: 1,
+    sql: include_str!("../migrations/0001_init.sql"),
+}];
+
+/// Highest schema version this build understands.
+pub const LATEST_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].version;
+
+/// Current `user_version` of the connection.
+pub fn current_version(conn: &Connection) -> Result<u32> {
+    Ok(conn.query_row("PRAGMA user_version", [], |r| r.get(0))?)
+}
+
+/// Apply every pending migration, each in its own transaction.
+pub fn run(conn: &mut Connection) -> Result<()> {
+    let found = current_version(conn)?;
+    if found > LATEST_VERSION {
+        return Err(Error::SchemaTooNew {
+            found,
+            supported: LATEST_VERSION,
+        });
+    }
+    for m in MIGRATIONS.iter().filter(|m| m.version > found) {
+        let tx = conn.transaction()?;
+        tx.execute_batch(m.sql)?;
+        tx.pragma_update(None, "user_version", m.version)?;
+        tx.commit()?;
+    }
+    Ok(())
+}
+
+/// The raw SQL of every migration, for audits such as the no-secrets test.
+pub fn all_sql() -> impl Iterator<Item = &'static str> {
+    MIGRATIONS.iter().map(|m| m.sql)
+}
