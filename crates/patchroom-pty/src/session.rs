@@ -216,8 +216,15 @@ impl Session {
     /// Write raw bytes to the child's stdin (keystrokes from the terminal UI).
     ///
     /// # Errors
-    /// [`Error::Write`] if the PTY is closed.
+    /// [`Error::Write`] if the child has exited or the PTY is closed. After
+    /// exit this fails on every OS (Linux does not reliably return `EIO`).
     pub fn write(&self, bytes: &[u8]) -> Result<()> {
+        if self.exit.get().is_some() {
+            return Err(Error::Write(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "child has exited",
+            )));
+        }
         let mut w = lock(&self.writer);
         w.write_all(bytes)
             .and_then(|()| w.flush())

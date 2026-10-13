@@ -380,17 +380,34 @@ fn headless_host_answers_terminal_queries() {
 fn write_after_exit_errors() {
     let s = Session::spawn(sh("true")).unwrap();
     s.wait_exit(T).expect("exit");
-    // Writes to a dead pty may succeed once into the kernel buffer; keep
-    // trying until the error surfaces.
-    let failed = (0..100).any(|_| {
-        std::thread::sleep(Duration::from_millis(20));
-        s.write(&[0u8; 4096]).is_err()
-    });
-    assert!(failed);
+    // The session tracks child exit, so the very first write must fail.
+    assert!(s.write(b"x").is_err());
+    assert!(s.send_text("x").is_err());
+}
+
+/// True when the login shell can resolve `claude`.
+fn claude_available() -> bool {
+    Session::spawn(sh("command -v claude >/dev/null 2>&1"))
+        .ok()
+        .and_then(|s| s.wait_exit(T))
+        .is_some_and(|e| e.success())
+}
+
+#[test]
+fn claude_detection_helper_distinguishes() {
+    let ok = Session::spawn(sh("command -v sh >/dev/null 2>&1")).unwrap();
+    assert!(ok.wait_exit(T).unwrap().success());
+    let missing =
+        Session::spawn(sh("command -v patchroom-no-such-bin-xyz >/dev/null 2>&1")).unwrap();
+    assert!(!missing.wait_exit(T).unwrap().success());
 }
 
 #[test]
 fn real_claude_version() {
+    if !claude_available() {
+        eprintln!("skipping real_claude_version: `claude` not found via the login shell");
+        return;
+    }
     let s = Session::spawn(SpawnConfig::new(
         Command::program("claude", ["--version"]),
         "claude-version",
