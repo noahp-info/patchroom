@@ -2148,6 +2148,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "patchroom-bridge"
+version = "0.0.1"
+
+[[package]]
 name = "patchroom-core"
 version = "0.0.1"
 
@@ -2157,6 +2161,14 @@ version = "0.0.1"
 dependencies = [
  "patchroom-core",
 ]
+
+[[package]]
+name = "patchroom-pty"
+version = "0.0.1"
+
+[[package]]
+name = "patchroom-store"
+version = "0.0.1"
 
 [[package]]
 name = "percent-encoding"
