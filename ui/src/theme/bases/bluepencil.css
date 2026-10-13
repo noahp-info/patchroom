@@ -1,0 +1,17 @@
+/*
+ * Base: Blue Pencil (STUB). Editorial calm: serif prose, margin timestamps, almost no chrome.
+ * Finish later. For now it sets only dimensions, radii and type from direction C of the looks
+ * reference, and renders on the shared chrome kit. Fonts are not bundled yet; stacks fall back.
+ * TODO: margin timestamps column, serif message body, pencil-mark highlights, borderless sheet.
+ */
+[data-base='bluepencil'] {
+  --side-w: 248px;
+  --art-w: 450px;
+  --r: 6px;
+  --r-sm: 4px;
+  --gutter: 28px;
+  --log-gap: 20px;
+  --f-ui: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --f-prose: 'Source Serif 4', ui-serif, Georgia, serif;
+  --f-mono: 'Fragment Mono', ui-monospace, Menlo, monospace;
+}

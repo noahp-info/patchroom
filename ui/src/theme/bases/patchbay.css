@@ -1,0 +1,413 @@
+/*
+ * Base: Patch Bay. Hardware panel: sessions are modules, presence lives on jacks with an LED,
+ * labels are condensed silkscreen caps, and one patch cable joins the active DM to the
+ * conversation. Base-only elements: .jack, .screw, .cable, jack-style radios.
+ * Reads the `hardware` token group (panel, silk, nut, hole, cable colors) from the theme.
+ */
+[data-base='patchbay'] {
+  --side-w: 276px;
+  --art-w: 440px;
+  --r: 4px;
+  --r-sm: 3px;
+  --app-radius: 6px;
+  --f-ui: 'Barlow', ui-sans-serif, system-ui, sans-serif;
+  --f-label: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --f-mono: 'Red Hat Mono', ui-monospace, Menlo, monospace;
+}
+
+[data-base='patchbay'] .tb {
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--panel-edge);
+  gap: 12px;
+}
+[data-base='patchbay'] .screw {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 35%,
+    color-mix(in srgb, var(--nut) 60%, #fff),
+    var(--nut)
+  );
+  position: relative;
+}
+[data-base='patchbay'] .screw::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 4.25px;
+  height: 1.5px;
+  background: var(--hole);
+  opacity: 0.55;
+  transform: rotate(-30deg);
+}
+[data-base='patchbay'] .tb-search {
+  background: var(--tb-field);
+  border-radius: 3px;
+  box-shadow: inset 0 1px 2px rgb(0 0 0/0.18);
+}
+[data-base='patchbay'] .side {
+  background: var(--panel);
+  border-right: 1px solid var(--panel-edge);
+  font-family: var(--f-ui);
+}
+[data-base='patchbay'] .ws {
+  border-bottom: 1px solid var(--side-line);
+}
+[data-base='patchbay'] .ws strong {
+  font: 700 17px/1 var(--f-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+[data-base='patchbay'] .ws small {
+  font: 500 11.5px var(--f-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+[data-base='patchbay'] .ws-mark {
+  border-radius: 50%;
+  font: 700 14px var(--f-label);
+}
+[data-base='patchbay'] .ws button {
+  border-radius: 3px;
+  border-color: var(--panel-edge);
+}
+[data-base='patchbay'] .sec-h {
+  font: 600 12px var(--f-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--silk-muted);
+  padding-top: 4px;
+}
+[data-base='patchbay'] .sec-h::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--side-line);
+  margin-left: 6px;
+}
+[data-base='patchbay'] .row {
+  font: 500 15px var(--f-ui);
+  border-radius: 3px;
+  gap: 9px;
+}
+[data-base='patchbay'] .row .nm {
+  font-family: var(--f-ui);
+}
+[data-base='patchbay'] .row.active {
+  background: var(--side-active);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255/0.06),
+    0 1px 2px rgb(0 0 0/0.15);
+}
+[data-base='patchbay'] .dot {
+  display: none;
+}
+[data-base='patchbay'] .row .jack {
+  order: 10;
+  margin-left: 2px;
+}
+[data-base='patchbay'] .log,
+[data-base='patchbay'] .composer {
+  padding-left: 40px;
+}
+[data-base='patchbay'] .strip {
+  padding-left: 40px;
+}
+[data-base='patchbay'] .ch {
+  padding-left: 14px;
+}
+[data-base='patchbay'] .jack {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 40% 35%,
+    color-mix(in srgb, var(--nut) 55%, #fff) 0 30%,
+    var(--nut) 70%
+  );
+  box-shadow: 0 1px 1px rgb(0 0 0/0.25);
+  position: relative;
+}
+[data-base='patchbay'] .jack::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hole);
+  box-shadow: inset 0 1px 1px rgb(255 255 255/0.15);
+}
+[data-base='patchbay'] .jack::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--led, transparent);
+  box-shadow: 0 0 0 1px var(--panel);
+}
+[data-base='patchbay'] .jack.busy {
+  --led: var(--busy);
+}
+[data-base='patchbay'] .jack.needs {
+  --led: var(--needs);
+}
+[data-base='patchbay'] .jack.err {
+  --led: var(--err);
+}
+[data-base='patchbay'] .jack.idle {
+  --led: transparent;
+}
+[data-base='patchbay'] .jack.idle::after {
+  box-shadow: inset 0 0 0 1.4px var(--idle);
+}
+[data-base='patchbay'] .jack.err::after {
+  border-radius: 1px;
+}
+[data-base='patchbay'] .jack.plugged::before {
+  background: var(--c-yellow);
+  box-shadow: 0 0 0 2px var(--hole);
+}
+[data-base='patchbay'] .row .bdg {
+  border-radius: 3px;
+  font: 700 12px var(--f-label);
+  letter-spacing: 0.04em;
+}
+[data-base='patchbay'] .side-foot {
+  font: 600 11px var(--f-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+[data-base='patchbay'] .conv {
+  background: var(--bg);
+}
+[data-base='patchbay'] .ch {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+[data-base='patchbay'] .ch .jack {
+  display: grid;
+}
+[data-base='patchbay'] .ch h2 {
+  font: 700 20px/1 var(--f-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+[data-base='patchbay'] .fid {
+  font: 700 11px var(--f-label);
+  letter-spacing: 0.12em;
+  border-radius: 2px;
+  background: var(--mode-bg);
+  color: var(--mode-fg);
+}
+[data-base='patchbay'] .ch .tools button {
+  border-radius: 3px;
+  font: 600 12.5px var(--f-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-color: var(--box-line);
+}
+[data-base='patchbay'] .day {
+  font: 600 11.5px var(--f-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+[data-base='patchbay'] .who b {
+  font: 700 15px var(--f-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+[data-base='patchbay'] .av {
+  border-radius: 50%;
+}
+[data-base='patchbay'] .av.bot {
+  background: var(--av-bot);
+}
+[data-base='patchbay'] .tool {
+  border-radius: 3px;
+  background: var(--panel);
+  border-color: var(--panel-edge);
+  color: var(--silk);
+}
+[data-base='patchbay'] .tool .tn {
+  font: 700 13px var(--f-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+[data-base='patchbay'] .tool code {
+  color: var(--silk);
+}
+[data-base='patchbay'] .tool .dur {
+  color: var(--silk-muted);
+}
+[data-base='patchbay'] .tool > svg.i {
+  color: var(--silk-muted);
+}
+[data-base='patchbay'] .thread {
+  border: 1px dashed var(--box-line);
+  border-radius: 3px;
+}
+[data-base='patchbay'] .thread a {
+  font: 700 13.5px var(--f-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+[data-base='patchbay'] .ask {
+  border-radius: 4px;
+  border-color: var(--ask-line);
+}
+[data-base='patchbay'] .ask-h {
+  font: 700 12px var(--f-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+[data-base='patchbay'] .ask-h .needs-pill {
+  border-radius: 2px;
+  background: var(--needs);
+  color: var(--needs-fg);
+}
+[data-base='patchbay'] .radio {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  background: radial-gradient(
+    circle at 40% 35%,
+    color-mix(in srgb, var(--nut) 55%, #fff) 0 30%,
+    var(--nut) 70%
+  );
+  box-shadow: none;
+  display: grid;
+  place-items: center;
+}
+[data-base='patchbay'] .radio::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--hole);
+}
+[data-base='patchbay'] .opt.sel .radio {
+  box-shadow: none;
+}
+[data-base='patchbay'] .opt.sel .radio::before {
+  width: 9px;
+  height: 9px;
+  background: var(--c-yellow);
+  box-shadow: 0 0 0 2px var(--hole);
+}
+[data-base='patchbay'] .opt .ol {
+  font-weight: 600;
+}
+[data-base='patchbay'] .btn {
+  border-radius: 3px;
+  font: 700 13.5px var(--f-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+[data-base='patchbay'] .btn.pri {
+  box-shadow: inset 0 -2px 0 rgb(0 0 0/0.2);
+}
+[data-base='patchbay'] .chip {
+  border-radius: 3px;
+  font: 700 12.5px var(--f-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--panel);
+  border-color: var(--panel-edge);
+  color: var(--silk);
+  box-shadow: inset 0 -2px 0 rgb(0 0 0/0.12);
+}
+[data-base='patchbay'] .chip:hover {
+  background: var(--panel-2);
+}
+[data-base='patchbay'] .chip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cc);
+}
+[data-base='patchbay'] .box {
+  border-radius: 4px;
+}
+[data-base='patchbay'] .stop {
+  border-radius: 3px;
+  font: 700 12.5px var(--f-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+[data-base='patchbay'] .send {
+  border-radius: 3px;
+}
+[data-base='patchbay'] .strip {
+  background: var(--panel);
+  border-top: 1px solid var(--panel-edge);
+  margin-top: 8px;
+  padding: 6px 18px;
+  color: var(--silk-muted);
+}
+[data-base='patchbay'] .strip .sc {
+  background: var(--panel-2);
+  color: var(--silk);
+  border-radius: 2px;
+  box-shadow: inset 0 1px 2px rgb(0 0 0/0.15);
+}
+[data-base='patchbay'] .strip .mode {
+  background: var(--mode-bg);
+  color: var(--mode-fg);
+  box-shadow: none;
+}
+[data-base='patchbay'] .art {
+  background: var(--panel);
+  border-left: 1px solid var(--panel-edge);
+}
+[data-base='patchbay'] .art-tabs {
+  border-bottom-color: var(--panel-edge);
+}
+[data-base='patchbay'] .art-tabs span {
+  font: 600 12.5px var(--f-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--silk-muted);
+}
+[data-base='patchbay'] .art-tabs span.on {
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--panel-edge);
+}
+[data-base='patchbay'] .art-sheet {
+  margin: 0 10px 10px;
+  border: 1px solid var(--panel-edge);
+  border-top: 0;
+  border-radius: 0 0 3px 3px;
+}
+[data-base='patchbay'] .art-tabs {
+  padding: 10px 10px 0 10px;
+}
+[data-base='patchbay'] .cable {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+/* chips colors per direction d */
+[data-base='patchbay'] .chip.c1 {
+  --cc: var(--c-green);
+}
+[data-base='patchbay'] .chip.c2 {
+  --cc: var(--c-blue);
+}
+[data-base='patchbay'] .chip.c3 {
+  --cc: var(--c-yellow);
+}
+[data-base='patchbay'] .chip i {
+  display: block;
+}

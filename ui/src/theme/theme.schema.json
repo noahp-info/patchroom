@@ -1,0 +1,478 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:patchroom:schema:theme:1",
+  "title": "Patchroom color theme",
+  "description": "A color theme: one complete token set for light and one for dark. Colors only. A base (layout, type, chrome) is chosen separately.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "modes"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "description": {
+      "type": "string"
+    },
+    "author": {
+      "type": "string"
+    },
+    "license": {
+      "type": "string"
+    },
+    "modes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["light", "dark"],
+      "properties": {
+        "light": {
+          "$ref": "#/$defs/tokens"
+        },
+        "dark": {
+          "$ref": "#/$defs/tokens"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "color": {
+      "type": "string",
+      "pattern": "^(transparent|#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8}))$",
+      "description": "#rgb, #rgba, #rrggbb, #rrggbbaa, or transparent."
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bg",
+        "fg",
+        "muted",
+        "line",
+        "hover",
+        "surface",
+        "frame",
+        "sel",
+        "tb-bg",
+        "tb-fg",
+        "tb-muted",
+        "tb-field",
+        "tb-line",
+        "side-bg",
+        "side-fg",
+        "side-muted",
+        "side-strong",
+        "side-line",
+        "side-hover",
+        "side-active",
+        "side-active-fg",
+        "ws-mark",
+        "ws-mark-fg",
+        "accent",
+        "accent-hover",
+        "accent-fg",
+        "accent-text",
+        "link",
+        "needs",
+        "needs-fg",
+        "busy",
+        "idle",
+        "err",
+        "err-text",
+        "ok",
+        "unread",
+        "unread-fg",
+        "g-claude",
+        "g-cursor",
+        "g-codex",
+        "chip",
+        "chip-fg",
+        "mode-bg",
+        "mode-fg",
+        "ctx",
+        "av-user",
+        "av-user-fg",
+        "av-bot",
+        "code-bg",
+        "mark",
+        "mark-line",
+        "ask-line",
+        "ask-head",
+        "ask-head-fg",
+        "opt-sel",
+        "opt-sel-line",
+        "box-line",
+        "box-bg",
+        "q-bg",
+        "stop-line",
+        "stop",
+        "art-bg",
+        "art-sheet",
+        "hunk",
+        "add-bg",
+        "add-gut",
+        "del-bg",
+        "del-gut",
+        "syn-kw",
+        "syn-cm",
+        "syn-ty",
+        "syn-fn",
+        "panel",
+        "panel-2",
+        "panel-edge",
+        "silk",
+        "silk-muted",
+        "nut",
+        "hole",
+        "c-red",
+        "c-yellow",
+        "c-blue",
+        "c-green"
+      ],
+      "properties": {
+        "bg": {
+          "$ref": "#/$defs/color",
+          "description": "Main pane ground, ink, hairlines, hover wash, raised surface, window frame, selection."
+        },
+        "fg": {
+          "$ref": "#/$defs/color",
+          "description": "Main pane ground, ink, hairlines, hover wash, raised surface, window frame, selection."
+        },
+        "muted": {
+          "$ref": "#/$defs/color",
+          "description": "Main pane ground, ink, hairlines, hover wash, raised surface, window frame, selection."
+        },
+        "line": {
+          "$ref": "#/$defs/color",
+          "description": "Main pane ground, ink, hairlines, hover wash, raised surface, window frame, selection."
+        },
+        "hover": {
+          "$ref": "#/$defs/color",
+          "description": "Main pane ground, ink, hairlines, hover wash, raised surface, window frame, selection."
+        },
+        "surface": {
+          "$ref": "#/$defs/color",
+          "description": "Main pane ground, ink, hairlines, hover wash, raised surface, window frame, selection."
+        },
+        "frame": {
+          "$ref": "#/$defs/color",
+          "description": "Main pane ground, ink, hairlines, hover wash, raised surface, window frame, selection."
+        },
+        "sel": {
+          "$ref": "#/$defs/color",
+          "description": "Main pane ground, ink, hairlines, hover wash, raised surface, window frame, selection."
+        },
+        "tb-bg": {
+          "$ref": "#/$defs/color",
+          "description": "Window title bar and its search field."
+        },
+        "tb-fg": {
+          "$ref": "#/$defs/color",
+          "description": "Window title bar and its search field."
+        },
+        "tb-muted": {
+          "$ref": "#/$defs/color",
+          "description": "Window title bar and its search field."
+        },
+        "tb-field": {
+          "$ref": "#/$defs/color",
+          "description": "Window title bar and its search field."
+        },
+        "tb-line": {
+          "$ref": "#/$defs/color",
+          "description": "Window title bar and its search field."
+        },
+        "side-bg": {
+          "$ref": "#/$defs/color",
+          "description": "Sidebar ground and text roles, active row, workspace mark."
+        },
+        "side-fg": {
+          "$ref": "#/$defs/color",
+          "description": "Sidebar ground and text roles, active row, workspace mark."
+        },
+        "side-muted": {
+          "$ref": "#/$defs/color",
+          "description": "Sidebar ground and text roles, active row, workspace mark."
+        },
+        "side-strong": {
+          "$ref": "#/$defs/color",
+          "description": "Sidebar ground and text roles, active row, workspace mark."
+        },
+        "side-line": {
+          "$ref": "#/$defs/color",
+          "description": "Sidebar ground and text roles, active row, workspace mark."
+        },
+        "side-hover": {
+          "$ref": "#/$defs/color",
+          "description": "Sidebar ground and text roles, active row, workspace mark."
+        },
+        "side-active": {
+          "$ref": "#/$defs/color",
+          "description": "Sidebar ground and text roles, active row, workspace mark."
+        },
+        "side-active-fg": {
+          "$ref": "#/$defs/color",
+          "description": "Sidebar ground and text roles, active row, workspace mark."
+        },
+        "ws-mark": {
+          "$ref": "#/$defs/color",
+          "description": "Sidebar ground and text roles, active row, workspace mark."
+        },
+        "ws-mark-fg": {
+          "$ref": "#/$defs/color",
+          "description": "Sidebar ground and text roles, active row, workspace mark."
+        },
+        "accent": {
+          "$ref": "#/$defs/color",
+          "description": "Primary action color, its text-safe twin, and link color."
+        },
+        "accent-hover": {
+          "$ref": "#/$defs/color",
+          "description": "Primary action color, its text-safe twin, and link color."
+        },
+        "accent-fg": {
+          "$ref": "#/$defs/color",
+          "description": "Primary action color, its text-safe twin, and link color."
+        },
+        "accent-text": {
+          "$ref": "#/$defs/color",
+          "description": "Primary action color, its text-safe twin, and link color."
+        },
+        "link": {
+          "$ref": "#/$defs/color",
+          "description": "Primary action color, its text-safe twin, and link color."
+        },
+        "needs": {
+          "$ref": "#/$defs/color",
+          "description": "Presence and attention: needs you, busy, idle, errored (err is the signal color for dots, LEDs and borders; err-text is its text-safe twin on light and dark surfaces), success, unread badge."
+        },
+        "needs-fg": {
+          "$ref": "#/$defs/color",
+          "description": "Presence and attention: needs you, busy, idle, errored (err is the signal color for dots, LEDs and borders; err-text is its text-safe twin on light and dark surfaces), success, unread badge."
+        },
+        "busy": {
+          "$ref": "#/$defs/color",
+          "description": "Presence and attention: needs you, busy, idle, errored (err is the signal color for dots, LEDs and borders; err-text is its text-safe twin on light and dark surfaces), success, unread badge."
+        },
+        "idle": {
+          "$ref": "#/$defs/color",
+          "description": "Presence and attention: needs you, busy, idle, errored (err is the signal color for dots, LEDs and borders; err-text is its text-safe twin on light and dark surfaces), success, unread badge."
+        },
+        "err": {
+          "$ref": "#/$defs/color",
+          "description": "Presence and attention: needs you, busy, idle, errored (err is the signal color for dots, LEDs and borders; err-text is its text-safe twin on light and dark surfaces), success, unread badge."
+        },
+        "err-text": {
+          "$ref": "#/$defs/color",
+          "description": "Presence and attention: needs you, busy, idle, errored (err is the signal color for dots, LEDs and borders; err-text is its text-safe twin on light and dark surfaces), success, unread badge."
+        },
+        "ok": {
+          "$ref": "#/$defs/color",
+          "description": "Presence and attention: needs you, busy, idle, errored (err is the signal color for dots, LEDs and borders; err-text is its text-safe twin on light and dark surfaces), success, unread badge."
+        },
+        "unread": {
+          "$ref": "#/$defs/color",
+          "description": "Presence and attention: needs you, busy, idle, errored (err is the signal color for dots, LEDs and borders; err-text is its text-safe twin on light and dark surfaces), success, unread badge."
+        },
+        "unread-fg": {
+          "$ref": "#/$defs/color",
+          "description": "Presence and attention: needs you, busy, idle, errored (err is the signal color for dots, LEDs and borders; err-text is its text-safe twin on light and dark surfaces), success, unread badge."
+        },
+        "g-claude": {
+          "$ref": "#/$defs/color",
+          "description": "Provider glyph colors (Claude, Cursor, Codex)."
+        },
+        "g-cursor": {
+          "$ref": "#/$defs/color",
+          "description": "Provider glyph colors (Claude, Cursor, Codex)."
+        },
+        "g-codex": {
+          "$ref": "#/$defs/color",
+          "description": "Provider glyph colors (Claude, Cursor, Codex)."
+        },
+        "chip": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "chip-fg": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "mode-bg": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "mode-fg": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "ctx": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "av-user": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "av-user-fg": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "av-bot": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "code-bg": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "mark": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "mark-line": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "ask-line": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "ask-head": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "ask-head-fg": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "opt-sel": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "opt-sel-line": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "box-line": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "box-bg": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "q-bg": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "stop-line": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "stop": {
+          "$ref": "#/$defs/color",
+          "description": "Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop."
+        },
+        "art-bg": {
+          "$ref": "#/$defs/color",
+          "description": "Artifact pane ground, diff gutters and fills, syntax colors."
+        },
+        "art-sheet": {
+          "$ref": "#/$defs/color",
+          "description": "Artifact pane ground, diff gutters and fills, syntax colors."
+        },
+        "hunk": {
+          "$ref": "#/$defs/color",
+          "description": "Artifact pane ground, diff gutters and fills, syntax colors."
+        },
+        "add-bg": {
+          "$ref": "#/$defs/color",
+          "description": "Artifact pane ground, diff gutters and fills, syntax colors."
+        },
+        "add-gut": {
+          "$ref": "#/$defs/color",
+          "description": "Artifact pane ground, diff gutters and fills, syntax colors."
+        },
+        "del-bg": {
+          "$ref": "#/$defs/color",
+          "description": "Artifact pane ground, diff gutters and fills, syntax colors."
+        },
+        "del-gut": {
+          "$ref": "#/$defs/color",
+          "description": "Artifact pane ground, diff gutters and fills, syntax colors."
+        },
+        "syn-kw": {
+          "$ref": "#/$defs/color",
+          "description": "Artifact pane ground, diff gutters and fills, syntax colors."
+        },
+        "syn-cm": {
+          "$ref": "#/$defs/color",
+          "description": "Artifact pane ground, diff gutters and fills, syntax colors."
+        },
+        "syn-ty": {
+          "$ref": "#/$defs/color",
+          "description": "Artifact pane ground, diff gutters and fills, syntax colors."
+        },
+        "syn-fn": {
+          "$ref": "#/$defs/color",
+          "description": "Artifact pane ground, diff gutters and fills, syntax colors."
+        },
+        "panel": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+        },
+        "panel-2": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+        },
+        "panel-edge": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+        },
+        "silk": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+        },
+        "silk-muted": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+        },
+        "nut": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+        },
+        "hole": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+        },
+        "c-red": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+        },
+        "c-yellow": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+        },
+        "c-blue": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+        },
+        "c-green": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+        }
+      }
+    }
+  }
+}
