@@ -24,6 +24,10 @@ WANT_SYSTEM = {
 WANT_TOOL = {"Bash", "Read", "Edit", "Write", "Agent", "AskUserQuestion", "ExitPlanMode", "mcp"}
 
 
+# Project dirs of sessions started under the temp dirs (claude encodes / as -).
+TEST_DIRS = ("-private-tmp", "-tmp-", "-private-var-folders", "-var-folders")
+
+
 def features(path):
     """The set of coverage tags in one transcript, as 'line:x', 'block:x', 'system:x', 'tool:x'."""
     tags = set()
@@ -68,8 +72,9 @@ def main():
     count = int(sys.argv[2]) if len(sys.argv) > 2 else 40
     files = []
     for dirpath, dirnames, filenames in os.walk(root):
-        # Subagent transcripts are not DM transcripts.
-        dirnames[:] = [d for d in dirnames if d != "subagents"]
+        # Subagent transcripts are not DM transcripts. Test runs (live tests and the e2e
+        # runner work in /tmp) are not real usage.
+        dirnames[:] = [d for d in dirnames if d != "subagents" and not d.startswith(TEST_DIRS)]
         for f in filenames:
             if not f.endswith(".jsonl"):
                 continue

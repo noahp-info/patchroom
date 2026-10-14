@@ -60,6 +60,8 @@ export class ChatModel {
   private byKey = new Map<string, ChatItem>();
   private children = new Map<string, ChatItem[]>();
   private prompts: PromptState[] = [];
+  /** Prompts resolved before this view held them: a late `prompt_list` must not revive them. */
+  private resolvedIds = new Set<string>();
   private hasMore = false;
   private loading = false;
   private loaded = false;
@@ -294,6 +296,7 @@ export class ChatModel {
 
   /** A repeat with the same promptId replaces the open prompt's fields (e.g. a late toolUseId). */
   addPrompt(e: PromptPendingEvent): void {
+    if (this.resolvedIds.has(e.promptId)) return;
     const prev = this.prompts.find((p) => p.promptId === e.promptId);
     if (prev) {
       if (prev.resolved) return;
@@ -324,6 +327,7 @@ export class ChatModel {
   }
 
   resolvePrompt(promptId: string, by: ResolvedBy): void {
+    this.resolvedIds.add(promptId);
     let found = false;
     this.prompts = this.prompts.map((p) => {
       if (p.promptId !== promptId) return p;
