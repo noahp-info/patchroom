@@ -19,6 +19,7 @@ import {
   type Group,
 } from '../lib/groups';
 import type { AppState, AppStore, DropDest } from '../state/store';
+import { SidebarResizer } from './SidebarResizer';
 import { ContextMenu, Floating, appRoot, type Anchor, type MenuItem } from './Floating';
 import {
   ArchiveDaysForm,
@@ -76,11 +77,22 @@ export interface SidebarProps {
   store: AppStore;
   /** Open the New DM dialog; a folder section id starts it in that section's folder. */
   onNewDm(sectionId?: string): void;
+  /** Current sidebar width and its handlers (the shell owns the grid column). */
+  width: number;
+  onResizePreview(w: number): void;
+  onResizeCommit(w: number): void;
 }
 
 const isMenuKey = (e: KeyboardEvent) => e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
 
-export function Sidebar({ state, store, onNewDm }: SidebarProps) {
+export function Sidebar({
+  state,
+  store,
+  onNewDm,
+  width,
+  onResizePreview,
+  onResizeCommit,
+}: SidebarProps) {
   const [collapsedVirtual, setCollapsedVirtual] = useState(readCollapsed);
   // The create row under the header: a section, or a divider (label optional).
   const [adding, setAdding] = useState<'section' | 'divider' | null>(null);
@@ -890,6 +902,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
           </span>
         </span>
       </div>
+      <SidebarResizer width={width} onPreview={onResizePreview} onCommit={onResizeCommit} />
       {menu && (
         <ContextMenu
           anchor={menu.anchor}

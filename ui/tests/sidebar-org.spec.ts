@@ -111,7 +111,11 @@ test.describe('sidebar organization: one-line rows (bar 2)', () => {
       .allTextContents();
     expect(chips.length).toBeGreaterThan(0);
     expect(chips.length).toBeLessThan(n / 2);
-    expect(chips.every((c) => c.startsWith('feat/'))).toBe(true);
+    expect(chips.every((c) => /^lane-\d+$/.test(c.trim()))).toBe(true);
+    const titles = await page
+      .locator('.side [data-folder-body="gn"] [data-chip="branch"]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('title')));
+    expect(titles.every((t) => /^feat\/lane-\d+$/.test(t ?? ''))).toBe(true);
     await expect(page.locator('.side [data-chip="branch"]', { hasText: /^dev$/ })).toHaveCount(0);
     await expect(page.locator('.side [data-chip="path"], .side .fs-l2')).toHaveCount(0);
     await expect(page.locator('.side [data-folder-body="gn"] .fs-wt').first()).toBeVisible();

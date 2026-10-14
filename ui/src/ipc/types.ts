@@ -427,6 +427,8 @@ export interface Prefs {
   };
   termPerDm: Record<string, { themeId?: string; font?: string; fontSize?: number }>;
   searchAllSessions: boolean;
+  /** Sidebar width in px, 220 to 420. Missing in older blobs: 264. */
+  sidebarWidth: number;
 }
 
 export interface DetectedHook {

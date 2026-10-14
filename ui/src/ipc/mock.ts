@@ -168,6 +168,7 @@ const DEFAULT_PREFS: Prefs = {
   dnd: { manual: false, schedule: null },
   termPerDm: {},
   searchAllSessions: false,
+  sidebarWidth: 264,
 };
 
 /** Text a search or a snapshot can see for one chat item. */

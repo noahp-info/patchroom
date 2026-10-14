@@ -59,7 +59,7 @@ test.describe('workspace: folder sections, creation and discovery (checklist 16)
     await expect(first.getByTestId('wt-glyph')).toHaveCount(0);
     // A session on another branch wears the chip.
     await expect(
-      page.locator('[data-chip="branch"]', { hasText: 'feat/billing' }).first(),
+      page.locator('[data-chip="branch"][title="feat/billing"]', { hasText: /^billing$/ }).first(),
     ).toBeVisible();
     // A worktree under .claude/worktrees wears the glyph. Its auto-named branch stays in the card.
     const wt = page.locator('[data-fs-session]', {

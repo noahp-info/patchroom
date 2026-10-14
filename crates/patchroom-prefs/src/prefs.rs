@@ -175,7 +175,16 @@ pub struct Prefs {
     pub term_per_dm: BTreeMap<String, TermStyle>,
     /// Search other Claude Code sessions too. Off by default.
     pub search_all_sessions: bool,
+    /// Sidebar width in px. Clamped to `SIDEBAR_MIN..=SIDEBAR_MAX`; a blob without it gets 264.
+    pub sidebar_width: u32,
 }
+
+/// Narrowest sidebar the UI lets the user drag to.
+pub const SIDEBAR_MIN: u32 = 220;
+/// Widest sidebar the UI lets the user drag to.
+pub const SIDEBAR_MAX: u32 = 420;
+/// Sidebar width when nothing is stored, and what a double-click on the handle resets to.
+pub const SIDEBAR_DEFAULT: u32 = 264;
 
 impl Default for Prefs {
     fn default() -> Self {
@@ -190,6 +199,7 @@ impl Default for Prefs {
             dnd: Dnd::default(),
             term_per_dm: BTreeMap::new(),
             search_all_sessions: false,
+            sidebar_width: SIDEBAR_DEFAULT,
         }
     }
 }
@@ -274,6 +284,7 @@ impl Prefs {
         if self.cable_preset.trim().is_empty() {
             return Err(PrefsError("cablePreset must not be empty".into()));
         }
+        self.sidebar_width = self.sidebar_width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
         Ok(self)
     }
 }
@@ -409,5 +420,30 @@ mod tests {
             .unwrap();
         let back = Prefs::from_stored(&serde_json::to_string(&p).unwrap());
         assert_eq!(back, p);
+    }
+
+    #[test]
+    fn sidebar_width_defaults_persists_and_clamps() {
+        assert_eq!(Prefs::default().sidebar_width, 264);
+        // A blob stored before the setting existed loads with the default.
+        let old = Prefs::from_stored(r#"{"themeId":"mine"}"#);
+        assert_eq!(old.sidebar_width, 264);
+        let p = Prefs::default()
+            .patched(&json!({"sidebarWidth": 300}))
+            .unwrap();
+        assert_eq!(p.sidebar_width, 300);
+        let again = Prefs::from_stored(&serde_json::to_string(&p).unwrap());
+        assert_eq!(again.sidebar_width, 300);
+        let lo = Prefs::default()
+            .patched(&json!({"sidebarWidth": 10}))
+            .unwrap();
+        assert_eq!(lo.sidebar_width, 220);
+        let hi = Prefs::default()
+            .patched(&json!({"sidebarWidth": 9000}))
+            .unwrap();
+        assert_eq!(hi.sidebar_width, 420);
+        assert!(Prefs::default()
+            .patched(&json!({"sidebarWidth": "wide"}))
+            .is_err());
     }
 }

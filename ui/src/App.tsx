@@ -7,6 +7,7 @@ import { QuickSwitcher } from './components/QuickSwitcher';
 import { SearchPanel } from './components/SearchPanel';
 import { ChatView } from './components/chat/ChatView';
 import { Sidebar } from './components/Sidebar';
+import { clampSidebar, SIDEBAR_DEFAULT } from './components/SidebarResizer';
 import { PatchCable } from './theme/PatchCable';
 import { Terminal } from './components/Terminal';
 import { playNotifySound, useThemeRuntime } from './lib/prefsModule';
@@ -47,6 +48,14 @@ export function App() {
   // A folder section id when the dialog was opened from that section.
   const [newDmSection, setNewDmSection] = useState<string | null>(null);
   const dmSection = state.sections.find((x) => x.id === newDmSection && x.folder) ?? null;
+
+  // The sidebar width: the saved pref, or the live value while a drag or key press is in flight.
+  const [liveWidth, setLiveWidth] = useState<number | null>(null);
+  const sidebarWidth = liveWidth ?? clampSidebar(state.prefs?.sidebarWidth ?? SIDEBAR_DEFAULT);
+  const commitWidth = (w: number) => {
+    setLiveWidth(w);
+    void store.setPrefs({ sidebarWidth: w }).finally(() => setLiveWidth(null));
+  };
 
   useEffect(() => {
     void store.start();
@@ -113,7 +122,7 @@ export function App() {
     };
   }, [store]);
 
-  const style = themeStyle;
+  const style = { ...themeStyle, '--side-w': `${sidebarWidth}px` } as CSSProperties;
   const active = state.sessions.find((s) => s.id === state.activeId) ?? null;
   const needsYou = (s: { id: string; status: SessionStatus }) =>
     s.status === 'waiting' || (state.badges[s.id]?.needsYou ?? 0) > 0;
@@ -159,6 +168,9 @@ export function App() {
       <Sidebar
         state={state}
         store={store}
+        width={sidebarWidth}
+        onResizePreview={setLiveWidth}
+        onResizeCommit={commitWidth}
         onNewDm={(sectionId) => {
           setNewDmSection(sectionId ?? null);
           setNewDmOpen(true);

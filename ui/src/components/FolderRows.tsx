@@ -47,12 +47,27 @@ export function WorktreeGlyph({ info }: { info: FolderSession }) {
   );
 }
 
-/** One quiet chip: the branch, when it differs from the folder's. */
+/**
+ * The part of a branch name that tells branches apart: `feat/lane-3` is `lane-3`. A bare version
+ * leaf keeps its parent, so `release/2.4` stays whole.
+ */
+export function branchLeaf(branch: string): string {
+  const parts = branch.split('/').filter(Boolean);
+  const leaf = parts[parts.length - 1] ?? branch;
+  if (parts.length > 1 && !/[A-Za-z]{3}/.test(leaf)) return parts.slice(-2).join('/');
+  return leaf;
+}
+
+/**
+ * One quiet chip: the branch, when it differs from the folder's. It never shrinks: the last
+ * segment is what distinguishes branches, so the session name gives way first. The full branch
+ * stays in the title and the hover card.
+ */
 export function BranchChip({ branch }: { branch: string }) {
   return (
-    <span className="fs-chip" data-chip="branch" title={branch}>
+    <span className="fs-chip" data-chip="branch" title={branch} aria-label={`Branch ${branch}`}>
       <Icon name="branch" />
-      <span>{branch}</span>
+      <span>{branchLeaf(branch)}</span>
     </span>
   );
 }
