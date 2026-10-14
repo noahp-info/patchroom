@@ -89,7 +89,7 @@ test.describe('session parity: the composer never swallows input', () => {
     expect(await peekWrites(page, id)).toBe('');
     const note = page.getByTestId('composer-notice');
     await expect(note).toContainText('Claude is showing something in the terminal');
-    await expect(note).toContainText('Your message is kept');
+    await expect(note).toContainText('stays in the box');
     await note.getByRole('button', { name: 'Open terminal' }).click();
     await expect(page.getByTestId('view-label')).toHaveText('Terminal');
     await page.keyboard.press('Meta+j');

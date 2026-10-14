@@ -1,7 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { isCheckFailed } from './types';
 import type {
   ActivityRow,
+  CheckFailed,
   Ipc,
   Prefs,
   MarkInfo,
@@ -67,6 +69,13 @@ function folderSession(r: Loose): FolderSession {
     hidden: Boolean(r.hidden),
     dmId: pick<string | null>(r, 'dmId', 'dm_id') ?? null,
   };
+}
+/** The typed `check_failed` outcome, or an error whose text starts `could not check`. */
+function checkFailedOf(v: unknown): CheckFailed | null {
+  if (isCheckFailed(v)) return v;
+  const text = typeof v === 'string' ? v : v instanceof Error ? v.message : '';
+  const m = /^could not check\b.*/s.exec(text.trim());
+  return m ? { outcome: 'check_failed', reason: m[0] } : null;
 }
 const OUTCOMES: SendOutcome[] = ['sent', 'queued', 'blocked_dialog', 'mirror_readonly'];
 function sendResult(r: Loose): SendResult {
@@ -147,7 +156,21 @@ export function createTauriIpc(): Ipc {
       const rows = await invoke<WireSession[]>('session_list');
       return rows.map(wireSession);
     },
-    sessionResume: (id, cols, rows) => invoke('session_resume', { id, cols, rows }),
+    sessionResume: async (id, cols, rows, opts) => {
+      try {
+        const r = await invoke<unknown>('session_resume', {
+          id,
+          cols,
+          rows,
+          openAnyway: opts?.openAnyway || undefined,
+        });
+        return checkFailedOf(r) ?? undefined;
+      } catch (err) {
+        const f = checkFailedOf(err);
+        if (f) return f;
+        throw err;
+      }
+    },
     sessionRename: (id, name) => invoke('session_rename', { id, name }),
     sessionDelete: (id) => invoke('session_delete', { id }),
     sessionSetSection: (id, sectionId) => invoke('session_set_section', { id, sectionId }),
@@ -206,8 +229,20 @@ export function createTauriIpc(): Ipc {
         hiddenCount: Number(pick(r, 'hiddenCount', 'hidden_count') ?? 0),
       } satisfies FolderSessions;
     },
-    folderSessionOpen: async (sectionId, sessionId) =>
-      wireSession(await invoke<WireSession>('folder_session_open', { sectionId, sessionId })),
+    folderSessionOpen: async (sectionId, sessionId, opts) => {
+      try {
+        const r = await invoke<WireSession | CheckFailed>('folder_session_open', {
+          sectionId,
+          sessionId,
+          openAnyway: opts?.openAnyway || undefined,
+        });
+        return checkFailedOf(r) ?? wireSession(r as WireSession);
+      } catch (err) {
+        const f = checkFailedOf(err);
+        if (f) return f;
+        throw err;
+      }
+    },
     folderSessionHide: (sectionId, sessionId, hidden) =>
       invoke('folder_session_hide', { sectionId, sessionId, hidden }),
     on: (event, handler) => listen(event, (e) => handler(e.payload as never)),

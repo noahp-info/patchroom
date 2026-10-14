@@ -108,6 +108,9 @@ pub enum Error {
     /// Bridge failure.
     #[error("bridge: {0}")]
     Bridge(#[from] patchroom_bridge::BridgeError),
+    /// The pre-spawn live check could not finish. The UI offers retry or "Open anyway".
+    #[error("check_failed: could not check whether this session already runs in another terminal ({0}); not starting it, to avoid a second process")]
+    CheckFailed(String),
     /// Other I/O failure.
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
@@ -396,11 +399,15 @@ impl Manager {
         let events = bridge.subscribe();
         let active = Arc::new(AtomicBool::new(false));
         let agents_tap = Arc::new(AgentsTap::default());
+        if cfg.reconcile {
+            crate::agents::warm_up();
+        }
         let reconciler = cfg.reconcile.then(|| {
             Arc::new(bridge.spawn_reconciler(
                 Arc::new(TappedAgents {
                     inner: LoginShellAgents::new(Arc::clone(&active)),
                     tap: Arc::clone(&agents_tap),
+                    gate: Some(Arc::clone(&active)),
                 }),
                 RECONCILE_INTERVAL,
             ))
@@ -483,7 +490,21 @@ impl Manager {
     /// Unknown id, session still running, no stored claude session id, or a re-check that
     /// did not finish.
     pub fn resume(self: &Arc<Self>, id: &str, cols: Option<u16>, rows: Option<u16>) -> Result<()> {
-        self.resume_with(id, cols, rows, false)
+        self.resume_with(id, cols, rows, false, false)
+    }
+
+    /// [`Manager::resume`] with `open_anyway`: skip the live check. Only after the user
+    /// confirmed a `check_failed` error; it can start a second process on one session.
+    ///
+    /// # Errors
+    /// As [`Manager::resume`], without the check error.
+    pub fn resume_anyway(
+        self: &Arc<Self>,
+        id: &str,
+        cols: Option<u16>,
+        rows: Option<u16>,
+    ) -> Result<()> {
+        self.resume_with(id, cols, rows, false, true)
     }
 
     /// The one resume path. `strict` refuses (instead of mirroring) while another process
@@ -494,6 +515,7 @@ impl Manager {
         cols: Option<u16>,
         rows: Option<u16>,
         strict: bool,
+        skip_check: bool,
     ) -> Result<()> {
         let conv = self.conversation(id)?;
         if let Some(live) = lock(&self.live).get(id) {
@@ -509,7 +531,7 @@ impl Manager {
         } else {
             None
         };
-        if let Some(sid) = sid.as_deref() {
+        if let Some(sid) = sid.as_deref().filter(|_| !skip_check) {
             // Never two processes on one session: look again, right now, before spawning.
             match self.live_check(sid) {
                 mirror::LiveCheck::Free => {
@@ -525,9 +547,7 @@ impl Manager {
                     return Ok(());
                 }
                 mirror::LiveCheck::Unknown(why) => {
-                    return Err(Error::Invalid(format!(
-                        "could not check whether this session already runs in another terminal ({why}); not starting it, to avoid a second process"
-                    )));
+                    return Err(Error::CheckFailed(why));
                 }
             }
         }

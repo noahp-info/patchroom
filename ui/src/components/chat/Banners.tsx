@@ -78,7 +78,8 @@ export function TerminalWaitBanner({ wait, onShowTerminal }: TerminalWaitBannerP
       <div className="tbanner__text">
         <b>Claude is showing something in the terminal</b>
         <span>
-          {detail ? `${detail}. ` : ''}Answer it there. Messages you send wait until it closes.
+          {detail ? `${detail}. ` : ''}Answer it there. A message you type stays in the box until
+          you send it again.
         </span>
       </div>
       <button

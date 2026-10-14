@@ -137,6 +137,17 @@ export function Composer({
           )}
         </div>
       )}
+      {(readOnly || ended) && (
+        <div className="cnotice cnotice--reason" role="status" data-testid="composer-reason">
+          <span>
+            {readOnly
+              ? text.trim() !== ''
+                ? `${readOnly}. Your draft stays here and is not sent.`
+                : `${readOnly}. Nothing you type here is sent.`
+              : 'This session has ended. Resume it to send.'}
+          </span>
+        </div>
+      )}
       <div className="box" data-readonly={readOnly ? 'true' : undefined}>
         <textarea
           ref={box}
@@ -178,7 +189,15 @@ export function Composer({
           >
             <Icon name="slash" />
           </button>
-          <span className="hint-keys">Enter sends. Shift+Enter adds a line.</span>
+          <span className="hint-keys" data-testid="composer-hint">
+            {readOnly
+              ? 'Read-only. Sending is off.'
+              : ended
+                ? 'Ended. Sending is off.'
+                : blocked
+                  ? 'Enter keeps your message here while the terminal is open. Shift+Enter adds a line.'
+                  : 'Enter sends. Shift+Enter adds a line.'}
+          </span>
           <span className="sp" />
           {busy && (
             <button type="button" className="stop" onClick={onStop} data-testid="stop">

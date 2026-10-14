@@ -356,6 +356,7 @@ fn a_recheck_that_cannot_finish_refuses_to_spawn() {
     *e.agents.fail.lock().unwrap() = true;
     let err = e.m.folder_session_open(&sec, SID).unwrap_err().to_string();
     assert!(err.contains("could not check"), "{err}");
+    assert!(err.starts_with("check_failed:"), "not typed: {err}");
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(e.starts(), 0);
     assert!(
@@ -383,6 +384,22 @@ fn a_recheck_that_cannot_finish_refuses_to_spawn() {
     });
     e.m.folder_session_open(&sec, SID).unwrap();
     e.wait_starts(1);
+    e.m.shutdown();
+}
+
+#[test]
+fn open_anyway_skips_the_failed_check_and_spawns() {
+    let e = env("sleep 60");
+    e.transcript(SID);
+    let sec = e.section();
+    *e.agents.fail.lock().unwrap() = true;
+    let err = e.m.folder_session_open(&sec, SID).unwrap_err().to_string();
+    assert!(err.starts_with("check_failed:"), "{err}");
+    assert_eq!(e.starts(), 0);
+    // The check still fails; the user confirmed: the same open, without the check.
+    let dm = e.m.folder_session_open_with(&sec, SID, true).unwrap();
+    e.wait_starts(1);
+    assert!(dm.mirror.is_none());
     e.m.shutdown();
 }
 
@@ -547,6 +564,17 @@ fn live_the_real_recheck_is_bounded_and_lets_a_free_session_start() {
     let took = t0.elapsed();
     println!("LIVE recheck+open took {took:?}");
     assert!(took < Duration::from_secs(5), "took {took:?}");
+    // Warm, the direct call (cached binary path) is well inside its 3 s attempt bound, also
+    // while the machine is busy (run this next to a build to measure that).
+    let checker = patchroom_lib::agents::LoginShellAgents::checker(Duration::from_secs(3));
+    let mut worst = Duration::ZERO;
+    for _ in 0..5 {
+        let t = Instant::now();
+        checker.list().unwrap();
+        worst = worst.max(t.elapsed());
+    }
+    println!("LIVE warm direct check, worst of 5: {worst:?}");
+    assert!(worst < Duration::from_millis(2500), "worst {worst:?}");
     assert!(dm.mirror.is_none());
     assert!(m.pid_of(&dm.id).is_some());
     m.shutdown();

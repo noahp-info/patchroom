@@ -2655,7 +2655,13 @@ body.dragging * {
 }
 .chat .tbanner__btn kbd {
   --fs: 11px;
-  opacity: 0.85;
+}
+/* A hint inside a button reads as the button's own text, never muted: AA on the button fill. */
+.pr-app button kbd,
+.pr-app .btn kbd {
+  color: inherit;
+  opacity: 1;
+  border-color: currentColor;
 }
 @container chat (max-width: 720px) {
   .chat .mbanner,
@@ -2696,6 +2702,9 @@ body.dragging * {
 .chat .cnotice span {
   flex: 1;
   min-width: 0;
+}
+.chat .cnotice--reason::before {
+  background: var(--needs);
 }
 .chat .cnotice__btn {
   flex: none;
@@ -2928,4 +2937,61 @@ body.dragging * {
 }
 body.dragging .sbe__grip {
   cursor: grabbing;
+}
+
+/* Check failed: the live check could not finish. Opening anyway may start a second process. */
+.cfbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px var(--gutter);
+  border-bottom: 1px solid var(--err);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+}
+.cfbar > svg.i {
+  flex: none;
+  color: var(--err-text);
+}
+.cfbar__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cfbar__text span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.cfbar__text .cfbar__warn {
+  color: var(--err-text);
+}
+.cfbar__btn {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.cfbar__btn:hover {
+  background: var(--hover);
+}
+.cfbar__btn--warn {
+  border-color: var(--err);
+  color: var(--err-text);
+}
+.cfbar :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+@media (max-width: 720px) {
+  .cfbar {
+    flex-wrap: wrap;
+  }
 }

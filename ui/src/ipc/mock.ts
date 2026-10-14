@@ -159,6 +159,10 @@ export interface MockControl {
   folderChanged(sectionId: string): void;
   /** Make the next `folder_sessions` call fail once. */
   failNextFolderRead: boolean;
+  /** The next open or resume reports `check_failed` with this reason (once). */
+  failNextCheck: string | null;
+  /** Every open or resume that passed `openAnyway`. */
+  openAnyways: string[];
 }
 
 declare global {
@@ -450,6 +454,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     archiveCalls: [],
     folderCreates: [],
     failNextFolderRead: false,
+    failNextCheck: null,
+    openAnyways: [],
     folderRows: (sectionId) => (folderRows.get(sectionId) ?? []).map((r) => viewRow(sectionId, r)),
     setFolderRows(sectionId, rows) {
       folderRows.set(sectionId, rows);
@@ -711,7 +717,13 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
         .sessions()
         .map((s) => ({ ...s, hasDraft: drafts.has(s.id), folderChip: chipOf(s) }));
     },
-    async sessionResume(id, cols, rows) {
+    async sessionResume(id, cols, rows, openOpts) {
+      if (openOpts?.openAnyway) control.openAnyways.push(id);
+      else if (control.failNextCheck !== null) {
+        const reason = control.failNextCheck;
+        control.failNextCheck = null;
+        return { outcome: 'check_failed', reason };
+      }
       control.resumes.push({ id, cols, rows });
       control.spawns.push(id);
       const s = sessions.get(id);
@@ -970,9 +982,16 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       const rows = control.folderRows(sectionId);
       return { sessions: rows, hiddenCount: rows.filter((r) => r.hidden).length };
     },
-    async folderSessionOpen(sectionId, sessionId) {
+    async folderSessionOpen(sectionId, sessionId, openOpts) {
       const row = (folderRows.get(sectionId) ?? []).find((r) => r.sessionId === sessionId);
       if (!row) throw new Error(`no such session: ${sessionId}`);
+      if (openOpts?.openAnyway) control.openAnyways.push(sessionId);
+      else if (control.failNextCheck !== null) {
+        // No DM row is left behind and nothing spawns.
+        const reason = control.failNextCheck;
+        control.failNextCheck = null;
+        return { outcome: 'check_failed', reason };
+      }
       control.folderOpens.push({ sectionId, sessionId, cwd: row.launchCwd });
       const have = row.dmId ? sessions.get(row.dmId) : undefined;
       if (have) return { ...have, folderChip: chipOf(have) };

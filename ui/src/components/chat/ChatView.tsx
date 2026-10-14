@@ -392,7 +392,7 @@ export function ChatView({ store, session, visible, unread, thread, prefs, marks
             onBlocked={() =>
               model.setNotice({
                 kind: 'blocked',
-                text: 'Claude is showing something in the terminal. Your message is kept.',
+                text: 'Claude is showing something in the terminal. Nothing was sent. Your message stays in the box.',
               })
             }
             onOpenTerminal={() =>

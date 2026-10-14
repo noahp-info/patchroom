@@ -6,8 +6,9 @@
 //! - `Live`: another terminal runs it. Nothing is spawned. The DM becomes a **mirror**: the
 //!   transcript is tailed into the chat read only (see [`MirrorInfo`]) and the composer is
 //!   refused with `mirror_readonly`;
-//! - `Unknown`: the check failed or timed out. The open fails, because a wrong guess would
-//!   start the second process. Retrying is free.
+//! - `Unknown`: the check failed or timed out (after one retry). The open fails with the
+//!   typed `check_failed` error, because a wrong guess would start the second process. The UI
+//!   then offers retry, or "Open anyway" (`openAnyway: true`, asked first).
 //!
 //! Patchroom never signals a process it did not start. A mirror ends when the other process
 //! exits. With `takeoverWhenClosed` on, the DM then resumes by itself (through the same
@@ -29,9 +30,10 @@ use super::{
     lock, map_status, AdapterState, Error, Manager, Presence, PresenceStatus, Result, SessionInfo,
     UiEvent,
 };
-use crate::agents::LoginShellAgents;
+use crate::agents::{CheckSource, LoginShellAgents, TappedAgents};
 
-/// Longest the synchronous re-check waits for `claude agents --json`.
+/// Longest one attempt of the synchronous re-check waits for `claude agents --json`. A failed
+/// attempt is retried once, so the worst case is twice this.
 pub(super) const CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 /// Transcript poll interval of a mirror, so another terminal's turn shows up quickly.
 const MIRROR_WATCH: Duration = Duration::from_millis(250);
@@ -82,9 +84,12 @@ impl Manager {
         if let Some(s) = lock(&self.agents_override).clone() {
             return Some(s);
         }
-        self.cfg
-            .reconcile
-            .then(|| Arc::new(LoginShellAgents::checker(CHECK_TIMEOUT)) as Arc<dyn AgentsSource>)
+        self.cfg.reconcile.then(|| {
+            Arc::new(CheckSource {
+                inner: LoginShellAgents::checker(CHECK_TIMEOUT),
+                tap: Arc::clone(&self.agents_tap),
+            }) as Arc<dyn AgentsSource>
+        })
     }
 
     /// The source for background refreshes (the folder listing).
@@ -93,9 +98,11 @@ impl Manager {
             return Some(s);
         }
         self.cfg.reconcile.then(|| {
-            Arc::new(LoginShellAgents::new(Arc::new(
-                std::sync::atomic::AtomicBool::new(true),
-            ))) as Arc<dyn AgentsSource>
+            Arc::new(TappedAgents {
+                inner: LoginShellAgents::new(Arc::new(std::sync::atomic::AtomicBool::new(true))),
+                tap: Arc::clone(&self.agents_tap),
+                gate: None,
+            }) as Arc<dyn AgentsSource>
         })
     }
 
@@ -257,7 +264,7 @@ impl Manager {
         cols: Option<u16>,
         rows: Option<u16>,
     ) -> Result<SessionInfo> {
-        self.resume_with(id, cols, rows, true)?;
+        self.resume_with(id, cols, rows, true, false)?;
         self.list()?
             .into_iter()
             .find(|s| s.id == id)
@@ -349,7 +356,7 @@ impl Manager {
         let take = lock(&self.mirrors)
             .get(id)
             .is_some_and(|m| m.info.takeover_when_closed);
-        if take && self.resume_with(id, None, None, false).is_ok() {
+        if take && self.resume_with(id, None, None, false, false).is_ok() {
             return;
         }
         self.end_mirror(id);

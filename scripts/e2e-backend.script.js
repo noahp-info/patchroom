@@ -114,8 +114,13 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
         () => (snap().folders[sec.id]?.sessions.length ?? 0) >= 3,
         20_000,
       );
-      const linked = snap().folders[sec.id].sessions.filter((x) => x.dmId);
-      if (linked.length < 1) throw new Error('no listed session is linked to its DM');
+      // The folder-opened DM is the one archived before the restart. Other linked DMs (the
+      // "dialog" DM filed under Direct messages) are not it.
+      const archived = new Set(
+        (await invoke('session_list', {})).filter((r) => r.archived).map((r) => r.id),
+      );
+      const linked = snap().folders[sec.id].sessions.filter((x) => x.dmId && archived.has(x.dmId));
+      if (linked.length < 1) throw new Error('the folder-opened DM is not linked to its row');
       const dm = snap().sessions.find((s) => s.id === linked[0].dmId);
       if (!dm || dm.sectionId !== sec.id) throw new Error('the DM left its section');
     });
@@ -584,7 +589,8 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
   // ---- 5. restart in the middle -------------------------------------------------------------------------
   await t.step('before the restart: star a DM, archive another, change a preference', async () => {
     const beta = t.dm(NAME_B).id;
-    const inFold = snap().sessions.find((x) => x.sectionId === sec && x.name !== NAME_A);
+    // The DM opened from a folder row (by its claude session id), not whichever DM is first.
+    const inFold = snap().sessions.find((x) => x.sectionId === sec && sidOf(x) === sessionIds.one);
     if (!inFold) throw new Error('no DM in the folder section to archive');
     await store().setFlags(beta, { starred: true });
     await store().setFlags(inFold.id, { archived: true });

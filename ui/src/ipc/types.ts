@@ -135,6 +135,25 @@ export interface SessionMirrorEvent {
  * - `blocked_dialog`: a terminal-only dialog is up; nothing was written and the draft stays.
  * - `mirror_readonly`: the session runs in another terminal; nothing was written.
  */
+/**
+ * The re-check of `claude agents --json` could not finish, so the backend spawned nothing (a
+ * guess could start a second process). `reason` says why. An older backend rejects the call with
+ * a message starting `could not check`; the tauri layer turns that into this shape.
+ */
+export interface CheckFailed {
+  outcome: 'check_failed';
+  reason: string;
+}
+
+/** `openAnyway`: skip the live check and spawn. The user accepted that two processes may run. */
+export interface OpenOptions {
+  openAnyway?: boolean;
+}
+
+export function isCheckFailed(r: unknown): r is CheckFailed {
+  return !!r && typeof r === 'object' && (r as CheckFailed).outcome === 'check_failed';
+}
+
 export type SendOutcome = 'sent' | 'queued' | 'blocked_dialog' | 'mirror_readonly';
 export interface SendResult {
   outcome: SendOutcome;
@@ -164,7 +183,12 @@ export interface Ipc {
   sessionKill(id: string): Promise<void>;
   sessionList(): Promise<SessionInfo[]>;
   /** Restart an exited DM. Claude DMs run `claude --resume <stored session id>`. */
-  sessionResume(id: string, cols?: number, rows?: number): Promise<void>;
+  sessionResume(
+    id: string,
+    cols?: number,
+    rows?: number,
+    opts?: OpenOptions,
+  ): Promise<void | CheckFailed>;
   sessionRename(id: string, name: string): Promise<void>;
   /** Kill and forget the DM. */
   sessionDelete(id: string): Promise<void>;
@@ -222,7 +246,11 @@ export interface Ipc {
   sectionSetArchiveDays(id: string, days: number): Promise<void>;
   folderSessions(sectionId: string): Promise<FolderSessions>;
   /** Creates the DM row and spawns `claude --resume` from the session's launch folder. */
-  folderSessionOpen(sectionId: string, sessionId: string): Promise<SessionInfo>;
+  folderSessionOpen(
+    sectionId: string,
+    sessionId: string,
+    opts?: OpenOptions,
+  ): Promise<SessionInfo | CheckFailed>;
   /** Hides or unhides a row in the list only; the transcript is never touched. */
   folderSessionHide(sectionId: string, sessionId: string, hidden: boolean): Promise<void>;
   on<K extends keyof IpcEvents>(

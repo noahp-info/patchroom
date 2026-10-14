@@ -268,6 +268,36 @@ export function App() {
           </div>
         )}
 
+        {state.checkFailed && (
+          <div
+            className="cfbar"
+            role="alertdialog"
+            aria-label="Could not check"
+            data-testid="check-failed"
+          >
+            <Icon name="lock" />
+            <div className="cfbar__text">
+              <b>Could not check whether {state.checkFailed.name} is open in another terminal</b>
+              <span data-testid="check-failed-reason">{state.checkFailed.reason}</span>
+              <span className="cfbar__warn" data-testid="check-failed-warning">
+                Warning: if it is running elsewhere, opening it now starts a second process on the
+                same session. Two processes can overwrite each other&apos;s history.
+              </span>
+            </div>
+            <button type="button" className="cfbar__btn" onClick={() => store.dismissCheckFailed()}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="cfbar__btn cfbar__btn--warn"
+              data-testid="open-anyway"
+              onClick={() => void store.openAnyway()}
+            >
+              Open anyway
+            </button>
+          </div>
+        )}
+
         {active?.status === 'exited' && (
           <div className="exitbar" role="status" data-testid="exit-bar">
             <span>

@@ -7,10 +7,14 @@
 //! # Session parity contract (never two processes, mirrors, terminal-only dialogs)
 //!
 //! Commands:
-//! - `session_resume {id, cols?, rows?}` and `folder_session_open {sectionId, sessionId}` re-check
-//!   `claude agents --json` synchronously (3 s bound) right before spawning. A session that
+//! - `session_resume {id, cols?, rows?, openAnyway?}` and
+//!   `folder_session_open {sectionId, sessionId, openAnyway?}` re-check
+//!   `claude agents --json` synchronously (3 s per attempt, one retry, claude run directly,
+//!   an answer under 2 s old is reused) right before spawning. A session that
 //!   runs in another terminal is not spawned: the DM becomes a read-only mirror. A re-check
-//!   that cannot finish fails the call (a guess could start a second process).
+//!   that cannot finish fails the call with a message starting `check_failed:` (a guess could
+//!   start a second process). The UI asks the user, then repeats the call with
+//!   `openAnyway: true`, which skips the check.
 //! - `session_send_text {id, text} -> {outcome: "sent" | "queued" | "blocked_dialog" |
 //!   "mirror_readonly", reason?, where?, pid?}`. The two refusals write nothing.
 //! - `session_takeover {id, cols?, rows?} -> SessionInfo`: resume a mirror now; fails with
@@ -154,15 +158,21 @@ pub async fn session_list(state: State<'_, SessionManager>) -> CmdResult<Vec<Ses
 /// Claude DMs run `claude --resume <stored session id>` after a synchronous re-check of
 /// `claude agents --json` (3 s bound). When another terminal runs the session nothing is
 /// spawned: the DM becomes a read-only mirror (`session:mirror`, `SessionInfo.mirror`) and
-/// the call returns normally. If the re-check cannot finish, the call fails.
+/// the call returns normally. If the re-check cannot finish (after one retry), the call fails
+/// with a message starting `check_failed:`; the UI asks, then calls again with
+/// `openAnyway: true`, which skips the check.
 #[tauri::command]
 pub async fn session_resume(
     state: State<'_, SessionManager>,
     id: String,
     cols: Option<u16>,
     rows: Option<u16>,
+    open_anyway: Option<bool>,
 ) -> CmdResult<()> {
     let m = state.inner().clone();
+    if open_anyway == Some(true) {
+        return blocking(move || m.resume_anyway(&id, cols, rows)).await;
+    }
     blocking(move || m.resume(&id, cols, rows)).await
 }
 
@@ -590,9 +600,11 @@ pub async fn folder_session_open(
     state: State<'_, SessionManager>,
     section_id: String,
     session_id: String,
+    open_anyway: Option<bool>,
 ) -> CmdResult<SessionInfo> {
     let m = state.inner().clone();
-    blocking(move || m.folder_session_open(&section_id, &session_id)).await
+    let anyway = open_anyway == Some(true);
+    blocking(move || m.folder_session_open_with(&section_id, &session_id, anyway)).await
 }
 
 /// `folder_session_hide {sectionId, sessionId, hidden}`: hide a row from the list; the

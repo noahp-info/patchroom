@@ -62,10 +62,11 @@ From Noah's first hands-on test of P3, 2026-10-14:
 Source of truth: the header of `src-tauri/src/commands.rs`. Tests: `src-tauri/tests/session_parity.rs`.
 
 **Commands**
-- `session_resume {id, cols?, rows?}` and `folder_session_open {sectionId, sessionId}`: re-check `claude agents --json` synchronously (3 s bound) right before the spawn.
+- `session_resume {id, cols?, rows?, openAnyway?}` and `folder_session_open {sectionId, sessionId, openAnyway?}`: re-check `claude agents --json` synchronously right before the spawn.
+  - Speed: `claude` is run directly (path and login-shell env captured once, warmed at app start). An answer under 2 s old from any background refresh is reused. A failed attempt (3 s each) is retried once. Measured warm: about 0.3 s, also under full CPU load.
   - Free: spawn as before.
   - Live elsewhere: spawn nothing. The DM becomes a read-only mirror and the call returns normally.
-  - Check failed or timed out: the call fails (`could not check ...`). No DM row is left behind.
+  - Check failed after the retry: the call fails with a message starting `check_failed:` (`check_failed: could not check ...`). No DM row is left behind. The UI keys on the prefix, asks the user, and may repeat the call with `openAnyway: true`, which skips the check (it can start a second process, so the UI asks first).
 - `session_send_text {id, text} -> {outcome}`:
   - `{outcome: "sent"}`: written, claude was idle.
   - `{outcome: "queued"}`: written, claude is busy.

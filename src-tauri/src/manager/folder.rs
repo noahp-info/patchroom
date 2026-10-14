@@ -183,6 +183,20 @@ impl Manager {
         section_id: &str,
         session_id: &str,
     ) -> Result<SessionInfo> {
+        self.folder_session_open_with(section_id, session_id, false)
+    }
+
+    /// [`Manager::folder_session_open`]; `open_anyway` skips the live check (only after the
+    /// user confirmed a `check_failed` error).
+    ///
+    /// # Errors
+    /// As [`Manager::folder_session_open`].
+    pub fn folder_session_open_with(
+        self: &Arc<Self>,
+        section_id: &str,
+        session_id: &str,
+        open_anyway: bool,
+    ) -> Result<SessionInfo> {
         let section = self.folder_section(section_id)?;
         if !patchroom_folders::discover::is_session_id(session_id) {
             return Err(Error::Invalid("bad session id".into()));
@@ -204,7 +218,12 @@ impl Manager {
             .get(&dm_id)
             .is_some_and(|l| l.pty.exit_info().is_none());
         if !running {
-            if let Err(e) = self.resume(&dm_id, Some(DEFAULT_COLS), Some(DEFAULT_ROWS)) {
+            let go = if open_anyway {
+                self.resume_anyway(&dm_id, Some(DEFAULT_COLS), Some(DEFAULT_ROWS))
+            } else {
+                self.resume(&dm_id, Some(DEFAULT_COLS), Some(DEFAULT_ROWS))
+            };
+            if let Err(e) = go {
                 if created {
                     // A DM that never started should not linger in the sidebar.
                     let _ = self.delete(&dm_id);

@@ -15,6 +15,7 @@ import type {
 } from '../ipc';
 import { isInteractiveSlash, slashName, SLASH_QUIET_MS } from '../lib/slashCommands';
 import { visibleOrder } from '../lib/groups';
+import { isCheckFailed } from '../ipc/types';
 import { bindTerminalStyle } from '../lib/prefsModule';
 import { toMillis } from '../lib/time';
 import { bytesToBase64, utf8ToBase64 } from '../lib/base64';
@@ -51,6 +52,13 @@ export type DropDest =
   | { kind: 'default' }
   | { kind: 'section'; sectionId: string };
 
+/** The open that `check_failed` stopped, kept so "Open anyway" can repeat it. */
+export interface PendingCheck {
+  name: string;
+  reason: string;
+  target: { kind: 'resume'; id: string } | { kind: 'folder'; sectionId: string; sessionId: string };
+}
+
 /** What `folder_sessions` last returned for one folder section. */
 export interface FolderListing {
   sessions: FolderSession[];
@@ -69,6 +77,8 @@ export interface AppState {
   activeId: string | null;
   lastCwd: string;
   error: string | null;
+  /** An open or resume the live check could not clear. The user may open anyway. */
+  checkFailed: PendingCheck | null;
   /** Chat or terminal per DM. A DM opens as chat. */
   views: Record<string, ViewMode>;
   badges: Record<string, Badges>;
@@ -159,6 +169,7 @@ export class AppStore {
     activeId: null,
     lastCwd: readLastCwd(),
     error: null,
+    checkFailed: null,
     views: {},
     badges: {},
     thread: null,
@@ -343,12 +354,12 @@ export class AppStore {
     if (outcome === 'blocked_dialog') {
       chat.setNotice({
         kind: 'blocked',
-        text: 'Claude is showing something in the terminal. Your message was not sent.',
+        text: 'Claude is showing something in the terminal. Your message was not sent. It stays in the box.',
       });
     } else if (outcome === 'mirror_readonly') {
       chat.setNotice({
         kind: 'mirror',
-        text: 'This session is open in another terminal. Your message was not sent.',
+        text: 'This session is open in another terminal. Your message was not sent. It stays in the box.',
       });
     } else if (outcome === 'queued') {
       chat.setNotice({ kind: 'queued', text: 'Queued. Claude reads it after this turn.' }, 4000);
@@ -591,16 +602,44 @@ export class AppStore {
    * Restart an exited DM through the backend's `session_resume`. The DM keeps its id, so the
    * sidebar row, terminal and stored history stay the same. Never creates a second DM.
    */
-  async resume(session: SessionInfo): Promise<void> {
+  async resume(session: SessionInfo, openAnyway = false): Promise<void> {
     try {
       const { cols, rows } = this.terminal(session.id).term;
-      await this.ipc.sessionResume(session.id, cols, rows);
+      const r = await this.ipc.sessionResume(session.id, cols, rows, { openAnyway });
+      if (isCheckFailed(r)) {
+        this.set({
+          checkFailed: {
+            name: session.name,
+            reason: r.reason,
+            target: { kind: 'resume', id: session.id },
+          },
+        });
+        return;
+      }
+      this.set({ checkFailed: null });
       this.patchSession(session.id, { status: 'busy', needs: undefined, exitCode: undefined });
       this.set({ activeId: session.id, error: null });
       await this.refresh();
     } catch (err) {
       this.set({ error: `Could not resume: ${String(err)}` });
     }
+  }
+
+  /** Repeat the stopped open without the live check. The dialog warns about two processes. */
+  async openAnyway(): Promise<void> {
+    const p = this.state.checkFailed;
+    if (!p) return;
+    if (p.target.kind === 'folder') {
+      await this.openFolderSession(p.target.sectionId, p.target.sessionId, true);
+    } else {
+      const s = this.state.sessions.find((x) => x.id === (p.target as { id: string }).id);
+      if (s) await this.resume(s, true);
+      else this.set({ checkFailed: null });
+    }
+  }
+
+  dismissCheckFailed(): void {
+    if (this.state.checkFailed) this.set({ checkFailed: null });
   }
 
   /** Re-read DMs and sections from the backend, which owns names, titles and sections. */
@@ -856,9 +895,21 @@ export class AppStore {
   }
 
   /** Turn a listed session into a normal DM in its section (spawns `claude --resume`). */
-  async openFolderSession(sectionId: string, sessionId: string): Promise<void> {
+  async openFolderSession(sectionId: string, sessionId: string, openAnyway = false): Promise<void> {
     try {
-      const info = await this.ipc.folderSessionOpen(sectionId, sessionId);
+      const info = await this.ipc.folderSessionOpen(sectionId, sessionId, { openAnyway });
+      if (isCheckFailed(info)) {
+        const row = this.state.folders[sectionId]?.sessions.find((s) => s.sessionId === sessionId);
+        this.set({
+          checkFailed: {
+            name: row?.name || 'this session',
+            reason: info.reason,
+            target: { kind: 'folder', sectionId, sessionId },
+          },
+        });
+        return;
+      }
+      this.set({ checkFailed: null });
       const known = this.state.sessions.some((s) => s.id === info.id);
       this.set({
         sessions: known
