@@ -9,17 +9,23 @@
     "build": "tsc -b && vite build",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "test": "playwright test",
+    "test:setup": "tests/tools/setup_pyte.sh",
+    "test:record": "cargo run --release --manifest-path tests/tools/record-fixture/Cargo.toml -- tests/fixtures/claude-haiku.jsonl && node_modules/.pyte-venv/bin/python -I tests/tools/pyte_ref.py tests/fixtures/claude-haiku.jsonl > tests/fixtures/claude-haiku.pyte.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.3",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-unicode11": "^0.9.0",
+    "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.0",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

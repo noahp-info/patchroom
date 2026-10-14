@@ -1,0 +1,12 @@
+# Fixture recorder for the fidelity test. It is its own workspace on purpose: it lives under
+# ui/tests and compiles against the patchroom-pty crate by path, without joining the app workspace.
+[package]
+name = "record-fixture"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+patchroom-pty = { path = "../../../../crates/patchroom-pty" }
+
+[workspace]

@@ -265,12 +265,14 @@ fn send_text_pastes_then_enters_after_delay() {
     let got = h.join().unwrap();
     let bytes: Vec<u8> = got.iter().map(|(b, _)| *b).collect();
     assert_eq!(bytes, b"\x1b[200~hi\x1b[201~\r".to_vec(), "wire bytes");
-    let paste_end = got[13].1;
+    // Measure from the send, not from the paste echo: under load the echo of the
+    // paste can arrive late, which shrinks an echo-to-echo gap without the Enter
+    // having been written early. The Enter echo can never arrive before its write.
     let enter = got[14].1;
     assert!(
-        enter.duration_since(paste_end) >= Duration::from_millis(100),
-        "Enter followed the paste by only {:?}",
-        enter.duration_since(paste_end)
+        enter.duration_since(sent) >= Duration::from_millis(150),
+        "Enter arrived {:?} after the send, want at least the 150ms delay",
+        enter.duration_since(sent)
     );
 }
 

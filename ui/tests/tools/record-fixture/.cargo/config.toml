@@ -1,0 +1,3 @@
+# Keep build output under node_modules so prettier and eslint never scan it.
+[build]
+target-dir = "../../../../node_modules/.cache/record-fixture"

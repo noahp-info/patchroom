@@ -1,65 +1,419 @@
-:root {
-  color-scheme: light dark;
-  --bg: #fafaf9;
-  --fg: #1c1917;
-  --muted: #78716c;
-  --border: #e7e5e4;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141413;
-    --fg: #f5f5f4;
-    --muted: #a8a29e;
-    --border: #2b2a28;
-  }
-}
-
-* {
-  box-sizing: border-box;
-}
-
+/* App-level layout on top of the theme kit. Colors only through theme tokens. */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
 }
-
 body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-size: 13px;
+  background: var(--frame, canvas);
 }
 
-.shell {
+.pr-app.shell {
+  --art-w: 0px;
+  grid-template-columns: var(--side-w) minmax(0, 1fr);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* title strip */
+.tb-title {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.tb-spacer {
+  flex: 1;
+}
+.tb-act:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* sidebar additions */
+.side-empty {
+  margin: 12px 8px;
+  color: var(--side-muted);
+  font-size: 13px;
+}
+.sec-toggle {
+  width: 100%;
+  text-align: left;
+}
+.sec-toggle:hover {
+  color: var(--side-strong);
+}
+.pr-app .side .row {
+  width: 100%;
+  text-align: left;
+}
+.pr-app .side :focus-visible,
+.pr-app .ch :focus-visible,
+.pr-app .btn:focus-visible,
+.pr-app .tb-act:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+.legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+}
+.legend .dot.needs {
+  box-shadow:
+    0 0 0 1.5px var(--side-bg),
+    0 0 0 2.5px var(--needs);
+}
+
+/* conversation header: fixed height so resizing never shifts the layout */
+.pr-app .ch {
+  height: 54px;
+  flex: none;
+}
+/* Header, as in Homeroom: name, chip, meta (folder, status), tools. No breakpoints: the floors
+   below fit the 880px window minimum (sidebar 264 + padding 36 + h2 48 + chip 68 + meta 208
+   + tools ~178 + gaps 40 = 822), so every box only grows as the window widens. The parent
+   path gives way first, then the name and the folder name. Status and tools never shrink. */
+/* Free space splits name : meta as 1 : 2 from zero, so the folder keeps pace with a long
+   name; the name never grows past its own text, so short names leave no gap. */
+.pr-app .ch h2 {
+  flex: 1 1 0;
+  max-width: max-content;
+  min-width: 48px; /* glyph + gap + a couple of letters; short names leave no dead space */
+  overflow: hidden;
+}
+.pr-app .ch h2 svg,
+.pr-app .ch h2 .pg {
+  flex: none;
+}
+.ch__name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 28ch;
+}
+.pr-app .ch .fid {
+  flex: none;
+}
+/* .meta floor = the longest status ("Needs you: permission", 600 weight, 134px measured)
+   + the cwd floor (60) + one 10px gap, rounded up. Pixels: Figtree's ch is wide. */
+.pr-app .ch .meta {
+  flex: 2 1 0;
+  min-width: 208px;
+}
+.ch .meta > .ch__cwd {
+  gap: 0;
+  flex: 0 1 auto;
+  min-width: 60px; /* icon + about 5 letters of the folder name */
+  overflow: hidden;
+}
+.ch__cwd svg.i {
+  flex: none;
+  margin-right: 4px;
+}
+.ch .meta span.ch__cwd-path {
   display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 16px 20px;
+  align-items: baseline;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.ch .meta span.ch__cwd-dir {
+  flex: 0 1000 auto; /* the parent path goes first */
+  min-width: 1.2em; /* room for the ellipsis, so a cut path always shows "…" */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.ch .meta span.ch__cwd-base {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.ch .meta > .ch__status {
+  flex: none;
+}
+.ch__status {
+  font-weight: 600;
+  color: var(--fg);
+}
+.ch__status[data-status='waiting'] {
+  color: var(--err-text);
+}
+.banner {
+  display: flex;
+  align-items: center;
   gap: 12px;
+  padding: 8px var(--gutter);
+  border-bottom: 1px solid var(--err);
+  color: var(--err-text);
+  font-size: 13px;
+}
+.banner span {
+  flex: 1;
+}
+.banner button {
+  text-decoration: underline;
 }
 
-.shell__header h1 {
-  margin: 0;
-  font-size: 1.25rem;
-}
-
-.shell__header p {
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.shell__terminal {
+/* terminal stage: every session stacked, one visible */
+.stage {
+  position: relative;
   flex: 1;
   min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px;
-  background: #000;
+  background: var(--term-bg);
+  overflow: hidden;
+}
+.term {
+  position: absolute;
+  inset: 0;
+  padding: 8px 0 8px 10px;
+  visibility: hidden;
+}
+.term--active {
+  visibility: visible;
+}
+.term__host {
+  width: 100%;
+  height: 100%;
+}
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 8px;
+  padding: 0 var(--gutter);
+  max-width: 44ch;
+  margin: 0 auto;
+  background: var(--bg);
+  color: var(--fg);
+}
+.stage:has(.empty) {
+  background: var(--bg);
+}
+.empty h3 {
+  margin: 0;
+}
+.empty p {
+  margin: 0 0 8px;
+  color: var(--muted);
 }
 
-.terminal {
-  height: 100%;
+/* new DM dialog */
+.newdm {
+  width: min(480px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+.newdm::backdrop {
+  background: rgb(10 14 13 / 0.45); /* fixed dark scrim: a --fg mix lightens it in dark mode */
+}
+.newdm h2 {
+  margin: 0 0 2px;
+}
+.newdm__lede {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+.field {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.field__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.field input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: 13px var(--f-mono);
+}
+.field input:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 0;
+}
+.newdm__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* sidebar sections */
+.sec-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-app .side .row.ended {
+  opacity: 0.6;
+}
+.side-add {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+.side-add input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--side-line, var(--box-line));
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.side-add input:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 0;
+}
+
+/* header section picker */
+.ch .tools .sel {
+  display: block;
+  flex: none;
+}
+.pr-app .ch .tools {
+  flex: none;
+}
+.sel select {
+  height: 28px;
+  max-width: 140px;
+  text-overflow: ellipsis;
+  padding: 0 6px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.sel select:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* theme .sec (sidebar section) leaks margin onto secondary buttons */
+.pr-app .btn.sec,
+.newdm .btn.sec {
+  margin: 0;
+}
+
+/* type scale: two sizes, 13px text and 11px captions. Hierarchy comes from weight and color.
+   The theme sets many in-between sizes; one rule routes every shell element through --fs. */
+.pr-app.shell {
+  --fs: 13px;
+  font-size: 13px;
+}
+.pr-app.shell .fid,
+.pr-app.shell .legend,
+.pr-app.shell .side-foot,
+.pr-app.shell small {
+  --fs: 11px;
+}
+.pr-app.shell *:not(.xterm, .xterm *) {
+  font-size: var(--fs);
+}
+.pr-app.shell h2,
+.pr-app.shell h3,
+.pr-app.shell .ch__name,
+.pr-app.shell strong {
+  font-weight: 700;
+}
+
+/* Terminal chrome: fixed iTerm-style colors that sit on the terminal's own black, the same
+   in every theme. Defined once here, used by the title strip. */
+.pr-app {
+  --term-chrome: #1b1d1e;
+  --term-chrome-line: #2a2d2e;
+  --term-chrome-fg: #b9c0bd;
+}
+/* claude's live title strip, attached to the top of the terminal */
+.termbar {
+  flex: none;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--gutter);
+  background: var(--term-chrome);
+  border-bottom: 1px solid var(--term-chrome-line);
+}
+.termbar__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--term-chrome-fg);
+}
+/* exited/resume state: app chrome under the header, never text in the terminal buffer */
+.exitbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px var(--gutter);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+}
+.exitbar span {
+  flex: 1;
+}
+.exitbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.exitbar :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
 }
