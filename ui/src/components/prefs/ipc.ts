@@ -41,6 +41,7 @@ export interface Prefs {
   dnd: { manual: boolean; schedule: DndSchedule | null };
   termPerDm: Record<string, TermStyle>;
   searchAllSessions: boolean;
+  sidebarWidth: number;
 }
 
 /** One row of `sound_hooks_detect`: a command hook of the user's that plays audio. */
@@ -76,6 +77,7 @@ export const DEFAULT_PREFS: Prefs = {
   dnd: { manual: false, schedule: null },
   termPerDm: {},
   searchAllSessions: false,
+  sidebarWidth: 264,
 };
 
 function isRecord(v: unknown): v is Record<string, unknown> {

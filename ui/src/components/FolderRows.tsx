@@ -8,12 +8,76 @@ import { Icon } from './Icon';
 
 const isMenuKey = (e: KeyboardEvent) => e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
 
-/** Hover card for a listed session: where its name came from and what was said last. */
+/**
+ * The branch to show as a chip, or null. A chip appears only when the session's branch differs
+ * from the branch checked out in the section's folder: a column of identical "dev" chips is noise.
+ * Claude's auto-named worktree branch (`worktree-<folder>`) repeats the worktree glyph, so it
+ * stays in the hover card only.
+ */
+export function branchChip(info: FolderSession): string | null {
+  const { branch, folderBranch } = info;
+  if (!branch || !folderBranch || branch === folderBranch) return null;
+  const leaf = info.relPath.split('/').pop() ?? '';
+  if (info.relPath && branch === `worktree-${leaf}`) return null;
+  return branch;
+}
+
+const under = (path: string, home: string) => {
+  const h = home.replace(/\/+$/, '');
+  return path === h || path.startsWith(`${h}/`);
+};
+
+/** A session in a linked git worktree: outside the section's folder, or under `.claude/worktrees`. */
+export function isWorktree(info: FolderSession, home: string | null | undefined): boolean {
+  if (/(^|\/)worktrees\//.test(info.relPath)) return true;
+  return !!home && !!info.launchCwd && !under(info.launchCwd, home);
+}
+
+/** The small worktree glyph a session row wears in place of a path line. */
+export function WorktreeGlyph({ info }: { info: FolderSession }) {
+  return (
+    <span
+      className="fs-wt"
+      role="img"
+      data-testid="wt-glyph"
+      aria-label={`Worktree: ${info.relPath || info.launchCwd}`}
+    >
+      <Icon name="worktree" />
+    </span>
+  );
+}
+
+/**
+ * The part of a branch name that tells branches apart: `feat/lane-3` is `lane-3`. A bare version
+ * leaf keeps its parent, so `release/2.4` stays whole.
+ */
+export function branchLeaf(branch: string): string {
+  const parts = branch.split('/').filter(Boolean);
+  const leaf = parts[parts.length - 1] ?? branch;
+  if (parts.length > 1 && !/[A-Za-z]{3}/.test(leaf)) return parts.slice(-2).join('/');
+  return leaf;
+}
+
+/**
+ * One quiet chip: the branch, when it differs from the folder's. It never shrinks: the last
+ * segment is what distinguishes branches, so the session name gives way first. The full branch
+ * stays in the title and the hover card.
+ */
+export function BranchChip({ branch }: { branch: string }) {
+  return (
+    <span className="fs-chip" data-chip="branch" title={branch} aria-label={`Branch ${branch}`}>
+      <Icon name="branch" />
+      <span>{branchLeaf(branch)}</span>
+    </span>
+  );
+}
+
+/** Hover card for a listed session: branch, path, where its name came from, what was said last. */
 export function FolderTip({ info, rect, id }: { info: FolderSession; rect: DOMRect; id: string }) {
   const last = (info.lastPrompt || info.firstPrompt).trim();
   const at = toMillis(info.lastActivity);
   const side = rect.right + 10 + 300 < window.innerWidth;
-  const top = Math.min(rect.top, window.innerHeight - 190);
+  const top = Math.min(rect.top, window.innerHeight - 230);
   return createPortal(
     <div
       id={id}
@@ -24,6 +88,12 @@ export function FolderTip({ info, rect, id }: { info: FolderSession; rect: DOMRe
     >
       <strong className="fs-tip__name">{info.name}</strong>
       <span className="fs-tip__src">{NAME_SOURCE_LABEL[info.nameSource] ?? 'Name'}</span>
+      {info.branch && (
+        <span className="fs-tip__branch" data-testid="tip-branch">
+          <Icon name="branch" />
+          <span>{info.branch}</span>
+        </span>
+      )}
       {last && (
         <p className="fs-tip__prompt">
           <span>Last prompt</span>
@@ -44,6 +114,8 @@ export function FolderTip({ info, rect, id }: { info: FolderSession; rect: DOMRe
 
 export interface FolderRowProps {
   info: FolderSession;
+  /** The section's home folder, to tell a linked worktree from a subfolder. */
+  home: string | null | undefined;
   now: number;
   confirming: boolean;
   tipOpen: boolean;
@@ -63,9 +135,7 @@ export function FolderRow(p: FolderRowProps) {
     if (p.confirming) cancelRef.current?.focus();
   }, [p.confirming]);
   const tipId = `fs-tip-${info.sessionId}`;
-  // A worktree's own branch repeats its folder name; show the path chip alone then.
-  const leaf = info.relPath.split('/').pop() ?? '';
-  const redundantBranch = !!info.relPath && info.branch === `worktree-${leaf}`;
+  const branch = branchChip(info);
   return (
     <div className="fs-item" data-fs-item={info.sessionId}>
       <button
@@ -95,46 +165,30 @@ export function FolderRow(p: FolderRowProps) {
         onBlur={() => p.onTip(null, true)}
       >
         <span className="dot idle" role="img" aria-label="Not running" />
-        <span className="fs-main">
-          <span className="fs-l1">
-            <span className="nm" data-testid="fs-name">
-              {info.name}
-            </span>
-            {at > 0 && (
-              <time
-                className="fs-age"
-                dateTime={new Date(at).toISOString()}
-                aria-label={relativeAgeLong(at, p.now)}
-              >
-                {relativeAge(at, p.now)}
-              </time>
-            )}
-          </span>
-          <span className="fs-l2">
-            {info.relPath && (
-              <span className="fs-chip" data-chip="path" title={info.launchCwd}>
-                <Icon name="folder" />
-                <span>{info.relPath}</span>
-              </span>
-            )}
-            {info.branch && !redundantBranch && (
-              <span className="fs-chip" data-chip="branch">
-                <Icon name="branch" />
-                <span>{info.branch}</span>
-              </span>
-            )}
-            {info.liveElsewhere && (
-              <span className="fs-chip fs-chip--live" data-chip="live">
-                Live elsewhere
-              </span>
-            )}
-            {info.hidden && (
-              <span className="fs-chip" data-chip="hidden">
-                Hidden
-              </span>
-            )}
-          </span>
+        <span className="nm" data-testid="fs-name">
+          {info.name}
         </span>
+        {branch && <BranchChip branch={branch} />}
+        {isWorktree(info, p.home) && <WorktreeGlyph info={info} />}
+        {info.liveElsewhere && (
+          <span className="fs-chip fs-chip--live" data-chip="live">
+            Live elsewhere
+          </span>
+        )}
+        {info.hidden && (
+          <span className="fs-chip" data-chip="hidden">
+            Hidden
+          </span>
+        )}
+        {at > 0 && (
+          <time
+            className="fs-age"
+            dateTime={new Date(at).toISOString()}
+            aria-label={relativeAgeLong(at, p.now)}
+          >
+            {relativeAge(at, p.now)}
+          </time>
+        )}
       </button>
       {p.confirming && (
         <div

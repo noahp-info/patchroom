@@ -30,6 +30,24 @@ test('token list has no duplicates and 80+ tokens', () => {
   assert.ok(TOKEN_KEYS.length > 80);
 });
 
+test('sidebar headers are 7:1 on the band and at least 1.5 stronger than a row, in every theme', () => {
+  for (const { theme } of shipped) {
+    for (const mode of ['light', 'dark'] as const) {
+      const t = theme.modes[mode];
+      for (const band of ['side-bg', 'panel'] as const) {
+        const header = contrast(t['side-strong'], t[band]);
+        const row = contrast(t['side-fg'], t[band]);
+        const where = `${theme.id} ${mode} on ${band}`;
+        assert.ok(header >= 7, `${where}: header ${header.toFixed(2)} < 7`);
+        assert.ok(
+          header - row >= 1.5,
+          `${where}: header ${header.toFixed(2)} vs row ${row.toFixed(2)}`,
+        );
+      }
+    }
+  }
+});
+
 test('at least Homeroom, Patch Bay and one more theme ship as plugins', () => {
   const ids = shipped.map((s) => s.theme.id);
   assert.ok(ids.includes('homeroom'));

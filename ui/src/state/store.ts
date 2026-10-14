@@ -462,14 +462,62 @@ export class AppStore {
     this.syncFolders();
   }
 
-  async createSection(name: string): Promise<void> {
+  async createSection(name: string, emoji?: string | null): Promise<void> {
     const trimmed = name.trim();
     if (!trimmed) return;
     try {
-      await this.ipc.sectionCreate(trimmed);
+      await this.ipc.sectionCreate(trimmed, emoji ? { emoji } : undefined);
       await this.refresh();
     } catch (err) {
       this.set({ error: `Could not add the section: ${String(err)}` });
+    }
+  }
+
+  /**
+   * Add a divider: at the end, or directly above `beforeId`. The label is optional (no label is a
+   * plain rule).
+   */
+  async createDivider(label = '', beforeId?: string): Promise<string | null> {
+    try {
+      const { id } = await this.ipc.sectionCreate(label.trim(), { kind: 'divider' });
+      await this.refresh();
+      if (beforeId) {
+        const ids = this.state.sections.map((s) => s.id).filter((x) => x !== id);
+        const at = ids.indexOf(beforeId);
+        if (at >= 0) {
+          ids.splice(at, 0, id);
+          await this.reorderSections(ids);
+        }
+      }
+      return id;
+    } catch (err) {
+      this.set({ error: `Could not add the divider: ${String(err)}` });
+      return null;
+    }
+  }
+
+  /** Set or clear the leading emoji of a section or divider. */
+  async setSectionEmoji(id: string, emoji: string | null): Promise<void> {
+    const prev = this.state.sections;
+    this.set({ sections: prev.map((s) => (s.id === id ? { ...s, emoji } : s)) });
+    try {
+      await this.ipc.sectionSetEmoji(id, emoji);
+    } catch (err) {
+      this.set({ sections: prev, error: `Could not save the emoji: ${String(err)}` });
+    }
+  }
+
+  /** Collapse or expand several stored sections at once (Option+click on a header). */
+  async setSectionsCollapsed(ids: string[], collapsed: boolean): Promise<void> {
+    const prev = this.state.sections;
+    const hit = new Set(ids);
+    const changing = prev.filter((s) => hit.has(s.id) && s.collapsed !== collapsed);
+    if (changing.length === 0) return;
+    this.set({ sections: prev.map((s) => (hit.has(s.id) ? { ...s, collapsed } : s)) });
+    try {
+      await Promise.all(changing.map((s) => this.ipc.sectionSetCollapsed(s.id, collapsed)));
+    } catch (err) {
+      this.set({ sections: prev, error: `Could not save the sections: ${String(err)}` });
     }
   }
 
@@ -505,7 +553,9 @@ export class AppStore {
   async renameSection(id: string, name: string): Promise<void> {
     const trimmed = name.trim();
     const prev = this.state.sections;
-    if (!trimmed || prev.find((s) => s.id === id)?.name === trimmed) return;
+    const cur = prev.find((s) => s.id === id);
+    // A divider may lose its label; a section may not.
+    if ((!trimmed && cur?.kind !== 'divider') || cur?.name === trimmed) return;
     this.set({ sections: prev.map((s) => (s.id === id ? { ...s, name: trimmed } : s)) });
     try {
       await this.ipc.sectionRename(id, trimmed);

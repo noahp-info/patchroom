@@ -48,32 +48,38 @@ test.describe('workspace: folder sections, creation and discovery (checklist 16)
     await expect(page.locator('.side [data-group="plain"] .sec-h svg.i')).toHaveCount(1); // chevron only
   });
 
-  test('lists sessions with relative time, branch or worktree chip and a path chip', async ({
+  test('lists one-line rows: relative time, a branch chip only off the folder branch, a worktree glyph', async ({
     page,
   }) => {
     await openFolder(page);
     const first = rows(page).first();
     await expect(first.locator('.fs-age')).toHaveText(/^\d+m$/);
-    await expect(first.locator('[data-chip="branch"]')).toBeVisible();
-    // A subfolder session shows its relative path.
-    const sub = page.locator('[data-fs-session]', {
-      has: page.locator('[data-chip="path"]', { hasText: /^packages\/api$/ }),
+    // The first session is on the folder's own branch: no chip, no glyph, no path.
+    await expect(first.locator('[data-chip="branch"]')).toHaveCount(0);
+    await expect(first.getByTestId('wt-glyph')).toHaveCount(0);
+    // A session on another branch wears the chip.
+    await expect(
+      page.locator('[data-chip="branch"][title="feat/billing"]', { hasText: /^billing$/ }).first(),
+    ).toBeVisible();
+    // A worktree under .claude/worktrees wears the glyph. Its auto-named branch stays in the card.
+    const wt = page.locator('[data-fs-session]', {
+      has: page.getByLabel('Worktree: .claude/worktrees/fix-login'),
     });
-    await expect(sub.first()).toBeVisible();
-    // A worktree under .claude/worktrees shows that path.
-    await expect(
-      page.locator('[data-chip="path"]', { hasText: '.claude/worktrees/fix-login' }).first(),
-    ).toBeVisible();
-    // A linked worktree outside the folder counts too.
-    await expect(
-      page.locator('[data-chip="path"]', { hasText: '../atlas-release' }).first(),
-    ).toBeVisible();
-    await expect(
-      page.locator('[data-chip="branch"]', { hasText: 'release/2.4' }).first(),
-    ).toBeVisible();
-    // Home folder sessions carry no path chip.
-    const home = rows(page).first();
-    await expect(home.locator('[data-chip="path"]')).toHaveCount(0);
+    await expect(wt.first()).toBeVisible();
+    await expect(wt.first().locator('[data-chip="branch"]')).toHaveCount(0);
+    // A linked worktree outside the folder wears it too, and its own branch is a real difference.
+    const linked = page.locator('[data-fs-session]', {
+      has: page.getByLabel('Worktree: ../atlas-release'),
+    });
+    await expect(linked.first().locator('[data-chip="branch"]')).toHaveText('release/2.4');
+    // A subfolder session is plain: the path lives in the hover card, never on the row.
+    await expect(page.locator('.side [data-chip="path"], .side .fs-l2')).toHaveCount(0);
+    // Every row is one line.
+    const heights = await rows(page).evaluateAll((els) =>
+      els.map((e) => Math.round(e.getBoundingClientRect().height)),
+    );
+    expect(heights.length).toBeGreaterThan(10);
+    expect(Math.max(...heights)).toBeLessThanOrEqual(32);
   });
 
   test('a row is not a process: nothing spawns until it opens', async ({ page }) => {
@@ -94,7 +100,7 @@ test.describe('workspace: folder sections, creation and discovery (checklist 16)
     const errs = watchErrors(page);
     await openFolder(page);
     const target = page.locator('[data-fs-session]', {
-      has: page.locator('[data-chip="path"]', { hasText: '.claude/worktrees/fix-login' }),
+      has: page.getByLabel('Worktree: .claude/worktrees/fix-login'),
     });
     const sid = (await target.first().getAttribute('data-fs-session'))!;
     const name = (await target.first().locator('[data-testid="fs-name"]').textContent())!;
@@ -104,7 +110,7 @@ test.describe('workspace: folder sections, creation and discovery (checklist 16)
     await expect(dm).toHaveCount(1);
     await expect(dm.locator('.nm')).toHaveText(name);
     await expect(dm).toHaveAttribute('aria-current', 'true');
-    await expect(dm.locator('[data-chip="path"]')).toContainText('.claude/worktrees/fix-login');
+    await expect(dm.getByLabel('Worktree: .claude/worktrees/fix-login')).toBeVisible();
     await expect(page.locator('[data-fs-session="' + sid + '"]')).toHaveCount(0);
     await expect(page.getByTestId('chat')).toContainText('Picking up where we left off');
     const opens = await page.evaluate(() => window.__PR_MOCK__!.folderOpens);

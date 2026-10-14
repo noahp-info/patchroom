@@ -2284,66 +2284,47 @@ body.dragging * {
   display: block;
 }
 .pr-app .side .row.fs-row {
-  align-items: flex-start;
-  padding-block: 5px;
-  min-height: 0;
-}
-.pr-app .side .fs-row .dot {
-  margin-top: 4px;
+  padding-block: 4px;
 }
 .pr-app .side .fs-row--hidden {
   opacity: 0.65;
 }
-.pr-app .fs-main {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  gap: 2px;
-}
-.pr-app .fs-l1 {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-.pr-app .side .fs-row .fs-l1 .nm {
-  flex: 1;
-  min-width: 0;
-}
 .pr-app .fs-age {
   --fs: 11px;
   flex: none;
+  margin-left: auto;
   color: var(--side-muted);
   font-variant-numeric: tabular-nums;
 }
-.pr-app .fs-l2 {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  min-width: 0;
+.pr-app .side .row.active .fs-age {
+  color: inherit;
 }
-.pr-app .fs-l2:empty {
-  display: none;
+.pr-app .fs-wt {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--side-muted);
 }
-.pr-app .fs-chips {
-  display: inline-flex;
-  gap: 4px;
-  min-width: 0;
-  flex: 0 1 auto;
+.pr-app .fs-wt svg.i {
+  width: 13px;
+  height: 13px;
+}
+.pr-app .side .row.active .fs-wt {
+  color: inherit;
 }
 .pr-app .fs-chip {
   --fs: 11px;
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 3px;
-  min-width: 0;
-  max-width: 100%;
-  padding: 0 5px;
+  max-width: 112px;
+  white-space: nowrap;
+  padding: 2px 6px;
   border: 1px solid var(--side-line);
   border-radius: var(--r-sm);
   color: var(--side-muted);
-  line-height: 16px;
+  line-height: 14px;
 }
 .pr-app .fs-chip > span {
   min-width: 0;
@@ -2378,8 +2359,10 @@ body.dragging * {
   border-color: currentcolor;
 }
 .pr-app .side .row .nm + .bdg,
-.pr-app .side .row .fs-chips + .bdg,
-.pr-app .side .row .fs-chips + .draft {
+.pr-app .side .row .fs-chip + .bdg,
+.pr-app .side .row .fs-chip + .draft,
+.pr-app .side .row .fs-wt + .bdg,
+.pr-app .side .row .fs-wt + .draft {
   margin-left: auto;
 }
 .pr-app .fs-toggle {
@@ -2470,13 +2453,13 @@ body.dragging * {
   border-radius: var(--r);
   background: var(--surface);
   color: var(--fg);
-  box-shadow: 0 10px 30px -8px rgb(0 0 0 / 0.45);
+  box-shadow: 0 4px 10px -4px rgb(0 0 0 / 0.45);
   pointer-events: none;
 }
 .pr-app .fs-tip__src,
 .pr-app .fs-tip__meta,
 .pr-app .fs-tip__path {
-  --fs: 11px;
+  --fs: 12px;
   color: var(--muted);
 }
 .pr-app .fs-tip__prompt {
@@ -2488,7 +2471,7 @@ body.dragging * {
   overflow-wrap: anywhere;
 }
 .pr-app .fs-tip__prompt span {
-  --fs: 11px;
+  --fs: 12px;
   display: block;
   color: var(--muted);
   font-weight: 600;
@@ -2568,4 +2551,133 @@ body.dragging * {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--r);
+}
+
+/* sidebar organization: dividers, emoji, needs-you rows under a collapsed header */
+.pr-app .sec-emoji {
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
+}
+.pr-app .sec-h--divider {
+  min-height: 20px;
+  padding-block: 2px;
+}
+.pr-app .sec-h--divider .sec-name {
+  flex: 0 1 auto;
+  color: var(--side-fg);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pr-app .sec-rule {
+  flex: 1 1 24px;
+  min-width: 24px;
+  height: 0;
+  border-top: 1px solid var(--side-line);
+}
+.pr-app .sec--divider {
+  margin-top: 10px;
+}
+.pr-app .side-scroll > .sec--divider + .sec {
+  margin-top: 2px;
+  padding-top: 0;
+  border-top: 0;
+}
+.pr-app .sec-peek {
+  display: grid;
+  gap: 1px;
+}
+.pr-app .sec-emoji-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--side-line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--side-fg);
+  font-size: 14px;
+  cursor: pointer;
+}
+.pr-app .sec-emoji-btn:hover {
+  background: var(--side-hover);
+}
+.pr-app .sec-edit .sec-emoji-btn {
+  width: 24px;
+  height: 24px;
+}
+.pr-app .sec-edit {
+  gap: 4px;
+}
+.pr-app .fs-tip__branch {
+  --fs: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--f-mono);
+}
+.pr-app .fs-tip__branch svg.i {
+  flex: none;
+  width: 11px;
+  height: 11px;
+}
+.pr-app .picker__clear {
+  margin: 0 0 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.pr-app .picker__clear:hover {
+  background: var(--hover);
+}
+/* The create row sits on the sidebar band: its button takes the sidebar tokens, not the main pane's. */
+.pr-app .side-add .btn.sec {
+  height: 28px;
+  border-color: var(--side-line);
+  color: var(--side-fg);
+}
+.pr-app .side-add .btn.sec:hover:not(:disabled) {
+  background: var(--side-hover);
+}
+
+/* sidebar resizer: a 6px strip just outside the sidebar's right edge, clear of the cable gutter */
+.pr-app .side {
+  position: relative;
+}
+.pr-app .side-resizer {
+  position: absolute;
+  /* Starts below the conversation header (54px): the Patch Bay cable crosses there to its jack. */
+  top: 54px;
+  bottom: 0;
+  /* Past the 1px border, so the strip starts at the sidebar's outer edge. */
+  right: -7px;
+  width: 6px;
+  z-index: 7;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+.pr-app .side-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: transparent;
+}
+.pr-app .side-resizer:hover::after,
+.pr-app .side-resizer:focus-visible::after,
+.pr-app .side-resizer:active::after {
+  background: var(--link);
+}
+.pr-app .side :focus-visible.side-resizer {
+  outline: none;
 }

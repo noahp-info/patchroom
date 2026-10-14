@@ -5,6 +5,9 @@ export const FIXTURE_HOME = '/Users/me/code/atlas';
 /** A linked git worktree outside the home folder (from `git worktree list`). */
 export const FIXTURE_LINKED = '/Users/me/code/atlas-release';
 
+/** The branch checked out in the fixture's home folder. */
+export const FIXTURE_FOLDER_BRANCH = 'main';
+
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
@@ -105,6 +108,7 @@ export function makeFolderFixture(home: string, count = 68, now = Date.now()): F
       launchCwd: w.cwd,
       relPath: w.rel,
       branch: w.branch,
+      folderBranch: FIXTURE_FOLDER_BRANCH,
       lastActivity: now - age,
       firstPrompt: noise ? '' : PROMPTS[topic],
       lastPrompt: noise ? '' : `Follow-up ${i + 1}: ${PROMPTS[(topic + 5) % PROMPTS.length]}`,

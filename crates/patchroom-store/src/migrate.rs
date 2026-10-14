@@ -27,6 +27,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 4,
         sql: include_str!("../migrations/0004_folder_sections.sql"),
     },
+    Migration {
+        version: 5,
+        sql: include_str!("../migrations/0005_section_kind.sql"),
+    },
 ];
 
 /// Highest schema version this build understands.

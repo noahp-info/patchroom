@@ -2,7 +2,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type FormEvent,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
@@ -11,11 +10,28 @@ import { createPortal } from 'react-dom';
 import type { FolderSession, SectionInfo, SessionInfo, SessionStatus } from '../ipc';
 import { beginDrag } from '../lib/dnd';
 import { DEFAULT_ARCHIVE_DAYS, layoutFolder, type FolderEntry } from '../lib/folder';
-import { ARCHIVED_GROUP, STARRED_GROUP, buildGroups, type Group } from '../lib/groups';
+import {
+  ARCHIVED_GROUP,
+  STARRED_GROUP,
+  buildGroups,
+  dividerOf,
+  isFoldingDivider,
+  type Group,
+} from '../lib/groups';
 import type { AppState, AppStore, DropDest } from '../state/store';
+import { SidebarResizer } from './SidebarResizer';
 import { ContextMenu, Floating, appRoot, type Anchor, type MenuItem } from './Floating';
-import { ArchiveDaysForm, FolderRow, FolderTip } from './FolderRows';
+import {
+  ArchiveDaysForm,
+  BranchChip,
+  FolderRow,
+  FolderTip,
+  WorktreeGlyph,
+  branchChip,
+  isWorktree,
+} from './FolderRows';
 import { ClaudeGlyph, Icon } from './Icon';
+import { AddForm, RenameForm } from './SectionEdit';
 
 /** Presence class from the theme: busy filled, idle hollow, needs ringed. */
 function presence(status: SessionStatus): 'busy' | 'idle' | 'needs' {
@@ -61,14 +77,25 @@ export interface SidebarProps {
   store: AppStore;
   /** Open the New DM dialog; a folder section id starts it in that section's folder. */
   onNewDm(sectionId?: string): void;
+  /** Current sidebar width and its handlers (the shell owns the grid column). */
+  width: number;
+  onResizePreview(w: number): void;
+  onResizeCommit(w: number): void;
 }
 
 const isMenuKey = (e: KeyboardEvent) => e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
 
-export function Sidebar({ state, store, onNewDm }: SidebarProps) {
+export function Sidebar({
+  state,
+  store,
+  onNewDm,
+  width,
+  onResizePreview,
+  onResizeCommit,
+}: SidebarProps) {
   const [collapsedVirtual, setCollapsedVirtual] = useState(readCollapsed);
-  const [adding, setAdding] = useState(false);
-  const [sectionName, setSectionName] = useState('');
+  // The create row under the header: a section, or a divider (label optional).
+  const [adding, setAdding] = useState<'section' | 'divider' | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ kind: 'dm' | 'section'; id: string; label: string } | null>(
@@ -92,6 +119,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     return () => window.clearInterval(t);
   }, []);
   const groups = buildGroups(state.sections, state.sessions);
+  const under = dividerOf(groups);
   const root = useRef<HTMLElement>(null);
   const plusBtn = useRef<HTMLButtonElement>(null);
 
@@ -124,8 +152,9 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
   }
 
   const rowEl = (sessionId: string) =>
-    root.current?.querySelector<HTMLElement>(`[data-fs-session="${CSS.escape(sessionId)}"]`) ??
-    null;
+    root.current?.querySelector<HTMLElement>(
+      `[data-fs-session="${CSS.escape(sessionId)}"], [data-tip-session="${CSS.escape(sessionId)}"]`,
+    ) ?? null;
   const openTipId = tip?.id ?? null;
   // The hover card follows the pointer, never the layout. Scrolling, a press, a drag or a pointer
   // that has left the row all dismiss it, so it cannot sit beside a different row.
@@ -164,7 +193,32 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     else void store.openFolderSession(section.id, info.sessionId);
   }
 
-  const isClosed = (g: Group) => (g.section ? g.section.collapsed : !!collapsedVirtual[g.id]);
+  // A divider with no label is a rule only: it never folds anything.
+  const isClosed = (g: Group) =>
+    g.kind === 'divider'
+      ? isFoldingDivider(g) && !!g.section?.collapsed
+      : g.section
+        ? g.section.collapsed
+        : !!collapsedVirtual[g.id];
+  const toggles = (g: Group) => g.kind !== 'divider' || isFoldingDivider(g);
+
+  /** Option+click or Option+Enter on any header: fold everything, or open everything. */
+  function toggleAll() {
+    const all = groups.filter(toggles);
+    const collapse = all.some((g) => !isClosed(g));
+    void store.setSectionsCollapsed(
+      all.flatMap((g) => (g.section ? [g.section.id] : [])),
+      collapse,
+    );
+    const next = { ...collapsedVirtual };
+    for (const g of all) if (!g.section) next[g.id] = collapse;
+    setCollapsedVirtual(next);
+    try {
+      window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
+    } catch {
+      // The collapsed state is a convenience.
+    }
+  }
   function toggleGroup(g: Group) {
     if (g.section) {
       void store.setSectionCollapsed(g.section.id, !g.section.collapsed);
@@ -179,19 +233,15 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     }
   }
 
-  async function addSection(e: FormEvent) {
-    e.preventDefault();
-    await store.createSection(sectionName);
-    setSectionName('');
-    setAdding(false);
+  async function addEntry(name: string, emoji: string | null) {
+    if (adding === 'divider') await store.createDivider(name);
+    else await store.createSection(name, emoji);
+    setAdding(null);
   }
 
   async function fromFolder() {
     const id = await store.createFolderSection();
-    if (id) {
-      setSectionName('');
-      setAdding(false);
-    }
+    if (id) setAdding(null);
   }
 
   function closeMenu() {
@@ -214,7 +264,8 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
 
   function resolveDrop(y: number, under: Element | null, dmId: string): DropAt | null {
     const el = under?.closest<HTMLElement>('[data-group]');
-    if (!el || !root.current?.contains(el)) return null;
+    // A divider holds no DMs: a drop on it, or on its needs-you rows, goes nowhere.
+    if (!el || !root.current?.contains(el) || el.dataset.kind === 'divider') return null;
     let beforeId: string | null = null;
     for (const r of el.querySelectorAll<HTMLElement>('[data-dm]')) {
       if (r.dataset.dm === dmId) continue;
@@ -255,7 +306,9 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
   }
 
   function resolveSection(y: number, under: Element | null, selfId: string) {
-    const el = under?.closest<HTMLElement>('[data-group][data-kind="section"]');
+    const el = under?.closest<HTMLElement>(
+      '[data-group][data-kind="section"], [data-group][data-kind="divider"]',
+    );
     if (!el || !root.current?.contains(el) || el.dataset.group === selfId) return null;
     const b = el.getBoundingClientRect();
     return { groupId: el.dataset.group ?? '', after: y > b.top + b.height / 2 };
@@ -294,7 +347,8 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     if (m.kind === 'new') {
       return [
         { label: 'New DM', onSelect: () => onNewDm() },
-        { label: 'New section', onSelect: () => setAdding(true) },
+        { label: 'New section', onSelect: () => setAdding('section') },
+        { label: 'New divider', onSelect: () => setAdding('divider') },
         { label: 'New section from folder...', onSelect: () => void fromFolder() },
       ];
     }
@@ -317,6 +371,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     }
     if (m.kind === 'section') {
       const sec = state.sections.find((x) => x.id === m.id);
+      const divider = sec?.kind === 'divider';
       const items: MenuItem[] = [];
       if (sec?.folder) {
         const days = sec.archiveDays ?? DEFAULT_ARCHIVE_DAYS;
@@ -329,8 +384,20 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
         );
       }
       items.push(
-        { label: 'Rename section', separator: items.length > 0, onSelect: () => setRenaming(m.id) },
-        { label: 'Delete section', danger: true, onSelect: () => void store.deleteSection(m.id) },
+        {
+          label: divider ? 'Rename divider' : 'Rename section',
+          separator: items.length > 0,
+          onSelect: () => setRenaming(m.id),
+        },
+        {
+          label: 'New divider',
+          onSelect: () => void store.createDivider('', m.id),
+        },
+        {
+          label: divider ? 'Delete divider' : 'Delete section',
+          danger: true,
+          onSelect: () => void store.deleteSection(m.id),
+        },
       );
       return items;
     }
@@ -355,7 +422,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
       });
     }
     state.sections
-      .filter((x) => x.id !== here)
+      .filter((x) => x.id !== here && x.kind !== 'divider')
       .forEach((x, i) =>
         items.push({
           label: `Move to ${x.name}`,
@@ -396,6 +463,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
       <FolderRow
         key={e.info.sessionId}
         info={e.info}
+        home={section.folder}
         now={now}
         confirming={confirmId === e.info.sessionId}
         tipOpen={tip?.id === e.info.sessionId}
@@ -486,7 +554,9 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     const needs = needsOf(s);
     const unread = unreadOf(s);
     const sub = PLAIN_TITLES.has(s.title) ? '' : s.title;
-    const chips = (info?.relPath ? 1 : 0) + (s.folderChip ? 1 : 0) > 0;
+    const home = g.section?.folder ?? state.sections.find((x) => x.id === s.sectionId)?.folder;
+    const branch = info ? branchChip(info) : null;
+    const wt = !!info && isWorktree(info, home);
     const before = drop?.beforeId === s.id && drop.groupId === g.id;
     return (
       <button
@@ -496,6 +566,9 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
           needs > 0 || unread > 0 ? ' unread' : ''
         }${s.status === 'exited' ? ' ended' : ''}${drag?.id === s.id ? ' dragging' : ''}${before ? ' drop-before' : ''}`}
         aria-current={s.id === state.activeId ? 'true' : undefined}
+        aria-describedby={
+          info && tip?.id === info.sessionId ? `fs-tip-${info.sessionId}` : undefined
+        }
         onClick={() => store.openDm(s.id)}
         onPointerDown={(e) => dragDm(e, s)}
         onContextMenu={(e) => {
@@ -511,7 +584,23 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
             id: s.id,
           });
         }}
-        title={`${s.name}: ${PRESENCE_LABEL[s.status]}${sub ? `. ${sub}` : ''}`}
+        // A DM that has a transcript entry shows the hover card (branch, path, last prompt).
+        // Any other keeps the plain title.
+        title={info ? undefined : `${s.name}: ${PRESENCE_LABEL[s.status]}${sub ? `. ${sub}` : ''}`}
+        data-tip-session={info?.sessionId}
+        onPointerEnter={
+          info ? (e) => showTip(info, e.currentTarget.getBoundingClientRect(), false) : undefined
+        }
+        onPointerLeave={info ? () => showTip(info, null, true) : undefined}
+        onFocus={
+          info
+            ? (e) => {
+                if (e.currentTarget.matches(':focus-visible'))
+                  showTip(info, e.currentTarget.getBoundingClientRect(), true);
+              }
+            : undefined
+        }
+        onBlur={info ? () => showTip(info, null, true) : undefined}
         data-dm={s.id}
         data-status={s.status}
         data-unread={unread}
@@ -529,24 +618,16 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
         />
         <ClaudeGlyph />
         <span className="nm">{s.name}</span>
-        {chips && (
-          <span className="fs-chips">
-            {info?.relPath && (
-              <span className="fs-chip" data-chip="path" title={info.launchCwd}>
-                <Icon name="folder" />
-                <span>{info.relPath}</span>
-              </span>
-            )}
-            {s.folderChip && (
-              <span
-                className="fs-chip fs-chip--away"
-                data-testid="folder-chip"
-                title={`Runs in ${s.cwd}, outside this section's folder`}
-              >
-                <Icon name="folder" />
-                <span>{s.folderChip}</span>
-              </span>
-            )}
+        {branch && <BranchChip branch={branch} />}
+        {info && wt && <WorktreeGlyph info={info} />}
+        {s.folderChip && (
+          <span
+            className="fs-chip fs-chip--away"
+            data-testid="folder-chip"
+            title={`Runs in ${s.cwd}, outside this section's folder`}
+          >
+            <Icon name="folder" />
+            <span>{s.folderChip}</span>
           </span>
         )}
         {sub && (
@@ -573,6 +654,28 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     );
   }
 
+  /** The folder-session entry of an open DM, when its group is a folder section. */
+  const infoOf = (g: Group, s: SessionInfo) =>
+    g.section?.folder
+      ? (state.folders[g.section.id]?.sessions.find((f) => f.dmId === s.id) ?? null)
+      : null;
+
+  /**
+   * What a collapsed section or divider group still shows: every DM in it that needs you, as a
+   * row under the header. Collapsing never hides what is waiting on the user.
+   */
+  function peekRows(groups: Group[]) {
+    const rows = groups.flatMap((h) =>
+      h.items.filter((s) => needsOf(s) > 0).map((s) => ({ s, h })),
+    );
+    if (rows.length === 0) return null;
+    return (
+      <div className="sec-peek" data-testid="needs-peek">
+        {rows.map(({ s, h }) => dmRow(s, h, infoOf(h, s)))}
+      </div>
+    );
+  }
+
   const activityCount = state.activity.length;
   const savedCount = state.marks.filter((m) => m.kind === 'saved').length;
 
@@ -591,7 +694,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
           ref={plusBtn}
           className="ws-new"
           aria-label="Create new"
-          title="New DM or section"
+          title="New DM, section or divider"
           aria-haspopup="menu"
           aria-expanded={menu?.kind === 'new'}
           data-testid="new-menu"
@@ -621,19 +724,11 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
         </button>
       </div>
       {adding && (
-        <form className="side-add" onSubmit={(e) => void addSection(e)}>
-          <input
-            value={sectionName}
-            onChange={(e) => setSectionName(e.target.value)}
-            placeholder="Section name"
-            aria-label="Section name"
-            autoFocus
-            onKeyDown={(e) => e.key === 'Escape' && setAdding(false)}
-          />
-          <button type="submit" className="btn sec" disabled={sectionName.trim() === ''}>
-            Add
-          </button>
-        </form>
+        <AddForm
+          mode={adding}
+          onSubmit={(n, e) => void addEntry(n, e)}
+          onCancel={() => setAdding(null)}
+        />
       )}
       <div className="navs" role="group" aria-label="Views">
         <button
@@ -674,54 +769,59 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
           <kbd className="ct">{'⌘⇧F'}</kbd>
         </button>
       </div>
-      <nav className="side-scroll">
+      <nav className="side-scroll" aria-label="Sections">
         {state.sessions.length === 0 && state.ready && <p className="side-empty">No DMs yet.</p>}
         {groups.map((g) => {
+          const parent = under.get(g.id) ?? null;
+          // A group under a folded divider shows nothing of its own: the divider carries its
+          // needs-you rows.
+          if (parent && isClosed(parent)) return null;
           const closed = isClosed(g);
-          const needing = g.items.filter((s) => needsOf(s) > 0).length;
-          const unreadTotal = g.items.reduce((n, s) => n + unreadOf(s), 0);
+          const isDivider = g.kind === 'divider';
+          // A folded divider answers for every group below it, up to the next divider.
+          const covered = isDivider && closed ? groups.filter((h) => under.get(h.id) === g) : [g];
+          const pool = covered.flatMap((h) => h.items);
+          const needing = pool.filter((s) => needsOf(s) > 0).length;
+          const unreadTotal = pool.reduce((n, s) => n + unreadOf(s), 0);
           const target = drop?.groupId === g.id;
           const editing = renaming === g.id && g.section;
           const secMark =
             secDrop?.groupId === g.id ? (secDrop.after ? ' drop-after' : ' drop-before') : '';
           return (
             <div
-              className={`sec${target ? ' drop' : ''}${secMark}${drag?.id === g.id ? ' dragging' : ''}`}
+              className={`sec${isDivider ? ' sec--divider' : ''}${target ? ' drop' : ''}${secMark}${drag?.id === g.id ? ' dragging' : ''}`}
               key={g.id}
               data-section={g.id}
               data-group={g.id}
               data-kind={g.kind}
+              data-collapsed={toggles(g) ? String(closed) : undefined}
             >
-              {editing ? (
-                <form
-                  className="sec-h sec-edit"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const v = new FormData(e.currentTarget).get('name');
+              {editing && g.section ? (
+                <RenameForm
+                  name={g.title}
+                  emoji={g.section.emoji ?? null}
+                  divider={isDivider}
+                  onCommit={(name) => {
                     setRenaming(null);
-                    void store.renameSection(g.id, String(v ?? ''));
+                    void store.renameSection(g.id, name);
                   }}
-                >
-                  <input
-                    name="name"
-                    defaultValue={g.title}
-                    aria-label="Section name"
-                    autoFocus
-                    onFocus={(e) => e.currentTarget.select()}
-                    onKeyDown={(e) => e.key === 'Escape' && setRenaming(null)}
-                    onBlur={(e) => {
-                      setRenaming(null);
-                      void store.renameSection(g.id, e.currentTarget.value);
-                    }}
-                  />
-                </form>
+                  onEmoji={(e) => void store.setSectionEmoji(g.id, e)}
+                  onCancel={() => setRenaming(null)}
+                />
               ) : (
                 <button
                   type="button"
-                  className="sec-h sec-toggle"
-                  aria-expanded={!closed}
+                  className={`sec-h sec-toggle${isDivider ? ' sec-h--divider' : ''}`}
+                  aria-expanded={toggles(g) ? !closed : undefined}
+                  aria-label={isDivider && !isFoldingDivider(g) ? 'Divider, no label' : undefined}
                   title={g.section?.folder ?? undefined}
-                  onClick={() => toggleGroup(g)}
+                  data-testid={isDivider ? 'divider-h' : 'section-h'}
+                  onClick={(e) => {
+                    if (e.altKey) return toggleAll();
+                    if (toggles(g)) return toggleGroup(g);
+                    // An unlabeled divider is a rule: activating it offers a label.
+                    setRenaming(g.id);
+                  }}
                   onPointerDown={(e) => dragSection(e, g)}
                   onDoubleClick={() => g.section && setRenaming(g.id)}
                   onContextMenu={(e) => {
@@ -730,6 +830,12 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
                     setMenu({ anchor: { x: e.clientX, y: e.clientY }, kind: 'section', id: g.id });
                   }}
                   onKeyDown={(e) => {
+                    // Option+Enter or Option+Space: the keyboard form of Option+click.
+                    if (e.altKey && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault();
+                      toggleAll();
+                      return;
+                    }
                     if (g.section && isMenuKey(e)) {
                       e.preventDefault();
                       setMenu({
@@ -740,11 +846,22 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
                     }
                   }}
                 >
-                  <Icon name={closed ? 'right' : 'down'} />
-                  {g.kind === 'starred' && <Icon name="star" />}
-                  {g.kind === 'archived' && <Icon name="archive" />}
-                  {g.section?.folder && <Icon name="folder" />}
-                  <span className="sec-name">{g.title}</span>
+                  {toggles(g) && <Icon name={closed ? 'right' : 'down'} />}
+                  {g.section?.emoji ? (
+                    <span className="sec-emoji" data-testid="sec-emoji" aria-hidden="true">
+                      {g.section.emoji}
+                    </span>
+                  ) : (
+                    <>
+                      {g.kind === 'starred' && <Icon name="star" />}
+                      {g.kind === 'archived' && <Icon name="archive" />}
+                      {g.section?.folder && <Icon name="folder" />}
+                    </>
+                  )}
+                  {(!isDivider || g.title.trim() !== '') && (
+                    <span className="sec-name">{g.title}</span>
+                  )}
+                  {isDivider && <span className="sec-rule" aria-hidden="true" />}
                   {closed && unreadTotal > 0 && (
                     <span className="bdg unr" aria-label={`${unreadTotal} unread`}>
                       {unreadTotal}
@@ -760,6 +877,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
               {!closed && g.id === STARRED_GROUP && g.items.length === 0 && (
                 <p className="sec-hint">Star a DM from its right-click menu to keep it here.</p>
               )}
+              {closed && peekRows(covered)}
               {!closed &&
                 g.section?.folder &&
                 folderBody(g.section, g.items, (s, info) => dmRow(s, g, info))}
@@ -784,6 +902,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
           </span>
         </span>
       </div>
+      <SidebarResizer width={width} onPreview={onResizePreview} onCommit={onResizeCommit} />
       {menu && (
         <ContextMenu
           anchor={menu.anchor}

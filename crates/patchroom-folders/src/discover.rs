@@ -56,6 +56,10 @@ pub struct FolderSession {
     /// Newest git branch seen.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+    /// The branch currently checked out in the section's home folder (read only). The UI
+    /// shows a branch chip only when `branch` differs from it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder_branch: Option<String>,
     /// Newest transcript timestamp, epoch milliseconds.
     pub last_activity: i64,
     /// First real user prompt.
@@ -177,6 +181,7 @@ impl Discovery {
     #[must_use]
     pub fn list(&self, q: &Query<'_>) -> Listing {
         let roots = self.roots(q.home);
+        let folder_branch = worktrees::current_branch(Path::new(q.home));
         let registry = q
             .registry_path
             .map(|p| self.registry.names(p))
@@ -214,6 +219,7 @@ impl Discovery {
                     launch_cwd: display_cwd,
                     rel_path: rel,
                     branch: scan.branch.clone(),
+                    folder_branch: folder_branch.clone(),
                     last_activity: scan.last_ts_ms.unwrap_or(scan.mtime_ms),
                     first_prompt: scan.first_prompt.clone(),
                     last_prompt: scan.last_prompt.clone(),

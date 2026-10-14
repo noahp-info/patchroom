@@ -32,7 +32,7 @@
 [data-base='homeroom'] .chip {
   border-radius: 14px;
 }
-[data-base='homeroom'] .row .bdg.unr {
+[data-base='homeroom'] :is(.row, .sec-h) .bdg.unr {
   background: color-mix(in srgb, var(--side-strong) 15%, transparent);
   color: var(--side-strong);
 }
