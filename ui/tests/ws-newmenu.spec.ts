@@ -240,7 +240,26 @@ test.describe('workspace: the folder hover card follows the pointer', () => {
     await page.mouse.up();
     await page.mouse.wheel(0, 300);
     await page.waitForTimeout(400);
-    await expect(page.getByTestId('folder-tip')).toHaveCount(0);
+    // After the scroll, the browser may hover whichever row now sits under the pointer. A card
+    // for that row is right; a card beside any other row is the bug.
+    const pointer = { x: a.x + 60, y: a.y + a.height / 2 + 30 };
+    const seen = await page.evaluate(({ x, y }) => {
+      const tip = document.querySelector<HTMLElement>('[data-testid="folder-tip"]');
+      if (!tip) return null;
+      const row = document.elementFromPoint(x, y)?.closest<HTMLElement>('.fs-row');
+      const name = tip.querySelector('.fs-tip__name')?.textContent ?? '';
+      const t = tip.getBoundingClientRect();
+      const r = row?.getBoundingClientRect();
+      return {
+        rowName: row?.querySelector('[data-testid="fs-name"]')?.textContent ?? null,
+        name,
+        overlaps: !!r && t.top <= r.bottom && t.bottom >= r.top,
+      };
+    }, pointer);
+    if (seen) {
+      expect(seen.rowName).toBe(seen.name);
+      expect(seen.overlaps).toBe(true);
+    }
   });
 
   test('leaving the sidebar clears it, and keyboard focus still shows it', async ({ page }) => {

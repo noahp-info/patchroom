@@ -102,9 +102,12 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
   const unreadOf = (s: SessionInfo) =>
     s.archived || s.id === state.activeId ? 0 : (state.badges[s.id]?.unread ?? 0);
 
+  // Set for the length of a DM or section drag. No hover card may open while it is true.
+  const dragging = useRef(false);
+
   function showTip(info: FolderSession, rect: DOMRect | null, immediate: boolean) {
     window.clearTimeout(tipTimer.current);
-    if (!rect) {
+    if (!rect || dragging.current) {
       setTip(null);
       return;
     }
@@ -112,6 +115,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
       // Read the row again: it may have scrolled or been dragged away during the delay. A card
       // only shows for the row the pointer is on, or the one holding keyboard focus.
       const el = rowEl(info.sessionId);
+      if (dragging.current) return;
       if (!el || !(el.matches(':hover') || el.matches(':focus-visible'))) return;
       setTip({ id: info.sessionId, info, rect: el.getBoundingClientRect() });
     };
@@ -228,6 +232,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
       onStart: () => {
         window.clearTimeout(tipTimer.current);
         setTip(null);
+        dragging.current = true;
         setDrag({ kind: 'dm', id: s.id, label: s.name });
       },
       onMove: (x, y, under) => {
@@ -235,6 +240,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
         setDrop(resolveDrop(y, under, s.id));
       },
       onEnd: (_x, y, under, committed) => {
+        dragging.current = false;
         setDrag(null);
         setDrop(null);
         const at = committed ? resolveDrop(y, under, s.id) : null;
@@ -261,6 +267,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
       onStart: () => {
         window.clearTimeout(tipTimer.current);
         setTip(null);
+        dragging.current = true;
         setDrag({ kind: 'section', id: g.id, label: g.title });
       },
       onMove: (x, y, under) => {
@@ -268,6 +275,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
         setSecDrop(resolveSection(y, under, g.id));
       },
       onEnd: (_x, y, under, committed) => {
+        dragging.current = false;
         setDrag(null);
         setSecDrop(null);
         const at = committed ? resolveSection(y, under, g.id) : null;
