@@ -86,7 +86,9 @@ test.describe('virtualized log', () => {
           requestAnimationFrame(step);
         }),
     );
-    expect(frames.length).toBeGreaterThan(60);
+    // At full speed, 3 s of scrolling is well over 60 frames. A throttled CPU also slows the frame
+    // clock, which is not app work, so there the count only proves the scroll ran.
+    expect(frames.length).toBeGreaterThan(cpuRate === 1 ? 60 : 20);
     const sorted = [...frames].sort((a, b) => a - b);
     const p95 = sorted[Math.floor(sorted.length * 0.95)];
     const slow = frames.filter((d) => d > 50).length / frames.length;
