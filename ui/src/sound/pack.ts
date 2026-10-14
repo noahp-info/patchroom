@@ -16,7 +16,7 @@ interface Note {
 
 /**
  * The Patchroom sound pack. Every sound is synthesized here from oscillators, so there is no
- * audio asset and nothing to license beyond this code (MIT, see LICENSE in this folder).
+ * audio asset and nothing to license beyond this code (Apache-2.0, see LICENSE in this folder).
  */
 export const PACK: Record<SoundEvent, { name: string; blurb: string; notes: Note[] }> = {
   needs: {

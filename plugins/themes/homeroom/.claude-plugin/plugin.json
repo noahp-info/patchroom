@@ -5,7 +5,7 @@
   "author": {
     "name": "Patchroom"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["patchroom", "theme"],
   "patchroom": {
     "kind": "data",

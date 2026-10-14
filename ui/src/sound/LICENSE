@@ -1,5 +1,5 @@
-MIT License
+Apache License 2.0
 
 The Patchroom sound pack (pack.ts) is synthesized at run time from Web Audio oscillators.
 It contains no recorded or third-party audio. The note tables and envelopes in pack.ts are
-released under the MIT license of this repository.
+released under the Apache-2.0 license of this repository (see LICENSE at the repository root).

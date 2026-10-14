@@ -5,7 +5,7 @@
   "name": "Cool Paper",
   "description": "Cool grey paper with copy-editor blue and red pencil.",
   "author": "Patchroom",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "modes": {
     "light": {
       "bg": "#f6f7f4",
