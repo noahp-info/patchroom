@@ -9,7 +9,7 @@ import {
 } from 'react';
 import type { Row } from '../../lib/rows';
 import { Icon } from '../Icon';
-import { RowView, type RowActions } from './RowView';
+import { RowView, type Decor, type RowActions } from './RowView';
 
 const OVERSCAN = 500;
 const NEAR_BOTTOM = 24;
@@ -83,6 +83,14 @@ export interface ChatLogProps {
   empty?: ReactNode;
   /** Pending prompts below the viewport, for the jump pill. */
   waiting?: number;
+  /** Marks and highlights by row key. */
+  decor?: Record<string, Decor>;
+  /** Scroll to this row once, then call `onFocusDone` with the nonce. */
+  focus?: { key: string; nonce: number } | null;
+  onFocusDone?(nonce: number): void;
+  /** The window shows an old page: the pill says so and `onJumpLatest` reloads the newest. */
+  detached?: boolean;
+  onJumpLatest?(): Promise<void> | void;
 }
 
 function lowerBound(offs: Float64Array, n: number, target: number): number {
@@ -357,10 +365,48 @@ export function ChatLog(props: ChatLogProps) {
     setPendingShown((prev) => (prev === shown ? prev : shown));
   });
 
+  // A scroll request (search hit, Activity row): put the row a third of the way down the view.
+  // Rows are measured as they render, so the position is corrected over a few frames.
+  const focusDone = useRef(0);
+  const focusRaf = useRef(0);
+  const { focus, onFocusDone } = props;
+  useEffect(() => {
+    const el = scroller.current;
+    if (!focus || !el || focusDone.current === focus.nonce) return;
+    const idx = rows.findIndex((r) => r.key === focus.key);
+    if (idx < 0) return;
+    focusDone.current = focus.nonce;
+    stick.current = false;
+    el.scrollTop = Math.max(0, offsRef.current[idx] - el.clientHeight / 3);
+    let frames = 0;
+    const settle = () => {
+      const node = Array.from(el.querySelectorAll<HTMLElement>('.vrow')).find(
+        (n) => n.dataset.rk === focus.key,
+      );
+      if (node) {
+        const want = el.getBoundingClientRect().top + el.clientHeight / 3;
+        const delta = node.getBoundingClientRect().top - want;
+        if (Math.abs(delta) > 2) el.scrollTop += delta;
+      }
+      if (++frames < 14) focusRaf.current = requestAnimationFrame(settle);
+      else onFocusDone?.(focus.nonce);
+    };
+    focusRaf.current = requestAnimationFrame(settle);
+  }, [focus, rows, onFocusDone]);
+  useEffect(() => () => cancelAnimationFrame(focusRaf.current), []);
+
   const jump = () => {
     const el = scroller.current;
     if (!el) return;
     stick.current = true;
+    if (props.onJumpLatest) {
+      void Promise.resolve(props.onJumpLatest()).then(() => {
+        stick.current = true;
+        el.scrollTop = el.scrollHeight;
+        sync();
+      });
+      return;
+    }
     el.scrollTop = el.scrollHeight;
     sync();
   };
@@ -375,7 +421,12 @@ export function ChatLog(props: ChatLogProps) {
         className={`vrow${head ? ' head' : ''}${row.type === 'day' ? ' dayrow' : ''}`}
         data-rk={row.key}
       >
-        <RowView row={row} expanded={expanded.has(row.key)} actions={actions} />
+        <RowView
+          row={row}
+          expanded={expanded.has(row.key)}
+          actions={actions}
+          decor={props.decor?.[row.key]}
+        />
       </div>,
     );
   }
@@ -408,19 +459,25 @@ export function ChatLog(props: ChatLogProps) {
         )}
         {rows.length === 0 && props.empty}
       </div>
-      {!atBottom && rows.length > 0 && !(waitingCount > 0 && pendingShown) && (
-        <div className="jumpbar">
-          <button
-            type="button"
-            className={`jump${props.waiting ? ' needs' : ''}`}
-            onClick={jump}
-            data-testid="jump-latest"
-          >
-            <Icon name="down2" />
-            {props.waiting ? 'Needs you below' : 'Jump to latest'}
-          </button>
-        </div>
-      )}
+      {(!atBottom || props.detached) &&
+        rows.length > 0 &&
+        !(waitingCount > 0 && pendingShown && !props.detached) && (
+          <div className="jumpbar">
+            <button
+              type="button"
+              className={`jump${props.waiting ? ' needs' : ''}`}
+              onClick={jump}
+              data-testid="jump-latest"
+            >
+              <Icon name="down2" />
+              {props.detached
+                ? 'Back to latest messages'
+                : props.waiting
+                  ? 'Needs you below'
+                  : 'Jump to latest'}
+            </button>
+          </div>
+        )}
     </div>
   );
 }

@@ -55,7 +55,13 @@ impl Store {
 
     /// Set the unread count to zero. Leaves `needs_you` alone.
     pub fn clear_unread(&self, author: &Author, conversation_id: Id) -> Result<Badges> {
-        self.upsert_badge(author, conversation_id, "unread = 0", 0, 0)
+        self.upsert_badge(
+            author,
+            conversation_id,
+            "unread = 0, unread_since = NULL, unread_key = NULL, unread_summary = NULL",
+            0,
+            0,
+        )
     }
 
     /// Set or clear the needs-you flag. Leaves `unread` alone.
@@ -65,13 +71,21 @@ impl Store {
         conversation_id: Id,
         needs_you: bool,
     ) -> Result<Badges> {
-        self.upsert_badge(
+        let b = self.upsert_badge(
             author,
             conversation_id,
-            "needs_you = ?6",
+            "needs_you = ?6, needs_since = CASE WHEN ?6 = 1 THEN COALESCE(needs_since, ?3) ELSE NULL END",
             0,
             i64::from(needs_you),
-        )
+        )?;
+        if needs_you {
+            self.conn.execute(
+                "UPDATE conversation_badge SET needs_since = COALESCE(needs_since, ?2)
+                 WHERE conversation_id = ?1",
+                params![conversation_id.to_string(), now()],
+            )?;
+        }
+        Ok(b)
     }
 
     fn upsert_badge(

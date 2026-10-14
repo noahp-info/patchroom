@@ -13,7 +13,7 @@ const SEC_COLS: &str =
     "id, author, created_at, updated_at, workspace_id, name, position, collapsed";
 const CONV_COLS: &str = "id, author, created_at, updated_at, workspace_id, section_id, position, \
                          kind, name, provider, cwd, worktree, session_id, adapter_state, \
-                         assign_mode, lead_id";
+                         assign_mode, lead_id, starred, archived";
 const MEM_COLS: &str = "id, author, created_at, updated_at, channel_id, dm_id";
 
 fn ws_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
@@ -57,6 +57,8 @@ fn conv_row(r: &Row<'_>) -> rusqlite::Result<Conversation> {
         adapter_state: r.get(13)?,
         assign_mode: col_opt_parse(r, 14)?,
         lead_id: col_opt_id(r, 15)?,
+        starred: r.get(16)?,
+        archived: r.get(17)?,
     })
 }
 

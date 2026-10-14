@@ -1,0 +1,150 @@
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
+
+export type Anchor = { x: number; y: number } | DOMRect;
+
+export interface FloatingProps {
+  /** A pointer position, or the rect of the control it opens from. */
+  anchor: Anchor;
+  onClose(): void;
+  children: ReactNode;
+  className?: string;
+  label: string;
+  role?: string;
+}
+
+const isRect = (a: Anchor): a is DOMRect => 'width' in a;
+
+/** The themed root, so portaled UI keeps the theme variables. */
+export function appRoot(): HTMLElement {
+  return document.querySelector<HTMLElement>('.pr-app') ?? document.body;
+}
+
+/** A fixed-position surface that stays inside the window and closes on Esc or an outside press. */
+export function Floating({ anchor, onClose, children, className, label, role }: FloatingProps) {
+  const box = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  });
+
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = isRect(anchor) ? anchor.left : anchor.x;
+    let top = isRect(anchor) ? anchor.bottom + 4 : anchor.y;
+    if (isRect(anchor) && top + h > vh - 8) top = anchor.top - h - 4;
+    if (left + w > vw - 8) left = vw - w - 8;
+    if (top + h > vh - 8) top = vh - h - 8;
+    setPos({ left: Math.max(8, left), top: Math.max(8, top) });
+  }, [anchor]);
+
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      if (!box.current?.contains(e.target as Node)) close.current();
+    };
+    const key = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        e.preventDefault();
+        close.current();
+      }
+    };
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('keydown', key, true);
+    return () => {
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('keydown', key, true);
+    };
+  }, []);
+
+  return createPortal(
+    <div
+      ref={box}
+      className={`floating ${className ?? ''}`}
+      role={role ?? 'dialog'}
+      aria-label={label}
+      style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden' }}
+    >
+      {children}
+    </div>,
+    appRoot(),
+  );
+}
+
+export interface MenuItem {
+  label: string;
+  onSelect(): void;
+  danger?: boolean;
+  disabled?: boolean;
+  /** Draw a divider above this item. */
+  separator?: boolean;
+}
+
+/** Right-click menu with arrow-key navigation. */
+export function ContextMenu({
+  anchor,
+  items,
+  label,
+  onClose,
+}: {
+  anchor: Anchor;
+  items: MenuItem[];
+  label: string;
+  onClose(): void;
+}) {
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+  }, []);
+
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
+    e.preventDefault();
+    const btns = [
+      ...(list.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []),
+    ];
+    const at = btns.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      e.key === 'Home'
+        ? 0
+        : e.key === 'End'
+          ? btns.length - 1
+          : (at + (e.key === 'ArrowDown' ? 1 : -1) + btns.length) % btns.length;
+    btns[next]?.focus();
+  };
+
+  return (
+    <Floating anchor={anchor} onClose={onClose} label={label} role="menu" className="ctxmenu">
+      <div ref={list} onKeyDown={onKey}>
+        {items.map((it) => (
+          <button
+            key={it.label}
+            type="button"
+            role="menuitem"
+            className={`ctxmenu__item${it.danger ? ' danger' : ''}${it.separator ? ' sep' : ''}`}
+            disabled={it.disabled}
+            onClick={() => {
+              onClose();
+              it.onSelect();
+            }}
+          >
+            {it.label}
+          </button>
+        ))}
+      </div>
+    </Floating>
+  );
+}

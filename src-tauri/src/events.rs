@@ -96,6 +96,30 @@ pub enum UiEvent {
         /// A prompt waits on the user.
         needs_you: bool,
     },
+    /// `notify:fire {id, event, title, body}`: the backend decided this event notifies and
+    /// posted the native notification. The UI plays the sound.
+    NotifyFire {
+        /// Session id (empty for the test notification).
+        id: String,
+        /// `needs`, `done`, `message`, `error` or `bell`.
+        event: &'static str,
+        /// Notification title (the DM name).
+        title: String,
+        /// Notification body.
+        body: String,
+    },
+    /// `notify:open {id}`: the user clicked a native notification; show this DM.
+    NotifyOpen {
+        /// Session id.
+        id: String,
+    },
+    /// `prefs:changed {prefs}`.
+    PrefsChanged {
+        /// The full prefs as JSON.
+        prefs: Value,
+    },
+    /// `activity:changed {}`: re-read `activity_list`.
+    ActivityChanged,
     /// `statusline:update {id, text, chips}`.
     Statusline {
         /// Session id.
@@ -120,6 +144,10 @@ impl UiEvent {
             UiEvent::PromptPending { .. } => "prompt:pending",
             UiEvent::PromptResolved { .. } => "prompt:resolved",
             UiEvent::Badges { .. } => "session:badges",
+            UiEvent::NotifyFire { .. } => "notify:fire",
+            UiEvent::NotifyOpen { .. } => "notify:open",
+            UiEvent::PrefsChanged { .. } => "prefs:changed",
+            UiEvent::ActivityChanged => "activity:changed",
             UiEvent::Statusline { .. } => "statusline:update",
         }
     }
@@ -145,6 +173,15 @@ impl UiEvent {
                 unread,
                 needs_you,
             } => json!({ "id": id, "unread": unread, "needsYou": needs_you }),
+            UiEvent::NotifyFire {
+                id,
+                event,
+                title,
+                body,
+            } => json!({ "id": id, "event": event, "title": title, "body": body }),
+            UiEvent::NotifyOpen { id } => json!({ "id": id }),
+            UiEvent::PrefsChanged { prefs } => json!({ "prefs": prefs }),
+            UiEvent::ActivityChanged => json!({}),
             UiEvent::Statusline { id, text, chips } => {
                 json!({ "id": id, "text": text, "chips": chips })
             }
@@ -204,6 +241,40 @@ mod tests {
             (e.name(), e.payload()),
             ("chat:items", json!({"id":"a","items":[]}))
         );
+    }
+
+    #[test]
+    fn p3_event_payloads_match_the_contract() {
+        let e = UiEvent::NotifyFire {
+            id: "a".into(),
+            event: "needs",
+            title: "proj".into(),
+            body: "Waiting for permission".into(),
+        };
+        assert_eq!(e.name(), "notify:fire");
+        assert_eq!(
+            e.payload(),
+            json!({"id":"a","event":"needs","title":"proj","body":"Waiting for permission"})
+        );
+        let e = UiEvent::Title {
+            id: "a".into(),
+            title: "t".into(),
+        };
+        assert_eq!(
+            (e.name(), e.payload()),
+            ("session:title", json!({"id":"a","title":"t"}))
+        );
+        let e = UiEvent::PrefsChanged {
+            prefs: json!({"themeId":"x"}),
+        };
+        assert_eq!(
+            (e.name(), e.payload()),
+            ("prefs:changed", json!({"prefs":{"themeId":"x"}}))
+        );
+        let e = UiEvent::ActivityChanged;
+        assert_eq!((e.name(), e.payload()), ("activity:changed", json!({})));
+        let e = UiEvent::NotifyOpen { id: "a".into() };
+        assert_eq!((e.name(), e.payload()), ("notify:open", json!({"id":"a"})));
     }
 
     #[test]

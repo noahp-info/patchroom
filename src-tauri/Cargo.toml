@@ -20,11 +20,15 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 patchroom-core = { path = "../crates/patchroom-core" }
 patchroom-pty = { path = "../crates/patchroom-pty" }
 patchroom-bridge = { path = "../crates/patchroom-bridge" }
 patchroom-store = { path = "../crates/patchroom-store" }
 patchroom-claude = { path = "../crates/patchroom-claude" }
+patchroom-search = { path = "../crates/patchroom-search" }
+patchroom-prefs = { path = "../crates/patchroom-prefs" }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 base64 = "0.22"
 vt100 = "0.16"
 serde = { version = "1", features = ["derive"] }

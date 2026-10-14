@@ -19,7 +19,7 @@
 //!
 //! The store sits behind a `Mutex`; it is only held for short queries.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -33,16 +33,21 @@ use patchroom_bridge::{
     Bridge, BridgeConfig, BridgeEvent, HookSettings, NeedsKind, Reconciler, Status as BridgeStatus,
 };
 use patchroom_pty::{Command, PtyEvent, Session as PtySession, SpawnConfig, TitleKind};
-use patchroom_store::{Author, Conversation, ConversationKind, Id, NewConversation, Store};
+use patchroom_store::{
+    Author, Conversation, ConversationKind, DefaultSections, Id, NewConversation, Store,
+};
 use serde::{Deserialize, Serialize};
 
 mod chat;
 mod paste;
+mod slack;
 
 pub use chat::{ImageData, PromptAnswer};
+pub use slack::{ActivityRow, Located, MarkInfo, Reindexed, DECISION_LOG};
 
 use crate::agents::LoginShellAgents;
 use crate::events::{EventSink, Needs, PresenceStatus, UiEvent};
+use patchroom_prefs::Event;
 
 /// How often the manager checks that every held prompt is visible in a chat.
 const PROMPT_SWEEP: Duration = Duration::from_secs(1);
@@ -63,9 +68,13 @@ pub const MAX_CHUNK: usize = 64 * 1024;
 const DEFAULT_COLS: u16 = 120;
 const DEFAULT_ROWS: u16 = 40;
 
-/// Name of the workspace and default section created on first run.
+/// Name of the workspace created on first run.
 const WORKSPACE_NAME: &str = "Patchroom";
-const DEFAULT_SECTION: &str = "Direct messages";
+/// Default number of search hits.
+const DEFAULT_LIMIT: usize = patchroom_search::DEFAULT_LIMIT;
+/// How long terminal attention (BEL, OSC 9, OSC 777) waits for the hook-driven event of the
+/// same moment before it notifies on its own.
+const TERMINAL_HOLD: Duration = Duration::from_millis(1200);
 
 /// Errors returned by the manager. The `Display` text goes to the frontend.
 #[derive(Debug, thiserror::Error)]
@@ -117,6 +126,8 @@ pub struct ManagerConfig {
     pub statusline_bin: Option<PathBuf>,
     /// Claude's config dir (`~/.claude`), where transcripts live. `None` disables chat.
     pub claude_config_dir: Option<PathBuf>,
+    /// How long BEL / OSC 9 / OSC 777 waits for a hook-driven notification of the same moment.
+    pub terminal_hold: Duration,
 }
 
 impl ManagerConfig {
@@ -131,6 +142,7 @@ impl ManagerConfig {
             reconcile: false,
             statusline_bin: None,
             claude_config_dir: None,
+            terminal_hold: TERMINAL_HOLD,
         }
         .with_default_claude_paths()
     }
@@ -194,6 +206,12 @@ pub struct SessionInfo {
     pub unread: u32,
     /// A prompt waits on the user. Clears on resolution, never on view.
     pub needs_you: bool,
+    /// Starred in the sidebar.
+    pub starred: bool,
+    /// Archived: hidden from the main list, never badges.
+    pub archived: bool,
+    /// An unsent composer draft is stored.
+    pub has_draft: bool,
 }
 
 /// One section of the sidebar.
@@ -276,6 +294,7 @@ pub struct Manager {
     bridge: Bridge,
     workspace: Id,
     default_section: Id,
+    defaults: DefaultSections,
     live: Mutex<HashMap<String, Arc<Live>>>,
     presence: Mutex<HashMap<String, Presence>>,
     open_dm: Mutex<Option<OpenDm>>,
@@ -284,6 +303,29 @@ pub struct Manager {
     active: Arc<AtomicBool>,
     reconciler: Option<Arc<Reconciler>>,
     chats: Mutex<HashMap<String, Arc<chat::Chat>>>,
+    slack: slack::SlackState,
+    /// DMs the user killed or deleted, so their exit is not reported as a failure.
+    killed: Mutex<HashSet<String>>,
+}
+
+/// Forwards every event and adds `activity:changed` after the ones that change the Activity
+/// list: badges, prompts and exits.
+struct ActivitySink(Arc<dyn EventSink>);
+
+impl EventSink for ActivitySink {
+    fn emit(&self, event: UiEvent) {
+        let touches_activity = matches!(
+            event,
+            UiEvent::Badges { .. }
+                | UiEvent::PromptPending { .. }
+                | UiEvent::PromptResolved { .. }
+                | UiEvent::Exit { .. }
+        );
+        self.0.emit(event);
+        if touches_activity {
+            self.0.emit(UiEvent::ActivityChanged);
+        }
+    }
 }
 
 impl Manager {
@@ -299,10 +341,10 @@ impl Manager {
             Some(w) => w.id,
             None => store.create_workspace(&me, WORKSPACE_NAME)?.id,
         };
-        let default_section = match store.list_sections(workspace)?.into_iter().next() {
-            Some(s) => s.id,
-            None => store.create_section(&me, workspace, DEFAULT_SECTION)?.id,
-        };
+        let defaults = store.ensure_default_sections(&me, workspace)?;
+        let default_section = defaults.dm;
+        let slack =
+            slack::SlackState::open(&cfg.data_dir, store.setting_value("prefs")?.as_deref());
         let bridge = Bridge::start(BridgeConfig::new(socket_path_for(&cfg.data_dir)))?;
         let events = bridge.subscribe();
         let active = Arc::new(AtomicBool::new(false));
@@ -314,11 +356,12 @@ impl Manager {
         });
         let manager = Arc::new(Manager {
             cfg,
-            sink,
+            sink: Arc::new(ActivitySink(sink)),
             store: Mutex::new(store),
             bridge,
             workspace,
             default_section,
+            defaults,
             live: Mutex::new(HashMap::new()),
             presence: Mutex::new(HashMap::new()),
             open_dm: Mutex::new(None),
@@ -326,11 +369,14 @@ impl Manager {
             active,
             reconciler,
             chats: Mutex::new(HashMap::new()),
+            slack,
+            killed: Mutex::new(HashSet::new()),
         });
         // The app always has a chat client, so blocking hooks are answered through it.
         manager.bridge.set_chat_attached(true);
         paste::prune_old(&manager.cfg.data_dir, paste::MAX_AGE);
         manager.spawn_bridge_thread(events)?;
+        manager.spawn_search_sync(false);
         Ok(manager)
     }
 
@@ -472,6 +518,7 @@ impl Manager {
     /// Unknown id or signal failure.
     pub fn kill(&self, id: &str) -> Result<()> {
         let live = self.live_of(id)?;
+        lock(&self.killed).insert(id.to_owned());
         live.pty.kill()?;
         Ok(())
     }
@@ -482,11 +529,12 @@ impl Manager {
     /// Store failures.
     pub fn list(self: &Arc<Self>) -> Result<Vec<SessionInfo>> {
         self.start_queued_open_dm();
-        let (convs, badges) = {
+        let (convs, badges, drafts) = {
             let store = lock(&self.store);
             (
                 store.list_conversations(self.workspace)?,
                 store.list_badges()?,
+                store.draft_conversation_ids()?,
             )
         };
         let badges: HashMap<String, patchroom_store::Badges> = badges
@@ -510,6 +558,8 @@ impl Manager {
                 let (unread, needs_you) = badges
                     .get(&id)
                     .map_or((0, false), |b| (b.unread, b.needs_you));
+                // An archived DM never badges; its needs-you flag stays true.
+                let unread = if c.archived { 0 } else { unread };
                 SessionInfo {
                     id,
                     name: c.name,
@@ -521,6 +571,9 @@ impl Manager {
                     claude_session_id: c.session_id,
                     unread,
                     needs_you,
+                    starred: c.starred,
+                    archived: c.archived,
+                    has_draft: drafts.contains(&c.id),
                 }
             })
             .collect())
@@ -541,6 +594,7 @@ impl Manager {
     /// Unknown id or store failure.
     pub fn delete(&self, id: &str) -> Result<()> {
         let conv_id = parse_id(id)?;
+        lock(&self.killed).insert(id.to_owned());
         let live = lock(&self.live).remove(id);
         if let Some(live) = live {
             let _ = live.pty.kill();
@@ -556,6 +610,8 @@ impl Manager {
             self.refresh_active(&presence);
         }
         lock(&self.store).delete_conversation(conv_id)?;
+        self.search_forget(id);
+        self.sink.emit(UiEvent::ActivityChanged);
         Ok(())
     }
 
@@ -789,6 +845,7 @@ impl Manager {
             )
         };
 
+        lock(&self.killed).remove(id);
         let mut sc = SpawnConfig::new(command, id);
         sc.cwd = Some(PathBuf::from(cwd));
         sc.cols = cols;
@@ -866,7 +923,7 @@ impl Manager {
     }
 
     /// Drain the PTY event channel into UI events, in order.
-    fn forward(&self, id: &str, pty: &PtySession, live: &Live) {
+    fn forward(self: &Arc<Self>, id: &str, pty: &PtySession, live: &Live) {
         let rx = pty.events();
         let mut pending: Vec<u8> = Vec::new();
         let mut exit_code: Option<i64> = None;
@@ -896,9 +953,29 @@ impl Manager {
                         exit_code = Some(i64::from(info.code));
                         break 'outer;
                     }
-                    // xterm.js answers terminal queries; OSC 9 and progress are
-                    // not part of the contract (hooks drive presence).
-                    PtyEvent::Notification(_) | PtyEvent::Progress { .. } | PtyEvent::Query(_) => {
+                    // The bytes already went to xterm untouched; these are side channels.
+                    PtyEvent::Notification(m) => {
+                        self.on_terminal_attention(id, Event::Message, m);
+                        next = rx.try_recv().ok();
+                    }
+                    PtyEvent::Notify { title, body } => {
+                        let text = if title.is_empty() {
+                            body
+                        } else if body.is_empty() {
+                            title
+                        } else {
+                            format!("{title}: {body}")
+                        };
+                        self.on_terminal_attention(id, Event::Message, text);
+                        next = rx.try_recv().ok();
+                    }
+                    PtyEvent::Bell => {
+                        self.on_terminal_attention(id, Event::Bell, String::new());
+                        next = rx.try_recv().ok();
+                    }
+                    // xterm.js answers terminal queries; progress is not part of the
+                    // contract (hooks drive presence).
+                    PtyEvent::Progress { .. } | PtyEvent::Query(_) => {
                         next = rx.try_recv().ok();
                     }
                 }
@@ -932,6 +1009,7 @@ impl Manager {
         self.set_status(id, PresenceStatus::Exited, None);
         drop(live_map);
         self.on_session_exit(id);
+        self.notify_exit(id, code);
         true
     }
 
@@ -971,6 +1049,8 @@ impl Manager {
         if p.status == status && p.needs == needs {
             return;
         }
+        // A turn that was running and is now idle is a finished turn.
+        let finished = p.status == PresenceStatus::Busy && status == PresenceStatus::Idle;
         p.status = status;
         p.needs = needs;
         self.sink.emit(UiEvent::Status {
@@ -979,6 +1059,10 @@ impl Manager {
             needs,
         });
         self.refresh_active(&presence);
+        drop(presence);
+        if finished {
+            self.notify_event(id, Event::Done, "Finished");
+        }
     }
 
     /// Gate the reconciler: on while any session is busy or waiting.

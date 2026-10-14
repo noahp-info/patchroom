@@ -49,6 +49,14 @@ export interface ChatSnapshot {
   statusline: Statusline | null;
   /** Bumps on every change, for cheap memo keys. */
   version: number;
+  /** The row a search or jump landed on, highlighted until it fades. */
+  hit: string | null;
+  /** A scroll request: the log scrolls to `key` once, then calls `consumeFocus`. */
+  focus: { key: string; nonce: number } | null;
+  /** The window shows an old page: newer rows exist and arrive on `reload`. */
+  detached: boolean;
+  /** Only rows carrying this reaction show. */
+  reactionFilter: string | null;
 }
 
 /**
@@ -68,6 +76,12 @@ export class ChatModel {
   private error: string | null = null;
   private statusline: Statusline | null = null;
   private version = 0;
+  private hit: string | null = null;
+  private focus: { key: string; nonce: number } | null = null;
+  private focusSeq = 0;
+  private detached = false;
+  private reactionFilter: string | null = null;
+  private hitTimer = 0;
   private snap: ChatSnapshot;
   private readonly listeners = new Set<() => void>();
   private threadListeners = new Map<string, Set<() => void>>();
@@ -78,8 +92,29 @@ export class ChatModel {
   scroll: { top: number; atBottom: boolean } = { top: 0, atBottom: true };
   readonly expanded = new Set<string>();
   draft = '';
+  /** Called with the new text whenever the composer text changes (the store persists it). */
+  draftHook: ((text: string) => void) | null = null;
+  private draftDirty = false;
+  private draftLoaded = false;
   setDraft(text: string): void {
+    if (text === this.draft) return;
     this.draft = text;
+    this.draftDirty = true;
+    this.draftHook?.(text);
+  }
+  /** Fill the composer from the stored draft, unless the user already typed. */
+  async loadDraft(): Promise<void> {
+    if (this.draftLoaded) return;
+    this.draftLoaded = true;
+    try {
+      const { body } = await this.ipc.draftGet(this.id);
+      if (body && !this.draftDirty && this.draft === '') {
+        this.draft = body;
+        for (const fn of this.draftListeners) fn();
+      }
+    } catch {
+      // No stored draft is the same as an empty one.
+    }
   }
   setScroll(s: { top: number; atBottom: boolean }): void {
     this.scroll = s;
@@ -95,7 +130,7 @@ export class ChatModel {
     return () => this.draftListeners.delete(fn);
   }
   insertIntoDraft(text: string): void {
-    this.draft += text;
+    this.setDraft(this.draft + text);
     for (const fn of this.draftListeners) fn();
   }
 
@@ -127,6 +162,10 @@ export class ChatModel {
       error: this.error,
       statusline: this.statusline,
       version: this.version,
+      hit: this.hit,
+      focus: this.focus,
+      detached: this.detached,
+      reactionFilter: this.reactionFilter,
     };
   }
 
@@ -146,7 +185,9 @@ export class ChatModel {
         this.applyChild(it);
         continue;
       }
-      if (!this.byKey.has(it.key)) this.order.push(it.key);
+      // A window parked on an old page keeps its rows; newer ones arrive on `reload`.
+      if (!this.byKey.has(it.key) && !this.detached) this.order.push(it.key);
+      if (this.detached && !this.order.includes(it.key)) continue;
       this.byKey.set(it.key, it);
       touched = true;
     }
@@ -175,8 +216,79 @@ export class ChatModel {
     this.loadingMore = null;
     this.expanded.clear();
     this.scroll = { top: 0, atBottom: true };
+    this.detached = false;
+    this.hit = null;
+    this.focus = null;
     this.commit();
     await this.ensureLoaded();
+  }
+
+  // ---- jump to a message -----------------------------------------------------------------
+
+  /**
+   * Open the DM at one item: load the page that holds it if needed, scroll to it and highlight
+   * it. The window then sits on an older page until `reload`.
+   */
+  async openAt(itemKey: string): Promise<void> {
+    await this.ensureLoaded();
+    if (!this.byKey.has(itemKey)) {
+      try {
+        const { before } = await this.ipc.chatLocate(this.id, itemKey);
+        const page = await this.ipc.chatHistory(this.id, before ?? undefined, PAGE_SIZE);
+        this.loadGen += 1;
+        this.loadingMore = null;
+        this.byKey = new Map();
+        this.children.clear();
+        const main: string[] = [];
+        for (const it of page.items) {
+          if (it.parentToolUseId) this.applyChild(it);
+          else {
+            this.byKey.set(it.key, it);
+            main.push(it.key);
+          }
+        }
+        this.order = main;
+        this.hasMore = page.hasMore;
+        this.detached = before !== null;
+      } catch (err) {
+        this.error = `Could not open that message: ${String(err)}`;
+        this.commit();
+        return;
+      }
+    }
+    this.setHit(itemKey);
+  }
+
+  /** Scroll to a row that is already in the window (a prompt row, say). */
+  focusKey(key: string): void {
+    this.focusSeq += 1;
+    this.focus = { key, nonce: this.focusSeq };
+    this.commit();
+  }
+
+  private setHit(key: string): void {
+    window.clearTimeout(this.hitTimer);
+    this.hit = key;
+    this.focusSeq += 1;
+    this.focus = { key, nonce: this.focusSeq };
+    this.hitTimer = window.setTimeout(() => {
+      this.hit = null;
+      this.commit();
+    }, 12_000);
+    this.commit();
+  }
+
+  /** The log scrolled to the requested row. */
+  consumeFocus(nonce: number): void {
+    if (this.focus?.nonce !== nonce) return;
+    this.focus = null;
+    this.commit();
+  }
+
+  setReactionFilter(emoji: string | null): void {
+    if (this.reactionFilter === emoji) return;
+    this.reactionFilter = emoji;
+    this.commit();
   }
 
   private loadPromise: Promise<void> | null = null;

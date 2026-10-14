@@ -340,6 +340,8 @@ fn drain(
             let ev = match item {
                 Scanned::Title { kind, text } => PtyEvent::Title { kind, text },
                 Scanned::Notification(m) => PtyEvent::Notification(m),
+                Scanned::Notify { title, body } => PtyEvent::Notify { title, body },
+                Scanned::Bell => PtyEvent::Bell,
                 Scanned::Progress { state, value } => PtyEvent::Progress { state, value },
                 Scanned::Query(q) => {
                     if reply {

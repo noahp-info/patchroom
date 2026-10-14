@@ -29,3 +29,9 @@ export function formatDay(ms: number, now = Date.now()): string {
   if (dayKey(ms) === dayKey(now - 86_400_000)) return 'Yesterday';
   return day.format(ms);
 }
+
+/** "Today 2:40 PM" or "Tuesday, October 13 2:40 PM". */
+export function formatStamp(ms: number, now = Date.now()): string {
+  if (!ms) return '';
+  return `${formatDay(ms, now)} ${formatClock(ms)}`;
+}

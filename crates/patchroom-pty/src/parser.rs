@@ -18,6 +18,15 @@ pub enum Scanned {
     },
     /// OSC 9 with a message (iTerm2 growl notification).
     Notification(String),
+    /// OSC 777;notify;title;body (rxvt-unicode and kitty style desktop notification).
+    Notify {
+        /// Notification title, empty when absent.
+        title: String,
+        /// Notification body.
+        body: String,
+    },
+    /// A BEL (0x07) outside any escape sequence.
+    Bell,
     /// OSC 9;4 progress.
     Progress {
         /// Progress state.
@@ -85,6 +94,10 @@ impl Scanner {
         match state {
             State::Ground => match b {
                 0x1b => State::Esc,
+                0x07 => {
+                    out.push(Scanned::Bell);
+                    State::Ground
+                }
                 _ => State::Ground,
             },
             State::Esc => match b {
@@ -188,12 +201,32 @@ fn finish_osc(buf: &[u8], out: &mut Vec<Scanned>) {
         "9" => {
             if let Some(progress) = parse_progress(rest) {
                 out.push(progress);
-            } else {
+            } else if !is_conemu_command(rest) {
                 out.push(Scanned::Notification(rest.to_owned()));
+            }
+        }
+        "777" => {
+            // `notify;<title>;<body>`; the body may hold further semicolons.
+            let mut parts = rest.splitn(3, ';');
+            if parts.next() == Some("notify") {
+                let title = parts.next().unwrap_or("").to_owned();
+                let body = parts.next().unwrap_or("").to_owned();
+                if !title.is_empty() || !body.is_empty() {
+                    out.push(Scanned::Notify { title, body });
+                }
             }
         }
         _ => {}
     }
+}
+
+/// ConEmu sub-commands share OSC 9 (`9;9;<cwd>`, `9;3;<tab>`, ...). They are not messages.
+fn is_conemu_command(rest: &str) -> bool {
+    let Some((num, _)) = rest.split_once(';') else {
+        return false;
+    };
+    // `4;...` stays a notification when it is not a well-formed progress report.
+    num != "4" && !num.is_empty() && num.len() <= 2 && num.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// `4;<state>[;<value>]` after `9;`. Returns `None` when the payload is not a
@@ -295,6 +328,40 @@ mod tests {
             s.feed(&SAMPLE[split..], &mut out);
             assert_eq!(out, scan(SAMPLE), "split at {split}");
         }
+    }
+
+    const NOTIFY_SAMPLE: &[u8] = b"a\x07b\x1b]777;notify;Build;done; ok\x07\
+\x1b]777;notify;;only body\x1b\\\x1b]9;9;/tmp/x\x07\x1b]9;hello\x07\x1bP1$r\x07z\x07";
+
+    #[test]
+    fn bell_and_osc_777_are_recognised_and_osc_terminators_are_not_bells() {
+        let want = vec![
+            Scanned::Bell,
+            Scanned::Notify {
+                title: "Build".into(),
+                body: "done; ok".into(),
+            },
+            Scanned::Notify {
+                title: String::new(),
+                body: "only body".into(),
+            },
+            Scanned::Notification("hello".into()),
+            Scanned::Bell,
+        ];
+        assert_eq!(scan(NOTIFY_SAMPLE), want);
+        assert_eq!(scan_bytewise(NOTIFY_SAMPLE), want);
+        for split in 0..NOTIFY_SAMPLE.len() {
+            let mut s = Scanner::new();
+            let mut out = Vec::new();
+            s.feed(&NOTIFY_SAMPLE[..split], &mut out);
+            s.feed(&NOTIFY_SAMPLE[split..], &mut out);
+            assert_eq!(out, want, "split at {split}");
+        }
+    }
+
+    #[test]
+    fn malformed_777_is_ignored() {
+        assert!(scan(b"\x1b]777;other;a;b\x07\x1b]777;notify\x07").is_empty());
     }
 
     #[test]

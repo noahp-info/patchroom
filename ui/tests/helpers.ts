@@ -205,3 +205,88 @@ export async function revealRow(
     [root, key] as const,
   );
 }
+
+// ---- P3 workspace helpers -------------------------------------------------------------------
+
+export interface DmSeed {
+  id: string;
+  name: string;
+  cwd?: string;
+  sectionId?: string | null;
+  status?: 'busy' | 'idle' | 'waiting' | 'exited';
+  starred?: boolean;
+  archived?: boolean;
+}
+
+/** Open the mock app, seed DMs (and sections) in the backend, and make the store read them. */
+export async function openSeeded(
+  page: Page,
+  dms: DmSeed[],
+  opts: { sections?: { id: string; name: string }[]; query?: string } = {},
+): Promise<void> {
+  await page.goto(`/?${opts.query ?? 'mock&grid=100x30'}`);
+  await page.waitForFunction(() => !!window.__PR_STORE__ && !!window.__PR_MOCK__);
+  await page.evaluate(
+    async ({ list, sections }) => {
+      const m = window.__PR_MOCK__!;
+      sections.forEach((s, i) => m.addSection({ id: s.id, name: s.name, position: i }));
+      for (const d of list) {
+        m.addSession({
+          id: d.id,
+          name: d.name,
+          cwd: d.cwd ?? `/work/${d.name}`,
+          sectionId: d.sectionId ?? null,
+          status: d.status ?? 'idle',
+          starred: d.starred,
+          archived: d.archived,
+        });
+      }
+      await window.__PR_STORE__!.refresh();
+    },
+    { list: dms, sections: opts.sections ?? [] },
+  );
+}
+
+/** Seed one DM's chat and reload its model once it is mounted (or load it lazily). */
+export async function setChat(page: Page, id: string, items: unknown[]): Promise<void> {
+  await page.evaluate(({ sid, list }) => window.__PR_MOCK__!.seedChat(sid, list as never), {
+    sid: id,
+    list: items,
+  });
+}
+
+/** Press-drag-release with the real mouse, in steps, between the centers of two locators. */
+export async function dragTo(
+  page: Page,
+  from: ReturnType<Page['locator']>,
+  to: ReturnType<Page['locator']>,
+  where: 'center' | 'top' | 'bottom' = 'center',
+): Promise<void> {
+  const a = (await from.boundingBox())!;
+  const b = (await to.boundingBox())!;
+  const x = b.x + b.width / 2;
+  const y =
+    where === 'top' ? b.y + 3 : where === 'bottom' ? b.y + b.height - 3 : b.y + b.height / 2;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(a.x + a.width / 2 + 8, a.y + a.height / 2 + 8, { steps: 3 });
+  await page.mouse.move(x, y, { steps: 8 });
+  await page.mouse.up();
+}
+
+/** Names of the DM rows inside one sidebar group, in order. */
+export async function groupRows(page: Page, groupId: string): Promise<string[]> {
+  return page.locator(`.side [data-group="${groupId}"] .row .nm`).allTextContents();
+}
+
+/** The mock backend's stored DMs: section, flags and order. */
+export async function backendDms(page: Page) {
+  return page.evaluate(() =>
+    window.__PR_MOCK__!.sessions().map((s) => ({
+      id: s.id,
+      sectionId: s.sectionId,
+      starred: !!s.starred,
+      archived: !!s.archived,
+    })),
+  );
+}

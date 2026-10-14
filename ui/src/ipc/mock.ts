@@ -1,8 +1,15 @@
 import { base64ToBytes, utf8ToBase64 } from '../lib/base64';
+import { toMillis } from '../lib/time';
 import { syntheticChat, syntheticThread, bigChat } from './synthetic';
 import type {
+  ActivityRow,
   ChatItem,
+  DetectedHook,
   Ipc,
+  MarkInfo,
+  NotifyFireEvent,
+  Prefs,
+  SearchHit,
   PromptAnswer,
   PromptPendingEvent,
   ResolvedBy,
@@ -76,6 +83,35 @@ export interface MockControl {
   /** Synthetic data helpers. */
   synthetic(): ChatItem[];
   bigChat(n: number): ChatItem[];
+
+  // ---- P3 Slack layer ---------------------------------------------------------------------
+  /** Stored drafts by DM id. */
+  drafts: Record<string, string>;
+  /** Every `draft_set` call, in order. */
+  draftSets: { id: string; body: string }[];
+  /** Every `search` call. */
+  searchCalls: { query: string; scope?: { id?: string }; limit?: number }[];
+  /** Every `chat_locate` call. */
+  locateCalls: { id: string; itemKey: string }[];
+  /** Every `session_set_flags` call. */
+  flagCalls: { id: string; starred?: boolean; archived?: boolean }[];
+  /** Every `session_reorder` call. */
+  reorderCalls: { sectionId: string | null; ids: string[] }[];
+  /** Every `session_focus` call, in order. */
+  focusCalls: (string | null)[];
+  /** Number of `notify_test` calls. */
+  notifyTests: number;
+  /** Stored pins, saved items and reactions. */
+  storedMarks(): MarkInfo[];
+  prefs(): Prefs;
+  /** What `sound_hooks_detect` returns. */
+  soundHooks: DetectedHook[];
+  /** Emit `notify:fire`, as the backend does after its own decision. */
+  fireNotify(e: NotifyFireEvent): void;
+  /** Emit `activity:changed`. */
+  activityChanged(): void;
+  /** Emit `notify:open`, as a click on a native notification does. */
+  emitNotifyOpen(id: string): void;
 }
 
 declare global {
@@ -90,7 +126,65 @@ type Handler = (payload: never) => void;
  * In-memory backend for Playwright and browser dev. It records writes and lets a test push
  * output, status and title events. It does not run any process.
  */
-export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; control: MockControl } {
+const PERSIST_KEY = 'patchroom.mock.state';
+
+const DEFAULT_PREFS: Prefs = {
+  themeId: 'homeroom',
+  mode: 'system',
+  customThemes: [],
+  notify: { default: 'all', perDm: {} },
+  sound: { enabled: true, volume: 0.6, perEvent: {}, perDm: {}, hookPolicy: {} },
+  dnd: { manual: false, schedule: null },
+  termPerDm: {},
+  searchAllSessions: false,
+};
+
+/** Text a search or a snapshot can see for one chat item. */
+function searchText(it: ChatItem): string {
+  switch (it.kind) {
+    case 'user':
+    case 'assistant':
+    case 'thinking':
+    case 'system':
+      return it.text;
+    case 'plan':
+      return it.plan;
+    case 'question':
+      return it.questions.map((q) => q.question).join(' ');
+    case 'tool':
+      return `${it.name} ${it.result?.text ?? ''}`.trim();
+    case 'subagent':
+      return it.description;
+    case 'fallback':
+      return it.summary;
+  }
+}
+
+/** Highlighted window of `text` around the first term, with the match ranges inside it. */
+function snippetOf(text: string, terms: string[]): { snippet: string; ranges: [number, number][] } {
+  const flat = text.replace(/\s/g, ' ');
+  const low = flat.toLowerCase();
+  const at = Math.min(...terms.map((t) => low.indexOf(t)).filter((i) => i >= 0));
+  const start = Math.max(0, at - 40);
+  const end = Math.min(flat.length, at + 90);
+  const lead = start > 0 ? '\u2026' : '';
+  const body = flat.slice(start, end);
+  const out = `${lead}${body}${end < flat.length ? '\u2026' : ''}`;
+  const lowBody = body.toLowerCase();
+  const ranges: [number, number][] = [];
+  for (const t of terms) {
+    for (let i = lowBody.indexOf(t); i >= 0; i = lowBody.indexOf(t, i + t.length)) {
+      ranges.push([lead.length + i, lead.length + i + t.length]);
+    }
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+  return { snippet: out, ranges };
+}
+
+export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}): {
+  ipc: Ipc;
+  control: MockControl;
+} {
   const sessions = new Map<string, SessionInfo>();
   const sections = new Map<string, SectionInfo>();
   const handlers = new Map<string, Set<Handler>>();
@@ -99,7 +193,99 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
   const pending = new Map<string, Set<string>>();
   /** Announced payloads by promptId, for `prompt_list`. */
   const promptPayloads = new Map<string, PromptPendingEvent>();
+  const promptAt = new Map<string, number>();
+  const drafts = new Map<string, string>();
+  let marks: MarkInfo[] = [];
+  let prefs: Prefs = structuredClone(DEFAULT_PREFS);
   let counter = 0;
+
+  // ---- persistence: `?persist` keeps the backend across page reloads, like a restart ----
+  const save = () => {
+    if (!opts.persist) return;
+    try {
+      window.localStorage.setItem(
+        PERSIST_KEY,
+        JSON.stringify({
+          counter,
+          sessions: [...sessions.values()],
+          sections: [...sections.values()],
+          chats: [...chats.entries()],
+          badges: [...badges.entries()],
+          drafts: [...drafts.entries()],
+          marks,
+          prefs,
+        }),
+      );
+    } catch {
+      // Storage can be blocked; the mock then forgets on reload.
+    }
+  };
+  if (opts.persist) {
+    try {
+      const raw = window.localStorage.getItem(PERSIST_KEY);
+      if (raw) {
+        const d = JSON.parse(raw) as {
+          counter: number;
+          sessions: SessionInfo[];
+          sections: SectionInfo[];
+          chats: [string, ChatItem[]][];
+          badges: [string, { unread: number; needsYou: boolean }][];
+          drafts: [string, string][];
+          marks: MarkInfo[];
+          prefs: Prefs;
+        };
+        counter = d.counter;
+        // A restarted backend lists its DMs as ended until they are resumed.
+        for (const x of d.sessions)
+          sessions.set(x.id, { ...x, status: 'exited', needs: undefined });
+        for (const x of d.sections) sections.set(x.id, x);
+        for (const [k, v] of d.chats) chats.set(k, v);
+        for (const [k, v] of d.badges) badges.set(k, { unread: v.unread, needsYou: false });
+        for (const [k, v] of d.drafts) drafts.set(k, v);
+        marks = d.marks;
+        prefs = d.prefs;
+      }
+    } catch {
+      // A corrupt snapshot starts empty.
+    }
+  }
+
+  const activity = (): ActivityRow[] => {
+    const rows: ActivityRow[] = [];
+    for (const [sid, set] of pending) {
+      for (const pid of set) {
+        const p = promptPayloads.get(pid);
+        if (!p) continue;
+        const item = p.toolUseId
+          ? chats.get(sid)?.find((i) => 'toolUseId' in i && i.toolUseId === p.toolUseId)
+          : undefined;
+        rows.push({
+          id: sid,
+          kind: 'prompt',
+          ts: promptAt.get(pid) ?? Date.now(),
+          promptId: pid,
+          itemKey: item?.key,
+          summary: `${p.toolName} wants permission`,
+        });
+      }
+    }
+    for (const [sid, b] of badges) {
+      const s = sessions.get(sid);
+      if (!s || s.archived || b.unread <= 0) continue;
+      const mine = (chats.get(sid) ?? []).filter(
+        (i) => i.kind === 'assistant' && !i.parentToolUseId,
+      );
+      const first = mine[Math.max(0, mine.length - b.unread)];
+      rows.push({
+        id: sid,
+        kind: 'unread',
+        ts: first ? toMillis(first.ts) : Date.now(),
+        itemKey: first?.key,
+        summary: first ? searchText(first).slice(0, 120) : `${b.unread} new`,
+      });
+    }
+    return rows.sort((a, b) => toMillis(a.ts) - toMillis(b.ts));
+  };
 
   const emit = <K extends keyof IpcEvents>(event: K, payload: IpcEvents[K]) => {
     for (const h of handlers.get(event) ?? []) h(payload as never);
@@ -122,6 +308,27 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
     threads: { 'tu-sub': syntheticThread() },
     synthetic: syntheticChat,
     bigChat,
+    drafts: new Proxy({} as Record<string, string>, {
+      get: (_t, k) => drafts.get(String(k)),
+      ownKeys: () => [...drafts.keys()],
+      getOwnPropertyDescriptor: (_t, k) =>
+        drafts.has(String(k))
+          ? { enumerable: true, configurable: true, value: drafts.get(String(k)) }
+          : undefined,
+    }),
+    draftSets: [],
+    searchCalls: [],
+    locateCalls: [],
+    flagCalls: [],
+    reorderCalls: [],
+    focusCalls: [],
+    notifyTests: 0,
+    soundHooks: [],
+    storedMarks: () => marks.map((m) => ({ ...m })),
+    prefs: () => structuredClone(prefs),
+    fireNotify: (e) => emit('notify:fire', e),
+    activityChanged: () => emit('activity:changed', {}),
+    emitNotifyOpen: (id) => emit('notify:open', { id }),
     seedChat(id, items) {
       chats.set(id, [...items]);
     },
@@ -145,6 +352,7 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
       }
       chats.set(id, list);
       emit('chat:items', { id, items });
+      save();
       if (fresh > 0) control.setBadges(id, b.unread + fresh, b.needsYou);
     },
     emitPrompt(id, prompt) {
@@ -152,6 +360,7 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
       set.add(prompt.promptId);
       pending.set(id, set);
       promptPayloads.set(prompt.promptId, { id, ...prompt });
+      promptAt.set(prompt.promptId, Date.now());
       emit('prompt:pending', { id, ...prompt });
       const b = badges.get(id) ?? { unread: 0, needsYou: false };
       control.setBadges(id, b.unread, set.size > 0);
@@ -161,6 +370,7 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
       const set = pending.get(id) ?? new Set<string>();
       set.add(prompt.promptId);
       pending.set(id, set);
+      promptAt.set(prompt.promptId, Date.now());
       promptPayloads.set(prompt.promptId, { id, ...prompt });
     },
     resolvePrompt(id, promptId, by) {
@@ -174,6 +384,8 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
     setBadges(id, unread, needsYou) {
       badges.set(id, { unread, needsYou });
       emit('session:badges', { id, unread, needsYou });
+      emit('activity:changed', {});
+      save();
     },
     badges: (id) => badges.get(id) ?? { unread: 0, needsYou: false },
     setStatusline(id, text, chips = {}) {
@@ -209,9 +421,13 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
         title: info.title ?? 'Claude Code',
         status: info.status ?? 'idle',
         sectionId: info.sectionId ?? null,
+        starred: info.starred ?? false,
+        archived: info.archived ?? false,
+        hasDraft: false,
       };
       sessions.set(s.id, s);
       control.writes[s.id] = [];
+      save();
       return s;
     },
     sessions: () => [...sessions.values()],
@@ -224,6 +440,7 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
         collapsed: info.collapsed ?? false,
       };
       sections.set(sec.id, sec);
+      save();
       return sec;
     },
     sections: () => [...sections.values()].sort((a, b) => a.position - b.position),
@@ -271,7 +488,7 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
       control.exit(id, 0);
     },
     async sessionList() {
-      return control.sessions().map((s) => ({ ...s }));
+      return control.sessions().map((s) => ({ ...s, hasDraft: drafts.has(s.id) }));
     },
     async sessionResume(id, cols, rows) {
       control.resumes.push({ id, cols, rows });
@@ -284,13 +501,18 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
     async sessionRename(id, name) {
       const s = sessions.get(id);
       if (s) s.name = name;
+      save();
     },
     async sessionDelete(id) {
       sessions.delete(id);
+      drafts.delete(id);
+      marks = marks.filter((m) => m.conversationId !== id);
+      save();
     },
     async sessionSetSection(id, sectionId) {
       const s = sessions.get(id);
       if (s) s.sectionId = sectionId;
+      save();
     },
     async sectionList() {
       return control.sections().map((x) => ({ ...x }));
@@ -301,6 +523,7 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
     async sectionSetCollapsed(id, collapsed) {
       const sec = sections.get(id);
       if (sec) sec.collapsed = collapsed;
+      save();
     },
     async pickFolder() {
       return control.pickResult;
@@ -343,6 +566,160 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
     },
     async sessionView(id, view) {
       control.views.push({ id, view });
+    },
+    async sectionRename(id, name) {
+      const sec = sections.get(id);
+      if (!sec) throw new Error(`no such section: ${id}`);
+      sec.name = name.trim() || sec.name;
+      save();
+    },
+    async sectionDelete(id) {
+      sections.delete(id);
+      for (const s of sessions.values()) if (s.sectionId === id) s.sectionId = null;
+      save();
+    },
+    async sectionReorder(ids) {
+      ids.forEach((sid, i) => {
+        const sec = sections.get(sid);
+        if (sec) sec.position = i;
+      });
+      save();
+    },
+    async sessionReorder(sectionId, ids) {
+      control.reorderCalls.push({ sectionId, ids });
+      const moved = ids.flatMap((sid) => {
+        const s = sessions.get(sid);
+        return s ? [s] : [];
+      });
+      for (const s of moved) {
+        sessions.delete(s.id);
+        s.sectionId = sectionId;
+      }
+      for (const s of moved) sessions.set(s.id, s);
+      save();
+    },
+    async sessionSetFlags(id, flags) {
+      control.flagCalls.push({ id, ...flags });
+      const s = sessions.get(id);
+      if (!s) throw new Error(`no such session: ${id}`);
+      if (flags.starred !== undefined) s.starred = flags.starred;
+      if (flags.archived !== undefined) s.archived = flags.archived;
+      save();
+      emit('activity:changed', {});
+    },
+    async draftGet(id) {
+      return { body: drafts.get(id) ?? '' };
+    },
+    async draftSet(id, body) {
+      control.draftSets.push({ id, body });
+      if (body === '') drafts.delete(id);
+      else drafts.set(id, body);
+      save();
+    },
+    async markAdd(id, itemKey, kind, emoji) {
+      const have = marks.find(
+        (m) =>
+          m.conversationId === id &&
+          m.itemKey === itemKey &&
+          m.kind === kind &&
+          (m.emoji ?? null) === (emoji ?? null),
+      );
+      if (have) return { ...have };
+      counter += 1;
+      const item = (chats.get(id) ?? []).find((i) => i.key === itemKey);
+      const m: MarkInfo = {
+        id: `mark-${counter}`,
+        conversationId: id,
+        itemKey,
+        kind,
+        emoji: emoji ?? null,
+        snapshot: (item ? searchText(item) : '').slice(0, 280),
+        createdAt: Date.now(),
+      };
+      marks.push(m);
+      save();
+      return { ...m };
+    },
+    async markRemove(id, itemKey, kind, emoji) {
+      marks = marks.filter(
+        (m) =>
+          !(
+            m.conversationId === id &&
+            m.itemKey === itemKey &&
+            m.kind === kind &&
+            (m.emoji ?? null) === (emoji ?? null)
+          ),
+      );
+      save();
+    },
+    async markList(args = {}) {
+      return marks
+        .filter(
+          (m) => (!args.id || m.conversationId === args.id) && (!args.kind || m.kind === args.kind),
+        )
+        .map((m) => ({ ...m }));
+    },
+    async search({ query, scope, limit = 50 }) {
+      control.searchCalls.push({ query, scope, limit });
+      const t0 = performance.now();
+      const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+      const hits: SearchHit[] = [];
+      if (terms.length > 0) {
+        for (const [sid, list] of chats) {
+          if (scope?.id && scope.id !== sid) continue;
+          if (!sessions.has(sid)) continue;
+          for (const it of list) {
+            const text = searchText(it);
+            const low = text.toLowerCase();
+            if (!terms.every((t) => low.includes(t))) continue;
+            const { snippet, ranges } = snippetOf(text, terms);
+            hits.push({ id: sid, itemKey: it.key, ts: it.ts, kind: it.kind, snippet, ranges });
+          }
+        }
+      }
+      hits.sort((a, b) => toMillis(b.ts) - toMillis(a.ts));
+      return { hits: hits.slice(0, limit), tookMs: Math.round(performance.now() - t0) };
+    },
+    async searchReindex() {
+      let docs = 0;
+      for (const list of chats.values()) docs += list.length;
+      return { docs, tookMs: 1 };
+    },
+    async chatLocate(id, itemKey) {
+      control.locateCalls.push({ id, itemKey });
+      const main = (chats.get(id) ?? []).filter((i) => !i.parentToolUseId);
+      const at = main.findIndex((i) => i.key === itemKey);
+      if (at < 0) throw new Error(`no such item: ${itemKey}`);
+      // Cursor for a 300-item page that holds the item with room to spare below it.
+      const end = Math.min(main.length, at + 100);
+      return { before: end >= main.length ? null : main[end].key };
+    },
+    async activityList() {
+      return activity();
+    },
+    async prefsGet() {
+      return structuredClone(prefs);
+    },
+    async prefsSet(patch) {
+      prefs = { ...prefs, ...structuredClone(patch) };
+      save();
+      emit('prefs:changed', { prefs: structuredClone(prefs) });
+      return structuredClone(prefs);
+    },
+    async soundHooksDetect() {
+      return control.soundHooks.map((h) => ({ ...h }));
+    },
+    async notifyTest() {
+      control.notifyTests += 1;
+      control.fireNotify({
+        id: '',
+        event: 'message',
+        title: 'Patchroom',
+        body: 'Test notification',
+      });
+    },
+    async sessionFocus(id) {
+      control.focusCalls.push(id);
     },
     async on(event, handler) {
       let set = handlers.get(event);

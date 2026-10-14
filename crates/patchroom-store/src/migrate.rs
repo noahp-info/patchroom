@@ -19,6 +19,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 2,
         sql: include_str!("../migrations/0002_badges.sql"),
     },
+    Migration {
+        version: 3,
+        sql: include_str!("../migrations/0003_slack.sql"),
+    },
 ];
 
 /// Highest schema version this build understands.

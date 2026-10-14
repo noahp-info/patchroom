@@ -505,6 +505,50 @@ export class Runner {
     press(this.composer(), 'Enter');
   }
 
+  // ---- P3 helpers: real key and pointer events on real controls -----------------------------
+
+  /** A chord on the window, as the keyboard raises it (Cmd+K and friends). */
+  chord(key: string, mods: { meta?: boolean; shift?: boolean; alt?: boolean } = {}): void {
+    press(window, key, mods);
+  }
+
+  /** Click an element found by CSS selector. */
+  clickSel(selector: string): void {
+    const el = document.querySelector(selector);
+    if (!el) throw new Error(`no element ${selector}`);
+    click(el);
+  }
+
+  /** Right-click (contextmenu) on an element found by CSS selector. */
+  contextMenuOn(selector: string): void {
+    const el = document.querySelector(selector);
+    if (!el) throw new Error(`no element ${selector}`);
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(
+      new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: r.left + 8,
+        clientY: r.top + 8,
+        button: 2,
+      }),
+    );
+  }
+
+  /** Type into the focused input or textarea. */
+  typeFocused(text: string): void {
+    const el = document.activeElement;
+    if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+      throw new Error('no focused field');
+    }
+    typeInto(el, text);
+  }
+
+  /** Re-read the DM list from the backend (what a restarted view would show). */
+  async reread(): Promise<void> {
+    await window.__PR_STORE__?.refresh();
+  }
+
   /** Click a button by its visible text inside `scope`. */
   clickButton(scope: ParentNode, label: string): void {
     const b = [...scope.querySelectorAll<HTMLButtonElement>('button')].find(

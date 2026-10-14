@@ -359,6 +359,33 @@ fn osc_events_parsed_without_altering_bytes() {
 }
 
 #[test]
+fn bell_and_osc_777_arrive_as_events_with_bytes_unchanged() {
+    let raw: &[u8] = b"x\x07y\x1b]777;notify;Build;all green\x07z\x1b]9;hi\x1b\\w";
+    let s = Session::spawn(sh(
+        "printf 'x\\007y\\033]777;notify;Build;all green\\007z\\033]9;hi\\033\\\\w'",
+    ))
+    .unwrap();
+    let run = run_to_exit(&s.events(), T);
+    assert_eq!(run.output, raw, "bytes forwarded unchanged");
+    let parsed: Vec<&PtyEvent> = run
+        .events
+        .iter()
+        .filter(|e| !matches!(e, PtyEvent::Output(_) | PtyEvent::Exit(_)))
+        .collect();
+    assert_eq!(
+        parsed,
+        vec![
+            &PtyEvent::Bell,
+            &PtyEvent::Notify {
+                title: "Build".into(),
+                body: "all green".into()
+            },
+            &PtyEvent::Notification("hi".into()),
+        ]
+    );
+}
+
+#[test]
 fn headless_host_answers_terminal_queries() {
     // The child sends DA1 and XTVERSION, then reads both replies.
     let mut cfg = sh("stty raw -echo; printf '\\033[c\\033[>0q'; \

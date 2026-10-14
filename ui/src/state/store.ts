@@ -1,5 +1,18 @@
 import { useSyncExternalStore } from 'react';
-import type { Ipc, SectionInfo, SessionInfo, SessionStatus } from '../ipc';
+import type {
+  ActivityRow,
+  Ipc,
+  MarkInfo,
+  MarkKind,
+  NotifyFireEvent,
+  Prefs,
+  SectionInfo,
+  SessionInfo,
+  SessionStatus,
+} from '../ipc';
+import { visibleOrder } from '../lib/groups';
+import { bindTerminalStyle } from '../lib/prefsModule';
+import { toMillis } from '../lib/time';
 import { bytesToBase64, utf8ToBase64 } from '../lib/base64';
 import { shellQuotePath } from '../lib/keys';
 import { SessionTerminal, type SessionTerminalOptions } from '../lib/sessionTerminal';
@@ -19,6 +32,16 @@ export interface OpenThread {
   title: string;
 }
 
+/** The overlay views over the conversation. */
+export type Panel = null | 'activity' | 'saved' | 'search' | 'switcher' | 'prefs';
+
+/** Where a dragged DM lands. */
+export type DropDest =
+  | { kind: 'starred' }
+  | { kind: 'archived' }
+  | { kind: 'default' }
+  | { kind: 'section'; sectionId: string };
+
 export interface AppState {
   ready: boolean;
   sessions: SessionInfo[];
@@ -31,9 +54,39 @@ export interface AppState {
   views: Record<string, ViewMode>;
   badges: Record<string, Badges>;
   thread: OpenThread | null;
+  /** Pins, saved items and reactions across every DM. */
+  marks: MarkInfo[];
+  /** Everything waiting on the user, oldest first. */
+  activity: ActivityRow[];
+  prefs: Prefs | null;
+  panel: Panel;
+  /** Search scope when the search panel opens: the active DM or every DM. */
+  searchScope: 'dm' | 'all';
+  /** DM ids, most recently opened first. */
+  recent: string[];
+  /** Terminal background per DM from its palette, for the stage behind the terminal. */
+  termBg: Record<string, string>;
 }
 
 const LAST_CWD_KEY = 'patchroom.lastCwd';
+const RECENT_KEY = 'patchroom.recentDms';
+const DRAFT_DEBOUNCE_MS = 400;
+
+function readRecent(): string[] {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(RECENT_KEY) ?? '[]') as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+function writeRecent(ids: string[]): void {
+  try {
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(ids));
+  } catch {
+    // Recents are a convenience.
+  }
+}
 
 function readLastCwd(): string {
   try {
@@ -70,14 +123,22 @@ export class AppStore {
     views: {},
     badges: {},
     thread: null,
+    marks: [],
+    activity: [],
+    prefs: null,
+    panel: null,
+    searchScope: 'all',
+    recent: readRecent(),
+    termBg: {},
   };
   private readonly listeners = new Set<() => void>();
   private readonly terminals = new Map<string, SessionTerminal>();
+  private readonly unbindTerms = new Map<string, () => void>();
   private readonly chats = new Map<string, ChatModel>();
   private unlisten: (() => void)[] = [];
 
   constructor(
-    private readonly ipc: Ipc,
+    readonly ipc: Ipc,
     private readonly termOpts: SessionTerminalOptions = {},
   ) {}
 
@@ -89,7 +150,17 @@ export class AppStore {
 
   private set(patch: Partial<AppState>): void {
     this.state = { ...this.state, ...patch };
+    this.reportFocus();
     for (const fn of this.listeners) fn();
+  }
+
+  private focusSent: string | null | undefined = undefined;
+  /** Tell the backend which DM is on screen, so that DM does not notify while the window is focused. */
+  private reportFocus(): void {
+    const id = this.state.ready ? this.state.activeId : null;
+    if (id === this.focusSent || !this.state.ready) return;
+    this.focusSent = id;
+    void this.ipc.sessionFocus(id).catch(() => undefined);
   }
 
   private patchSession(id: string, patch: Partial<SessionInfo>): void {
@@ -101,8 +172,21 @@ export class AppStore {
   terminal(id: string): SessionTerminal {
     let t = this.terminals.get(id);
     if (!t) {
-      t = new SessionTerminal(id, this.ipc, this.termOpts);
-      this.terminals.set(id, t);
+      const made = new SessionTerminal(id, this.ipc, this.termOpts);
+      t = made;
+      this.terminals.set(id, made);
+      this.unbindTerms.set(
+        id,
+        bindTerminalStyle(made.term, id, (bg) => {
+          made.refit();
+          // Runs inside a render the first time: publish the stage color afterwards.
+          queueMicrotask(() => {
+            if (bg && this.state.termBg[id] !== bg) {
+              this.set({ termBg: { ...this.state.termBg, [id]: bg } });
+            }
+          });
+        }),
+      );
       // Test hook: lets Playwright read the buffer. Harmless in production.
       const w = window as unknown as { __PR_TERMS__?: Record<string, SessionTerminal> };
       (w.__PR_TERMS__ ??= {})[id] = t;
@@ -115,6 +199,7 @@ export class AppStore {
     let c = this.chats.get(id);
     if (!c) {
       c = new ChatModel(id, this.ipc);
+      c.draftHook = (text) => this.draftChanged(id, text);
       this.chats.set(id, c);
       const w = window as unknown as { __PR_CHATS__?: Record<string, ChatModel> };
       (w.__PR_CHATS__ ??= {})[id] = c;
@@ -228,7 +313,16 @@ export class AppStore {
         this.setBadges(e.id, { unread: e.unread, needsYou: asCount(e.needsYou) }),
       ),
       this.ipc.on('statusline:update', (e) => this.chat(e.id).setStatusline(e)),
+      this.ipc.on('notify:fire', (e) => {
+        for (const fn of this.notifyListeners) fn(e);
+      }),
+      this.ipc.on('prefs:changed', (e) => this.set({ prefs: e.prefs })),
+      // The user clicked a native notification: show that DM.
+      this.ipc.on('notify:open', (e) => this.openDm(e.id)),
+      this.ipc.on('activity:changed', () => this.scheduleActivity()),
     ]);
+    window.addEventListener('pagehide', this.flushAllDrafts);
+    document.addEventListener('visibilitychange', this.onVisibility);
     try {
       const [sessions, sections] = await Promise.all([
         this.ipc.sessionList(),
@@ -242,14 +336,31 @@ export class AppStore {
         activeId,
         ready: true,
       });
+      if (activeId) this.touchRecent(activeId);
+      void this.loadP3();
     } catch (err) {
       this.set({ ready: true, error: `Could not load DMs: ${String(err)}` });
     }
   }
 
+  /** Marks, prefs and the activity list. Each is optional: an older backend may lack them. */
+  private async loadP3(): Promise<void> {
+    const [marks, prefs] = await Promise.all([
+      this.ipc.markList().catch(() => null),
+      this.ipc.prefsGet().catch(() => null),
+    ]);
+    this.set({ ...(marks ? { marks } : {}), ...(prefs ? { prefs } : {}) });
+    await this.loadActivity();
+  }
+
   stop(): void {
+    this.flushAllDrafts();
+    window.removeEventListener('pagehide', this.flushAllDrafts);
+    document.removeEventListener('visibilitychange', this.onVisibility);
     for (const off of this.unlisten) off();
     this.unlisten = [];
+    for (const off of this.unbindTerms.values()) off();
+    this.unbindTerms.clear();
     for (const t of this.terminals.values()) t.dispose();
     this.terminals.clear();
     this.chats.clear();
@@ -258,7 +369,9 @@ export class AppStore {
 
   select(id: string): void {
     const prev = this.state.activeId;
+    this.touchRecent(id);
     if (prev === id) return;
+    if (prev) this.flushDraft(prev);
     this.set({ activeId: id });
     // The terminal view only counts as shown for the DM that is open.
     if (prev && this.viewOf(prev) === 'terminal') this.hintView(prev, 'chat');
@@ -309,7 +422,11 @@ export class AppStore {
 
   /** Re-read DMs and sections from the backend, which owns names, titles and sections. */
   async refresh(): Promise<void> {
-    const [fresh, sections] = await Promise.all([this.ipc.sessionList(), this.ipc.sectionList()]);
+    const [rows, sections] = await Promise.all([this.ipc.sessionList(), this.ipc.sectionList()]);
+    // A draft still waiting for its debounced write is newer than the backend's flag.
+    const fresh = rows.map((s) =>
+      this.dirtyDrafts.has(s.id) ? { ...s, hasDraft: this.chat(s.id).draft !== '' } : s,
+    );
     this.set({
       badges: seedBadges(fresh, this.state.badges),
       sessions: mergeSessions(fresh, this.state.sessions),
@@ -349,13 +466,283 @@ export class AppStore {
     }
   }
 
+  // ---- P3: sections --------------------------------------------------------------------
+
+  async renameSection(id: string, name: string): Promise<void> {
+    const trimmed = name.trim();
+    const prev = this.state.sections;
+    if (!trimmed || prev.find((s) => s.id === id)?.name === trimmed) return;
+    this.set({ sections: prev.map((s) => (s.id === id ? { ...s, name: trimmed } : s)) });
+    try {
+      await this.ipc.sectionRename(id, trimmed);
+    } catch (err) {
+      this.set({ sections: prev, error: `Could not rename the section: ${String(err)}` });
+    }
+  }
+
+  /** The section's DMs fall back to Direct messages. */
+  async deleteSection(id: string): Promise<void> {
+    const { sections, sessions } = this.state;
+    this.set({
+      sections: sections.filter((s) => s.id !== id),
+      sessions: sessions.map((s) => (s.sectionId === id ? { ...s, sectionId: null } : s)),
+    });
+    try {
+      await this.ipc.sectionDelete(id);
+    } catch (err) {
+      this.set({ sections, sessions, error: `Could not delete the section: ${String(err)}` });
+    }
+  }
+
+  async reorderSections(ids: string[]): Promise<void> {
+    const prev = this.state.sections;
+    const by = new Map(prev.map((s) => [s.id, s]));
+    const next = ids.flatMap((id, position) => {
+      const s = by.get(id);
+      return s ? [{ ...s, position }] : [];
+    });
+    this.set({ sections: next });
+    try {
+      await this.ipc.sectionReorder(ids);
+    } catch (err) {
+      this.set({ sections: prev, error: `Could not reorder the sections: ${String(err)}` });
+    }
+  }
+
+  async setFlags(id: string, flags: { starred?: boolean; archived?: boolean }): Promise<void> {
+    const prev = this.state.sessions;
+    this.patchSession(id, flags);
+    try {
+      await this.ipc.sessionSetFlags(id, flags);
+    } catch (err) {
+      this.set({ sessions: prev, error: `Could not update the DM: ${String(err)}` });
+    }
+  }
+
+  /**
+   * Drop a DM on a sidebar group. `ids` is the destination group's order with the DM in place,
+   * used for sections and Direct messages. Starred and Archived are flags and keep no order.
+   */
+  async dropSession(id: string, dest: DropDest, ids: string[]): Promise<void> {
+    const prev = this.state.sessions;
+    const flags: { starred?: boolean; archived?: boolean } = {};
+    if (dest.kind === 'starred') {
+      flags.starred = true;
+      flags.archived = false;
+    } else if (dest.kind === 'archived') flags.archived = true;
+    else {
+      flags.starred = false;
+      flags.archived = false;
+    }
+    const sectionId = dest.kind === 'section' ? dest.sectionId : null;
+    const ordered = dest.kind === 'section' || dest.kind === 'default';
+    // Optimistic: flags first, then the destination group's order.
+    let next = prev.map((s) => (s.id === id ? { ...s, ...flags } : s));
+    if (ordered) {
+      const moved = ids.flatMap((x) => {
+        const s = next.find((y) => y.id === x);
+        return s ? [{ ...s, sectionId }] : [];
+      });
+      next = [...next.filter((s) => !ids.includes(s.id)), ...moved];
+    }
+    this.set({ sessions: next });
+    try {
+      const cur = prev.find((s) => s.id === id);
+      const changed = Object.entries(flags).filter(
+        ([k, v]) => Boolean(cur?.[k as 'starred' | 'archived']) !== v,
+      );
+      if (changed.length > 0) await this.ipc.sessionSetFlags(id, Object.fromEntries(changed));
+      if (ordered) await this.ipc.sessionReorder(sectionId, ids);
+    } catch (err) {
+      this.set({ sessions: prev, error: `Could not move the DM: ${String(err)}` });
+    }
+  }
+
+  // ---- P3: opening a DM at a message ---------------------------------------------------
+
+  private touchRecent(id: string): void {
+    const recent = [id, ...this.state.recent.filter((x) => x !== id)].slice(0, 12);
+    writeRecent(recent);
+    this.state = { ...this.state, recent };
+  }
+
+  setPanel(panel: Panel, searchScope?: 'dm' | 'all'): void {
+    this.set({ panel, ...(searchScope ? { searchScope } : {}) });
+  }
+
+  closePanel(): void {
+    if (this.state.panel) this.set({ panel: null });
+  }
+
+  /** Open a DM, on its chat, optionally scrolled to an item or a pending prompt. */
+  openDm(id: string, target: { itemKey?: string; promptId?: string } = {}): void {
+    this.set({ panel: null });
+    this.select(id);
+    this.setView(id, 'chat');
+    const chat = this.chat(id);
+    if (target.itemKey) void chat.openAt(target.itemKey);
+    else if (target.promptId) chat.focusKey(`prompt:${target.promptId}`);
+  }
+
+  /** Cmd+Shift+A: the DM that has waited longest on the user. */
+  async jumpOldestNeeds(): Promise<void> {
+    await this.loadActivity();
+    const row = this.state.activity.find((r) => r.kind === 'prompt');
+    if (row) {
+      this.openDm(row.id, { itemKey: row.itemKey, promptId: row.promptId });
+      return;
+    }
+    const waiting = this.state.sessions.find(
+      (s) =>
+        !s.archived && (s.status === 'waiting' || (this.state.badges[s.id]?.needsYou ?? 0) > 0),
+    );
+    if (waiting) this.openDm(waiting.id);
+  }
+
+  /** Option+Shift+Down / Up: the next or previous DM with unread or needs-you, wrapping. */
+  jumpUnread(dir: 1 | -1): void {
+    const order = visibleOrder(this.state.sections, this.state.sessions);
+    if (order.length === 0) return;
+    const hot = (id: string) =>
+      (this.state.badges[id]?.unread ?? 0) > 0 || (this.state.badges[id]?.needsYou ?? 0) > 0;
+    const n = order.length;
+    const at = order.findIndex((s) => s.id === this.state.activeId);
+    for (let step = 1; step <= n; step++) {
+      const i = at < 0 ? (dir === 1 ? step - 1 : n - step) : (((at + dir * step) % n) + n) % n;
+      const s = order[i];
+      if (s.id !== this.state.activeId && hot(s.id)) {
+        this.openDm(s.id);
+        return;
+      }
+    }
+  }
+
+  // ---- P3: activity --------------------------------------------------------------------
+
+  private activityTimer = 0;
+  private scheduleActivity(): void {
+    if (this.activityTimer) return;
+    this.activityTimer = window.setTimeout(() => {
+      this.activityTimer = 0;
+      void this.loadActivity();
+    }, 30);
+  }
+
+  async loadActivity(): Promise<void> {
+    try {
+      const rows = await this.ipc.activityList();
+      this.set({ activity: [...rows].sort((a, b) => toMillis(a.ts) - toMillis(b.ts)) });
+    } catch {
+      // Keep the last list.
+    }
+  }
+
+  // ---- P3: drafts ----------------------------------------------------------------------
+
+  private readonly draftTimers = new Map<string, number>();
+  private readonly dirtyDrafts = new Set<string>();
+
+  private draftChanged(id: string, text: string): void {
+    const has = text !== '';
+    const cur = this.state.sessions.find((s) => s.id === id);
+    if (cur && Boolean(cur.hasDraft) !== has) this.patchSession(id, { hasDraft: has });
+    this.dirtyDrafts.add(id);
+    window.clearTimeout(this.draftTimers.get(id));
+    if (!has) this.flushDraft(id);
+    else
+      this.draftTimers.set(
+        id,
+        window.setTimeout(() => this.flushDraft(id), DRAFT_DEBOUNCE_MS),
+      );
+  }
+
+  /** Write a pending draft now. Called on a DM switch, hide and close. */
+  flushDraft(id: string): void {
+    window.clearTimeout(this.draftTimers.get(id));
+    this.draftTimers.delete(id);
+    if (!this.dirtyDrafts.delete(id)) return;
+    const chat = this.chats.get(id);
+    if (!chat) return;
+    void this.ipc.draftSet(id, chat.draft).catch(() => undefined);
+  }
+
+  private readonly flushAllDrafts = (): void => {
+    for (const id of [...this.dirtyDrafts]) this.flushDraft(id);
+  };
+  private readonly onVisibility = (): void => {
+    if (document.visibilityState === 'hidden') this.flushAllDrafts();
+  };
+
+  // ---- P3: pins, saved items, reactions ------------------------------------------------
+
+  hasMark(id: string, itemKey: string, kind: MarkKind, emoji?: string): boolean {
+    return this.state.marks.some(
+      (m) =>
+        m.conversationId === id &&
+        m.itemKey === itemKey &&
+        m.kind === kind &&
+        (m.emoji ?? null) === (emoji ?? null),
+    );
+  }
+
+  /** Add the mark, or remove it when it exists. A reaction is a label only: nothing reaches the PTY. */
+  async toggleMark(id: string, itemKey: string, kind: MarkKind, emoji?: string): Promise<void> {
+    const prev = this.state.marks;
+    try {
+      if (this.hasMark(id, itemKey, kind, emoji)) {
+        this.set({
+          marks: prev.filter(
+            (m) =>
+              !(
+                m.conversationId === id &&
+                m.itemKey === itemKey &&
+                m.kind === kind &&
+                (m.emoji ?? null) === (emoji ?? null)
+              ),
+          ),
+        });
+        await this.ipc.markRemove(id, itemKey, kind, emoji);
+      } else {
+        const m = await this.ipc.markAdd(id, itemKey, kind, emoji);
+        if (!this.hasMark(id, itemKey, kind, emoji)) this.set({ marks: [...this.state.marks, m] });
+      }
+    } catch (err) {
+      this.set({ marks: prev, error: `Could not update the ${kind}: ${String(err)}` });
+    }
+  }
+
+  // ---- P3: search, prefs, sounds -------------------------------------------------------
+
+  search(query: string, scopeId?: string) {
+    return this.ipc.search({ query, scope: scopeId ? { id: scopeId } : undefined, limit: 50 });
+  }
+
+  async setPrefs(patch: Partial<Prefs>): Promise<void> {
+    try {
+      const prefs = await this.ipc.prefsSet(patch);
+      this.set({ prefs });
+    } catch (err) {
+      this.set({ error: `Could not save the preferences: ${String(err)}` });
+    }
+  }
+
+  private readonly notifyListeners = new Set<(e: NotifyFireEvent) => void>();
+  /** `notify:fire` is the backend's decision to alert; the UI only plays the sound. */
+  onNotify(fn: (e: NotifyFireEvent) => void): () => void {
+    this.notifyListeners.add(fn);
+    return () => this.notifyListeners.delete(fn);
+  }
+
   async deleteSession(id: string): Promise<void> {
     try {
       await this.ipc.sessionDelete(id);
       const sessions = this.state.sessions.filter((s) => s.id !== id);
+      this.unbindTerms.get(id)?.();
+      this.unbindTerms.delete(id);
       this.terminals.get(id)?.dispose();
       this.terminals.delete(id);
       this.chats.delete(id);
+      this.set({ marks: this.state.marks.filter((m) => m.conversationId !== id) });
       const activeId = this.state.activeId === id ? firstActive(sessions) : this.state.activeId;
       this.set({ sessions, activeId });
     } catch (err) {

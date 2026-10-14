@@ -407,6 +407,124 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     return stripText;
   });
 
+  // ---- 10b. P3 Slack layer ---------------------------------------------------------------------------------------------------
+  const rowOf = (name) =>
+    [...document.querySelectorAll('.side .row')].find(
+      (r) => r.querySelector('.nm')?.textContent === name,
+    );
+  const sel = (name) => `.side .row[data-dm="${t.dm(name).id}"]`;
+
+  await t.step('P3: a new section holds a DM and keeps it after a re-read', async () => {
+    await t.showView('Chat');
+    t.clickSel('button[aria-label="New section"]');
+    const input = await t.waitFor('section name field', () =>
+      document.querySelector('input[aria-label="Section name"]'),
+    );
+    input.focus();
+    t.typeFocused('Live checks');
+    t.clickButton(document.querySelector('.side-add'), 'Add');
+    await t.waitFor('section shown', () =>
+      [...document.querySelectorAll('.side [data-kind="section"]')].some((s) =>
+        (s.textContent || '').includes('Live checks'),
+      ),
+    );
+    t.contextMenuOn(sel(NAME_B));
+    const item = await t.waitFor('move item', () =>
+      [...document.querySelectorAll('[role="menuitem"]')].find(
+        (b) => (b.textContent || '') === 'Move to Live checks',
+      ),
+    );
+    item.click();
+    await t.waitFor('DM moved', () => {
+      const sec = [...document.querySelectorAll('.side [data-kind="section"]')].find((s) =>
+        (s.textContent || '').includes('Live checks'),
+      );
+      return !!sec && !!sec.querySelector(`[data-dm="${t.dm(NAME_B).id}"]`);
+    });
+    await t.reread();
+    const sec = [...document.querySelectorAll('.side [data-kind="section"]')].find((s) =>
+      (s.textContent || '').includes('Live checks'),
+    );
+    if (!sec || !sec.querySelector(`[data-dm="${t.dm(NAME_B).id}"]`)) {
+      throw new Error('the backend did not keep the DM in its section');
+    }
+  });
+
+  await t.step('P3: Cmd+K opens a DM by name', async () => {
+    t.chord('k', { meta: true });
+    await t.waitFor('switcher', () =>
+      document.querySelector('[role="dialog"][aria-label="Quick switcher"]'),
+    );
+    document.querySelector('input[aria-label="Jump to a DM"]').focus();
+    t.typeFocused(NAME_B.slice(0, 3));
+    await t.sleep(200);
+    t.chord('Enter');
+    await t.waitFor('DM opened', () => t.activeId() === t.dm(NAME_B).id);
+    t.activeName = NAME_B;
+    t.selectDm(NAME_A);
+    t.activeName = NAME_A;
+  });
+
+  await t.step(
+    'P3: a draft shows a pencil, survives a DM switch and a backend re-read',
+    async () => {
+      const box = document.querySelector(
+        '[data-testid="chat"]:not(.chat--hidden) [data-testid="composer-input"]',
+      );
+      box.focus();
+      t.typeFocused('unsent live draft');
+      await t.sleep(900);
+      t.selectDm(NAME_B);
+      t.activeName = NAME_B;
+      await t.waitFor('draft pencil on A', () =>
+        rowOf(NAME_A)?.querySelector('[data-testid="draft-mark"]'),
+      );
+      // The marker after a re-read comes from the backend's session_list, so it was stored.
+      await t.reread();
+      if (!rowOf(NAME_A)?.querySelector('[data-testid="draft-mark"]'))
+        throw new Error('draft not stored by the backend');
+      t.selectDm(NAME_A);
+      t.activeName = NAME_A;
+      const v = await t.waitFor('draft restored', () => {
+        const b = document.querySelector(
+          '[data-testid="chat"]:not(.chat--hidden) [data-testid="composer-input"]',
+        );
+        return b && b.value ? b.value : '';
+      });
+      if (v !== 'unsent live draft') throw new Error(`draft came back as "${v}"`);
+    },
+  );
+
+  await t.step(
+    'P3: pin a message; a reaction reaches the label list and never the PTY',
+    async () => {
+      const msg = await t.waitFor('an assistant message', () =>
+        [
+          ...document.querySelectorAll(
+            '[data-testid="chat"]:not(.chat--hidden) .msg[data-kind="assistant"]',
+          ),
+        ].pop(),
+      );
+      const before = t.termText().length;
+      const key = msg.dataset.key;
+      msg.querySelector('.hbar button[aria-label="Pin"]').click();
+      await t.waitFor('pin mark', () =>
+        document.querySelector(`.msg[data-key="${key}"] .mtag[data-mark="pin"]`),
+      );
+      msg.querySelector('.hbar button[aria-label="React"]').click();
+      const pick = await t.waitFor('emoji picker', () =>
+        document.querySelector('.picker .emoji[data-emoji="✅"]'),
+      );
+      pick.click();
+      await t.waitFor('reaction chip', () =>
+        document.querySelector(`.msg[data-key="${key}"] .rchip[data-emoji="✅"]`),
+      );
+      await t.sleep(1500);
+      if (t.termText().includes('✅')) throw new Error('the reaction reached the terminal');
+      if (t.termText().length !== before) t.fact('termGrewDuringReaction', true);
+    },
+  );
+
   // ---- 11. quit ----------------------------------------------------------------------------------------------------------------------
   await t.step('quit path', async () => {
     t.fact('hooksBeforeQuit', await hooks());

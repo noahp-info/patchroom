@@ -10,7 +10,12 @@
 //! - `e2e_sleep {ms}`: a timer that does not depend on webview timers (a locked or occluded
 //!   WKWebView may throttle `setTimeout`, but an IPC reply still arrives);
 //! - `e2e_param {name}`: a scenario parameter from the environment (`PATCHROOM_E2E_<NAME>`);
-//! - `e2e_quit`: exit through the normal quit path, so the manager's shutdown runs.
+//! - `e2e_quit`: exit through the normal quit path, so the manager's shutdown runs;
+//! - `e2e_restart {phase}`: quit the same way and ask `scripts/e2e-live.sh` to start the app
+//!   again on the same data dir with `PATCHROOM_E2E_PHASE=<phase>` (the scenario reads it with
+//!   `e2e_param("phase")`), so one run can check what survives a restart;
+//! - `e2e_decision_log`: the notification decision log (`notify-decisions.log` in the data
+//!   dir): event, DM id, decision and reason per line, never a message body.
 //!
 //! There is no network listener: everything goes over Tauri's own IPC.
 
@@ -241,9 +246,52 @@ pub async fn e2e_quit(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Name of the file `e2e_restart` leaves in the report dir for the driving script.
+pub const RESTART_REQUEST: &str = "restart-request";
+
+/// Write the restart request: the phase name, on one line. Phases are short identifiers.
+fn write_restart_request(dir: &Path, phase: &str) -> Result<PathBuf, String> {
+    if !safe_name(phase) || phase.contains('.') {
+        return Err(format!("bad phase name: {phase}"));
+    }
+    write_report(dir, RESTART_REQUEST, &format!("{phase}\n"))
+}
+
+/// `e2e_restart {phase}`: ask `scripts/e2e-live.sh` for a relaunch on the same data dir, then
+/// exit through the normal quit path. Without the script the app simply quits.
+#[tauri::command]
+pub async fn e2e_restart(app: AppHandle, phase: String) -> Result<(), String> {
+    let dir = state(&app)?.args.report_dir.clone();
+    write_restart_request(&dir, &phase)?;
+    app.exit(0);
+    Ok(())
+}
+
+/// `e2e_decision_log -> string`: the notification decision log of this run's data dir.
+#[tauri::command]
+pub async fn e2e_decision_log(app: AppHandle) -> Result<String, String> {
+    state(&app)?;
+    let dir = match std::env::var("PATCHROOM_DATA_DIR") {
+        Ok(p) if !p.is_empty() => PathBuf::from(p),
+        _ => app.path().app_data_dir().map_err(|e| e.to_string())?,
+    };
+    Ok(std::fs::read_to_string(dir.join(crate::manager::DECISION_LOG)).unwrap_or_default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restart_request_is_a_safe_phase_name_in_the_report_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = write_restart_request(dir.path(), "after-restart").unwrap();
+        assert_eq!(p, dir.path().join(RESTART_REQUEST));
+        assert_eq!(std::fs::read_to_string(p).unwrap(), "after-restart\n");
+        for bad in ["", "../x", "a b", "a.b", "x/y"] {
+            assert!(write_restart_request(dir.path(), bad).is_err(), "{bad:?}");
+        }
+    }
 
     fn v(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| (*s).to_owned()).collect()
