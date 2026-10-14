@@ -1,4 +1,5 @@
 import { StrictMode } from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import './theme/index.css';
@@ -8,10 +9,14 @@ const root = document.getElementById('root');
 if (!root) throw new Error('Missing #root element');
 
 function mount(el: HTMLElement): void {
-  createRoot(el).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
+  const r = createRoot(el);
+  // Commit synchronously, so the app's key handlers exist as soon as the page has loaded.
+  flushSync(() =>
+    r.render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    ),
   );
 }
 

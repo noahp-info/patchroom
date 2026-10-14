@@ -38,8 +38,37 @@ const P2_COMMANDS = [
   'session_mark_read',
   'statusline_cycle_mode',
 ];
+/** The P3 additions to the fixed IPC contract (docs/gauntlet/P3-BAR.md). */
+const P3_COMMANDS = [
+  'activity_list',
+  'chat_locate',
+  'draft_get',
+  'draft_set',
+  'mark_add',
+  'mark_list',
+  'mark_remove',
+  'notify_test',
+  'prefs_get',
+  'prefs_set',
+  'search',
+  'search_reindex',
+  'section_delete',
+  'section_rename',
+  'section_reorder',
+  'session_reorder',
+  'session_set_flags',
+  'sound_hooks_detect',
+];
+/** The folder-section additions (docs/gauntlet/P3-FOLDER-SECTIONS.md). */
+const FOLDER_COMMANDS = [
+  'folder_session_hide',
+  'folder_session_open',
+  'folder_sessions',
+  'section_create_from_folder',
+  'section_set_archive_days',
+];
 /** Declared by the backend beyond the fixed contract; the UI uses them when present. */
-const P2_OPTIONAL = ['session_view'];
+const P2_OPTIONAL = ['session_view', 'session_focus'];
 const P1B_EVENTS = ['pty:exit', 'pty:output', 'session:status', 'session:title'];
 const P2_EVENTS = [
   'chat:items',
@@ -48,6 +77,11 @@ const P2_EVENTS = [
   'session:badges',
   'statusline:update',
 ];
+const P3_EVENTS = ['activity:changed', 'notify:fire', 'prefs:changed'];
+/** Declared beyond the fixed contract: a click on a native notification opens its DM. */
+const P3_OPTIONAL_EVENTS = ['notify:open'];
+/** Folder sections: the filesystem watch tells the UI a section's listing changed. */
+const FOLDER_EVENTS = ['folder:changed'];
 
 /**
  * Backend and frontend build in parallel against this contract. Once the backend declares any P2
@@ -55,6 +89,10 @@ const P2_EVENTS = [
  */
 const requireP2 = (declared: string[], p2: string[]) =>
   !!process.env.CI || process.env.PR_REQUIRE_P2 === '1' || p2.some((c) => declared.includes(c));
+const requireFolder = (declared: string[], names: string[]) =>
+  !!process.env.CI || process.env.PR_REQUIRE_P3 === '1' || names.some((c) => declared.includes(c));
+const requireP3 = (declared: string[], p3: string[]) =>
+  !!process.env.CI || process.env.PR_REQUIRE_P3 === '1' || p3.some((c) => declared.includes(c));
 
 interface Declared {
   /** camelCase argument names Tauri expects, as written by the frontend. */
@@ -117,9 +155,38 @@ async function recordTauriCalls(): Promise<Call[]> {
         calls.push({ cmd, args });
         if (cmd === 'session_create' || cmd === 'section_create') return { id: 'x' };
         if (cmd === 'session_list' || cmd === 'section_list') return [];
+        if (cmd === 'section_create_from_folder') return { id: 'x' };
+        if (cmd === 'folder_sessions')
+          return {
+            sessions: [
+              {
+                sessionId: 's1',
+                name: 'n',
+                nameSource: 'ai-title',
+                launchCwd: '/w',
+                relPath: '',
+                lastActivity: 1,
+                firstPrompt: 'p',
+                lastPrompt: 'q',
+                userTurns: 2,
+                liveElsewhere: false,
+                hidden: false,
+              },
+            ],
+            hiddenCount: 0,
+          };
+        if (cmd === 'folder_session_open')
+          return { id: 'd', name: 'n', cwd: '/w', title: '', status: 'busy', section_id: 's' };
         if (cmd === 'chat_history') return { items: [], hasMore: false };
         if (cmd === 'chat_thread') return { items: [] };
         if (cmd === 'chat_image') return { dataUrl: 'data:,' };
+        if (cmd === 'draft_get') return { body: '' };
+        if (cmd === 'mark_add') return { id: 'm', conversationId: 'i', itemKey: 'k', kind: 'pin' };
+        if (cmd === 'mark_list' || cmd === 'activity_list' || cmd === 'sound_hooks_detect')
+          return [];
+        if (cmd === 'search') return { hits: [], tookMs: 0 };
+        if (cmd === 'search_reindex') return { docs: 0, tookMs: 0 };
+        if (cmd === 'chat_locate') return { before: null };
         return null;
       },
       transformCallback: () => 1,
@@ -152,6 +219,36 @@ async function recordTauriCalls(): Promise<Call[]> {
   await ipc.sessionMarkRead('i');
   await ipc.statuslineCycleMode('i');
   await ipc.sessionView('i', 'terminal');
+  await ipc.sectionRename('s', 'Work');
+  await ipc.sectionDelete('s');
+  await ipc.sectionReorder(['s', 't']);
+  await ipc.sessionReorder('s', ['a', 'b']);
+  await ipc.sessionSetFlags('i', { starred: true, archived: false });
+  await ipc.draftGet('i');
+  await ipc.draftSet('i', 'hello');
+  await ipc.markAdd('i', 'k', 'reaction', '\u2705');
+  await ipc.markRemove('i', 'k', 'reaction', '\u2705');
+  await ipc.markList({ id: 'i', kind: 'pin' });
+  await ipc.search({ query: 'bridge', scope: { id: 'i' }, limit: 20 });
+  await ipc.searchReindex();
+  await ipc.chatLocate('i', 'k');
+  await ipc.activityList();
+  await ipc.prefsGet();
+  await ipc.prefsSet({ themeId: 'patch-bay' });
+  await ipc.soundHooksDetect();
+  await ipc.notifyTest();
+  await ipc.sessionFocus('i');
+  await ipc.sectionCreateFromFolder('/w', 'atlas');
+  await ipc.sectionSetArchiveDays('s', 30);
+  const listing = await ipc.folderSessions('s');
+  expect(listing.sessions[0]).toMatchObject({
+    sessionId: 's1',
+    nameSource: 'ai-title',
+    dmId: null,
+  });
+  const opened = await ipc.folderSessionOpen('s', 'sid');
+  expect(opened).toMatchObject({ id: 'd', sectionId: 's', folderChip: null });
+  await ipc.folderSessionHide('s', 'sid', true);
   void listens;
   return calls;
 }
@@ -164,7 +261,19 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
       for (const c of P2_COMMANDS) expect(declared, `P2 command ${c}`).toContain(c);
     }
     // Nothing the UI does not know about.
-    const known = new Set([...P1B_COMMANDS, ...P2_COMMANDS, ...P2_OPTIONAL]);
+    if (requireP3(declared, P3_COMMANDS)) {
+      for (const c of P3_COMMANDS) expect(declared, `P3 command ${c}`).toContain(c);
+    }
+    if (requireFolder(declared, FOLDER_COMMANDS)) {
+      for (const c of FOLDER_COMMANDS) expect(declared, `folder command ${c}`).toContain(c);
+    }
+    const known = new Set([
+      ...P1B_COMMANDS,
+      ...P2_COMMANDS,
+      ...P3_COMMANDS,
+      ...FOLDER_COMMANDS,
+      ...P2_OPTIONAL,
+    ]);
     expect(declared.filter((c) => !known.has(c))).toEqual([]);
   });
 
@@ -173,11 +282,17 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     const calls = await recordTauriCalls();
     const names = [...declared.keys()];
     const mustExist = requireP2(names, P2_COMMANDS);
+    const mustExist3 = requireP3(names, P3_COMMANDS);
+    const mustExistF = requireFolder(names, FOLDER_COMMANDS);
     for (const { cmd, args } of calls) {
       const d = declared.get(cmd);
       if (!d) {
         // Only a P2 command the backend has not landed yet may be missing.
-        const mayBeMissing = (!mustExist && P2_COMMANDS.includes(cmd)) || P2_OPTIONAL.includes(cmd);
+        const mayBeMissing =
+          (!mustExist && P2_COMMANDS.includes(cmd)) ||
+          (!mustExist3 && P3_COMMANDS.includes(cmd)) ||
+          (!mustExistF && FOLDER_COMMANDS.includes(cmd)) ||
+          P2_OPTIONAL.includes(cmd);
         expect(mayBeMissing, `${cmd} is declared in commands.rs`).toBe(true);
         continue;
       }
@@ -223,6 +338,27 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     expect(byCmd.prompt_list).toEqual({ id: 'i' });
     expect(byCmd.session_mark_read).toEqual({ id: 'i' });
     expect(byCmd.statusline_cycle_mode).toEqual({ id: 'i' });
+    // P3: arguments are camelCase keys, one per Rust parameter.
+    expect(byCmd.section_rename).toEqual({ id: 's', name: 'Work' });
+    expect(byCmd.section_delete).toEqual({ id: 's' });
+    expect(byCmd.section_reorder).toEqual({ ids: ['s', 't'] });
+    expect(byCmd.session_reorder).toEqual({ sectionId: 's', ids: ['a', 'b'] });
+    expect(byCmd.session_set_flags).toEqual({ id: 'i', starred: true, archived: false });
+    expect(byCmd.draft_get).toEqual({ id: 'i' });
+    expect(byCmd.draft_set).toEqual({ id: 'i', body: 'hello' });
+    expect(byCmd.mark_add).toEqual({ id: 'i', itemKey: 'k', kind: 'reaction', emoji: '\u2705' });
+    expect(byCmd.mark_remove).toEqual({ id: 'i', itemKey: 'k', kind: 'reaction', emoji: '\u2705' });
+    expect(byCmd.mark_list).toEqual({ id: 'i', kind: 'pin' });
+    expect(byCmd.search).toEqual({ query: 'bridge', scope: { id: 'i' }, limit: 20 });
+    expect(byCmd.chat_locate).toEqual({ id: 'i', itemKey: 'k' });
+    expect(byCmd.prefs_set).toEqual({ patch: { themeId: 'patch-bay' } });
+    expect(byCmd.session_focus).toEqual({ id: 'i' });
+    // Folder sections: camelCase keys, `name` optional.
+    expect(byCmd.section_create_from_folder).toEqual({ path: '/w', name: 'atlas' });
+    expect(byCmd.section_set_archive_days).toEqual({ id: 's', days: 30 });
+    expect(byCmd.folder_sessions).toEqual({ sectionId: 's' });
+    expect(byCmd.folder_session_open).toEqual({ sectionId: 's', sessionId: 'sid' });
+    expect(byCmd.folder_session_hide).toEqual({ sectionId: 's', sessionId: 'sid', hidden: true });
     // Nothing goes through the ungranted dialog plugin.
     expect(Object.keys(byCmd).some((c) => c.startsWith('plugin:'))).toBe(false);
   });
@@ -233,12 +369,31 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     if (requireP2(events, P2_EVENTS)) {
       for (const e of P2_EVENTS) expect(events, `P2 event ${e}`).toContain(e);
     }
+    if (requireFolder(events, FOLDER_EVENTS)) {
+      for (const e of FOLDER_EVENTS) expect(events, `folder event ${e}`).toContain(e);
+    }
+    if (requireP3(events, P3_EVENTS)) {
+      for (const e of P3_EVENTS) expect(events, `P3 event ${e}`).toContain(e);
+    }
     const store = readFileSync(join(here, '..', 'src', 'state', 'store.ts'), 'utf8');
     // The UI subscribes to every event of the contract, declared yet or not.
-    for (const e of [...P1B_EVENTS, ...P2_EVENTS]) {
+    for (const e of [
+      ...P1B_EVENTS,
+      ...P2_EVENTS,
+      ...P3_EVENTS,
+      ...P3_OPTIONAL_EVENTS,
+      ...FOLDER_EVENTS,
+    ]) {
       expect(store, `store.ts subscribes to ${e}`).toContain(`'${e}'`);
     }
-    for (const e of events) expect([...P1B_EVENTS, ...P2_EVENTS]).toContain(e);
+    const all = [
+      ...P1B_EVENTS,
+      ...P2_EVENTS,
+      ...P3_EVENTS,
+      ...P3_OPTIONAL_EVENTS,
+      ...FOLDER_EVENTS,
+    ];
+    for (const e of events) expect(all).toContain(e);
   });
 
   test('the TS ChatItem kinds, the synthetic data and the Rust wire format agree', () => {

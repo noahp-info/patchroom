@@ -4,12 +4,30 @@ import { Icon } from './Icon';
 export interface NewDmDialogProps {
   open: boolean;
   defaultCwd: string;
+  /** Set when opened from a folder section: the DM is filed there and starts in its folder. */
+  section?: { id: string; name: string } | null;
+  /** Launch folders under that section's home (the home first), for the worktree switch. */
+  folders?: string[];
   onClose(): void;
   onCreate(cwd: string, name: string): Promise<void>;
   onPick(defaultPath: string): Promise<string | null>;
 }
 
-export function NewDmDialog({ open, defaultCwd, onClose, onCreate, onPick }: NewDmDialogProps) {
+function worktreeLabel(home: string, f: string, isHome: boolean): string {
+  const base = f.split('/').filter(Boolean).pop() ?? f;
+  if (isHome) return `${base} (home folder)`;
+  return f.startsWith(`${home}/`) ? f.slice(home.length + 1) : `${base} (linked worktree)`;
+}
+
+export function NewDmDialog({
+  open,
+  defaultCwd,
+  section = null,
+  folders = [],
+  onClose,
+  onCreate,
+  onPick,
+}: NewDmDialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const [cwd, setCwd] = useState(defaultCwd);
   const [name, setName] = useState('');
@@ -49,7 +67,28 @@ export function NewDmDialog({ open, defaultCwd, onClose, onCreate, onPick }: New
     <dialog ref={ref} className="newdm" onClose={onClose} aria-labelledby="newdm-title">
       <form onSubmit={submit}>
         <h2 id="newdm-title">New DM</h2>
-        <p className="newdm__lede">Runs claude in a real terminal, in the folder you choose.</p>
+        <p className="newdm__lede">
+          {section
+            ? `Starts in ${section.name}. Pick a worktree below to start there instead.`
+            : 'Runs claude in a real terminal, in the folder you choose.'}
+        </p>
+        {section && folders.length > 1 && (
+          <label className="field">
+            <span>Worktree</span>
+            <select
+              value={folders.includes(cwd.trim()) ? cwd.trim() : ''}
+              onChange={(e) => e.target.value && setCwd(e.target.value)}
+              aria-label="Worktree"
+            >
+              {!folders.includes(cwd.trim()) && <option value="">Custom folder</option>}
+              {folders.map((f, i) => (
+                <option key={f} value={f}>
+                  {worktreeLabel(folders[0], f, i === 0)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="field">
           <span>Folder</span>
           <span className="field__row">

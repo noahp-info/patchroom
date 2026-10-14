@@ -11,3 +11,19 @@ export type { ContrastPair, TokenGroup, TokenKey } from './tokens.ts';
 export type { BaseId, BaseInfo, Theme, ThemeMode, TokenMap } from './types.ts';
 export { contrastReport, parseTheme, validateTheme } from './validate.ts';
 export type { ContrastFailure, ValidationResult } from './validate.ts';
+export { ACTIVE_BASE, activeTheme, allThemes, currentMode, shippedThemes } from './active.ts';
+export { useThemeRuntime } from './runtime.ts';
+export type { ThemeRuntime } from './runtime.ts';
+export {
+  DEFAULT_FONT,
+  DEFAULT_FONT_SIZE,
+  DEFAULT_PALETTE,
+  FIXED_PALETTES,
+  FONT_SIZES,
+  TERM_FONTS,
+  applyTerminalTheme,
+  bindTerminalTheme,
+  paletteFromTheme,
+  termStyleFor,
+} from './terminal.ts';
+export type { ResolvedTermStyle, StylableTerm, TermPalette } from './terminal.ts';

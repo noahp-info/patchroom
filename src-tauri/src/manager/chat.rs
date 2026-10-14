@@ -87,6 +87,8 @@ struct OpenPrompt {
     awaiting_link: bool,
     /// When the prompt reached the chat (the sweep forces out one that stays unannounced).
     since: Instant,
+    /// Wall-clock time of the same moment, epoch milliseconds, for the Activity list.
+    at_ms: i64,
 }
 
 #[derive(Default)]
@@ -101,12 +103,58 @@ struct ChatState {
     mode_scrape_pending: bool,
     /// The DM is shown as a terminal: a hidden AskUserQuestion picker is released at once.
     terminal_view: bool,
+    /// When an announced prompt last resolved, epoch milliseconds (0: never). The Activity
+    /// list uses it to tell "answered, tool still running" from "never had a chat prompt".
+    last_resolved_ms: i64,
 }
 
 /// Transcript watcher and prompt state of one DM.
 pub(in crate::manager) struct Chat {
-    watcher: Watcher,
+    pub(in crate::manager) watcher: Watcher,
     state: Mutex<ChatState>,
+}
+
+impl Chat {
+    /// When an announced prompt of this DM last resolved, epoch milliseconds (0: never).
+    pub(in crate::manager) fn last_resolved_ms(&self) -> i64 {
+        lock(&self.state).last_resolved_ms
+    }
+
+    /// Activity rows for this DM's announced, unresolved prompts, in arrival order.
+    pub(in crate::manager) fn open_prompt_rows(&self, id: &str) -> Vec<super::slack::ActivityRow> {
+        let st = lock(&self.state);
+        let mut ids: Vec<&PromptId> = st
+            .prompts
+            .iter()
+            .filter(|(_, p)| p.emitted)
+            .map(|(k, _)| k)
+            .collect();
+        ids.sort();
+        ids.into_iter()
+            .filter_map(|pid| {
+                let p = st.prompts.get(pid)?;
+                Some(super::slack::ActivityRow {
+                    id: id.to_owned(),
+                    kind: "prompt",
+                    ts: p.at_ms,
+                    prompt_id: Some(pid.to_string()),
+                    item_key: p.tool_use_id.clone(),
+                    summary: super::slack::prompt_summary(
+                        p.kind.as_str(),
+                        &p.tool_name,
+                        &p.tool_input,
+                        &p.questions,
+                    ),
+                })
+            })
+            .collect()
+    }
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64)
 }
 
 /// How long a plan answer waits for the TUI dialog to draw after the hold is released.
@@ -289,7 +337,7 @@ impl Manager {
             .and_then(|s| s.padding)
     }
 
-    fn chat_of(&self, id: &str) -> Option<Arc<Chat>> {
+    pub(super) fn chat_of(&self, id: &str) -> Option<Arc<Chat>> {
         lock(&self.chats).get(id).cloned()
     }
 
@@ -336,7 +384,7 @@ impl Manager {
     }
 
     /// The chat of a DM, created on demand from the stored row (history of an exited DM).
-    fn chat_for_read(self: &Arc<Self>, id: &str) -> Result<Arc<Chat>> {
+    pub(super) fn chat_for_read(self: &Arc<Self>, id: &str) -> Result<Arc<Chat>> {
         if let Some(c) = self.chat_of(id) {
             return Ok(c);
         }
@@ -437,6 +485,8 @@ impl Manager {
         let conv = parse_id(id)?;
         let b = lock(&self.store).clear_unread(&Author::me(), conv)?;
         self.emit_badges(id, b.unread, b.needs_you);
+        // Marking read means the user is looking at this DM right now.
+        self.hint_focus(id);
         Ok(())
     }
 
@@ -529,6 +579,7 @@ impl Manager {
     /// Unknown id.
     pub fn set_view(&self, id: &str, terminal: bool) -> Result<()> {
         parse_id(id)?;
+        self.hint_focus(id);
         if let Some(chat) = self.chat_of(id) {
             lock(&chat.state).terminal_view = terminal;
         }
@@ -677,13 +728,33 @@ impl Manager {
         if !update.items.is_empty() && (!update.initial || update.reset) {
             self.emit_items(id, &update.items);
         }
+        if update.reset {
+            self.index_items(id, adapter.items(), true);
+        } else if !update.items.is_empty() {
+            self.index_items(id, &update.items, false);
+        }
         if update.new_assistant > 0 {
             if let Ok(conv) = parse_id(id) {
                 let b = lock(&self.store).add_unread(&Author::me(), conv, update.new_assistant);
                 if let Ok(b) = b {
+                    if let Some(first) = update
+                        .items
+                        .iter()
+                        .find(|i| matches!(i.body, patchroom_claude::ItemBody::Assistant { .. }))
+                    {
+                        let _ = lock(&self.store).note_first_unread(
+                            conv,
+                            first.ts,
+                            &first.key,
+                            &first.summary(120),
+                        );
+                    }
                     self.emit_badges(id, b.unread, b.needs_you);
                 }
             }
+        }
+        if !update.initial && !update.reset {
+            self.notify_api_errors(id, &update.items);
         }
         let Some(chat) = self.chat_of(id) else { return };
         if update.meta_changed {
@@ -718,10 +789,15 @@ impl Manager {
 
     // ---- badges ----
 
-    fn emit_badges(&self, id: &str, unread: u32, needs_you: bool) {
+    /// Emit `session:badges`. An archived DM never shows unread; needs-you stays true.
+    pub(super) fn emit_badges(&self, id: &str, unread: u32, needs_you: bool) {
+        let archived = parse_id(id)
+            .ok()
+            .and_then(|c| lock(&self.store).conversation(c).ok())
+            .is_some_and(|c| c.archived);
         self.sink.emit(UiEvent::Badges {
             id: id.to_owned(),
-            unread,
+            unread: if archived { 0 } else { unread },
             needs_you,
         });
     }
@@ -739,6 +815,9 @@ impl Manager {
         if let Ok(b) = store.set_needs_you(&Author::me(), conv, needs) {
             drop(store);
             self.emit_badges(id, b.unread, b.needs_you);
+            if needs {
+                self.notify_event(id, patchroom_prefs::Event::Needs, self.needs_body(id));
+            }
         }
     }
 
@@ -806,6 +885,7 @@ impl Manager {
                 emitted: false,
                 awaiting_link: false,
                 since: Instant::now(),
+                at_ms: now_ms(),
             },
         );
         // Look now, then once more after the grace period (the tool_use line trails the
@@ -888,6 +968,7 @@ impl Manager {
                         emitted: true,
                         awaiting_link: false,
                         since: Instant::now(),
+                        at_ms: now_ms(),
                     },
                 );
                 if let Some(p) = st.prompts.get(&q.id) {
@@ -930,6 +1011,7 @@ impl Manager {
                         emitted: true,
                         awaiting_link: false,
                         since: Instant::now(),
+                        at_ms: now_ms(),
                     },
                 );
                 if let Some(open) = st.prompts.get(&p.id) {
@@ -1057,6 +1139,7 @@ impl Manager {
             // The UI never saw it (answered at once in the terminal): stay silent.
             return;
         }
+        lock(&chat.state).last_resolved_ms = now_ms();
         self.sink.emit(UiEvent::PromptResolved {
             id: key.to_owned(),
             prompt_id: r.id.to_string(),
@@ -1181,6 +1264,7 @@ mod tests {
             emitted: true,
             awaiting_link: true,
             since: Instant::now(),
+            at_ms: 0,
         };
         assert!(!relink(&mut p, None));
         assert!(p.awaiting_link);

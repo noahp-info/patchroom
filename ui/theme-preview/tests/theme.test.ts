@@ -190,13 +190,32 @@ test('cable path starts and ends at the plugs', () => {
   assert.ok(d.endsWith('300 40'));
 });
 
+const SRC = join(import.meta.dirname, '..', '..', 'src');
+// Absolute paths of every .css under src except the theme dir (scanned above), styles.css
+// included, so any new stylesheet is covered automatically.
+function p3Stylesheets(dir = SRC): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) return full === THEME_CSS ? [] : p3Stylesheets(full);
+    return e.name.endsWith('.css') ? [full] : [];
+  });
+}
+
 // The separation guarantee: CSS never names a color. Only theme tokens carry color.
 test('base CSS contains no color literals beyond the allowed constants', () => {
-  const files = ['base.css', ...readdirSync(join(THEME_CSS, 'bases')).map((f) => `bases/${f}`)];
+  const files = [
+    'base.css',
+    ...readdirSync(join(THEME_CSS, 'bases')).map((f) => `bases/${f}`),
+    // Every P3 stylesheet outside the theme dir, so new CSS cannot hard-code a color.
+    ...p3Stylesheets(),
+  ];
   // macOS window controls and neutral black or white alpha for shadows and glints.
   const allowedHex = new Set(['#fff', '#ffffff', '#000', '#ec6a5e', '#f4bf4f', '#61c554']);
   for (const f of files) {
-    const css = readFileSync(join(THEME_CSS, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const css = readFileSync(f.startsWith('/') ? f : join(THEME_CSS, f), 'utf8').replace(
+      /\/\*[\s\S]*?\*\//g,
+      '',
+    );
     for (const m of css.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) {
       assert.ok(allowedHex.has(m[0].toLowerCase()), `${f} hard-codes ${m[0]}`);
     }
@@ -232,11 +251,30 @@ test('every var(--x) in the CSS is a token or a documented base variable', () =>
     'cc',
   ]);
   const tokens = new Set<string>(TOKEN_KEYS);
-  const files = ['base.css', ...readdirSync(join(THEME_CSS, 'bases')).map((f) => `bases/${f}`)];
+  const files = [
+    'base.css',
+    ...readdirSync(join(THEME_CSS, 'bases')).map((f) => `bases/${f}`),
+    // Every stylesheet outside the theme dir, so new CSS cannot hard-code a color.
+    ...p3Stylesheets(),
+  ];
+  const read = (f: string) =>
+    readFileSync(f.startsWith('/') ? f : join(THEME_CSS, f), 'utf8').replace(
+      /\/\*[\s\S]*?\*\//g,
+      '',
+    );
+  // A stylesheet may derive its own variables from tokens (`--c-link: color-mix(...)`).
+  const declared = new Set<string>(
+    files.flatMap((f) => [...read(f).matchAll(/(?:^|[;{\s])--([a-z0-9-]+)\s*:/g)].map((m) => m[1])),
+  );
+  // Variables the UI sets inline from runtime data, with a CSS fallback where one is needed.
+  const inlineVars = new Set(['pct', 'term-bg', 'termbar-bg', 'termbar-line', 'termbar-fg']);
   for (const f of files) {
-    const css = readFileSync(join(THEME_CSS, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const css = read(f);
     for (const m of css.matchAll(/var\(--([a-z0-9-]+)/g)) {
-      assert.ok(tokens.has(m[1]) || baseVars.has(m[1]), `${f} uses undefined --${m[1]}`);
+      assert.ok(
+        tokens.has(m[1]) || baseVars.has(m[1]) || declared.has(m[1]) || inlineVars.has(m[1]),
+        `${f} uses undefined --${m[1]}`,
+      );
     }
   }
 });

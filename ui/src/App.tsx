@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
-import { resolveMode, themeVars } from './theme/index.ts';
+import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ClaudeGlyph, Icon } from './components/Icon';
 import { NewDmDialog } from './components/NewDmDialog';
+import { ActivityView, PrefsView, SavedView } from './components/PanelViews';
+import { QuickSwitcher } from './components/QuickSwitcher';
+import { SearchPanel } from './components/SearchPanel';
 import { ChatView } from './components/chat/ChatView';
 import { Sidebar } from './components/Sidebar';
 import { Terminal } from './components/Terminal';
-import { loadDefaultTheme } from './lib/theme';
+import { playNotifySound, useThemeRuntime } from './lib/prefsModule';
 import { ITERM_THEME } from './lib/sessionTerminal';
 import { cwdParts } from './lib/cwd';
+import { launchFolders } from './lib/folder';
 import { shellQuotePath } from './lib/keys';
+import { termbarStyle } from './lib/termbar';
 import { getStore } from './state/runtime';
 import { useAppState } from './state/store';
 import type { Needs, SessionStatus } from './ipc';
@@ -27,42 +31,55 @@ const NEEDS_TEXT: Record<Needs, string> = {
   other: 'dialog open',
 };
 
-function useSystemDark(): boolean {
-  const [dark, setDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const on = () => setDark(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, []);
-  return dark;
-}
-
 export function App() {
   const store = getStore();
   const state = useAppState(store);
-  const dark = useSystemDark();
-  const { base, theme } = useMemo(() => loadDefaultTheme(), []);
-  const mode = resolveMode('system', dark);
+  const { base, theme, mode, style: themeStyle } = useThemeRuntime();
   const [newDmOpen, setNewDmOpen] = useState(false);
+  // A folder section id when the dialog was opened from that section.
+  const [newDmSection, setNewDmSection] = useState<string | null>(null);
+  const dmSection = state.sections.find((x) => x.id === newDmSection && x.folder) ?? null;
 
   useEffect(() => {
     void store.start();
   }, [store]);
 
-  // Cmd+J flips between chat and terminal. Captured on the window so xterm never sees it.
+  // App shortcuts. Captured on the window so xterm and the composer never see them.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== 'j' || !e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      const id = store.getSnapshot().activeId;
-      if (!id) return;
-      e.preventDefault();
-      e.stopPropagation();
-      store.toggleView(id);
+      const key = e.key.toLowerCase();
+      const act = (fn: () => void) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fn();
+      };
+      const snap = store.getSnapshot();
+      if (e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (key === 'j' && !e.shiftKey) {
+          const id = snap.activeId;
+          if (id) act(() => store.toggleView(id));
+        } else if (key === 'k' && !e.shiftKey) {
+          act(() => store.setPanel(snap.panel === 'switcher' ? null : 'switcher'));
+        } else if (key === 'a' && e.shiftKey) {
+          act(() => void store.jumpOldestNeeds());
+        } else if (key === 'f' && e.shiftKey) {
+          act(() => store.setPanel('search', 'all'));
+        } else if (key === 'f' && !e.shiftKey) {
+          act(() => store.setPanel('search', snap.activeId ? 'dm' : 'all'));
+        } else if (key === ',' && !e.shiftKey) {
+          act(() => store.setPanel(snap.panel === 'prefs' ? null : 'prefs'));
+        }
+      } else if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey) {
+        if (e.key === 'ArrowDown') act(() => store.jumpUnread(1));
+        else if (e.key === 'ArrowUp') act(() => store.jumpUnread(-1));
+      }
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [store]);
+
+  // The backend decides whether to alert; this only plays the matching sound.
+  useEffect(() => store.onNotify((e) => playNotifySound(e.event, e.id)), [store]);
 
   // Dropping files on the window pastes their paths, like iTerm2. Tauri only: the browser
   // never exposes real paths.
@@ -88,12 +105,12 @@ export function App() {
     };
   }, [store]);
 
-  const style = { ...themeVars(theme, mode), colorScheme: mode } as CSSProperties;
+  const style = themeStyle;
   const active = state.sessions.find((s) => s.id === state.activeId) ?? null;
   const needsYou = (s: { id: string; status: SessionStatus }) =>
     s.status === 'waiting' || (state.badges[s.id]?.needsYou ?? 0) > 0;
-  const needsCount = state.sessions.filter(needsYou).length;
-  const firstNeeding = state.sessions.find(needsYou);
+  const needsCount = state.sessions.filter((s) => !s.archived && needsYou(s)).length;
+  const panelOpen = state.panel === 'activity' || state.panel === 'saved';
   const view = active ? (state.views[active.id] ?? 'chat') : 'chat';
 
   return (
@@ -109,9 +126,22 @@ export function App() {
         <span className="tb-spacer" />
         <button
           type="button"
+          className="tb-search"
+          onClick={() => store.setPanel('switcher')}
+          aria-label="Jump to a DM"
+          title={'Jump to a DM (\u2318K)'}
+        >
+          <Icon name="search" />
+          <span>Jump to a DM</span>
+          <kbd>{'\u2318K'}</kbd>
+        </button>
+        <span className="tb-spacer" />
+        <button
+          type="button"
           className="tb-act"
-          disabled={!firstNeeding}
-          onClick={() => firstNeeding && store.select(firstNeeding.id)}
+          disabled={needsCount === 0}
+          title={'Oldest DM that needs you (\u2318\u21E7A)'}
+          onClick={() => void store.jumpOldestNeeds()}
         >
           <Icon name="inbox" />
           Needs you {needsCount > 0 && <b>{needsCount}</b>}
@@ -120,15 +150,16 @@ export function App() {
 
       <Sidebar
         state={state}
-        onSelect={(id) => store.select(id)}
-        onNewDm={() => setNewDmOpen(true)}
-        onNewSection={(name) => store.createSection(name)}
-        onToggleSection={(id, collapsed) => void store.setSectionCollapsed(id, collapsed)}
+        store={store}
+        onNewDm={(sectionId) => {
+          setNewDmSection(sectionId ?? null);
+          setNewDmOpen(true);
+        }}
       />
 
       <main className="conv">
         {active ? (
-          <header className="ch">
+          <header className="ch" inert={panelOpen}>
             <h2>
               <ClaudeGlyph />
               <span className="ch__name" title={active.name}>
@@ -230,13 +261,16 @@ export function App() {
           </div>
         )}
 
-        <div className="pane">
+        <div className="pane" inert={panelOpen}>
           {active && (
             // claude's live title (OSC 0/2), shown where iTerm2 shows it: above the terminal.
             // Fixed height, so a title arriving never moves the terminal.
             <div
               className={`termbar${view === 'chat' ? ' termbar--off' : ''}`}
               data-testid="term-title"
+              style={termbarStyle(
+                (state.activeId && state.termBg[state.activeId]) || ITERM_THEME.background,
+              )}
             >
               <span className="termbar__title" title={active.title || undefined}>
                 {active.title}
@@ -244,7 +278,15 @@ export function App() {
             </div>
           )}
 
-          <div className="stage" style={{ '--term-bg': ITERM_THEME.background } as CSSProperties}>
+          <div
+            className="stage"
+            style={
+              {
+                '--term-bg':
+                  (state.activeId && state.termBg[state.activeId]) || ITERM_THEME.background,
+              } as CSSProperties
+            }
+          >
             {state.sessions.map((s) => (
               <Terminal
                 key={s.id}
@@ -272,16 +314,29 @@ export function App() {
               visible={view === 'chat'}
               unread={state.badges[active.id]?.unread ?? 0}
               thread={state.thread}
+              marks={state.marks}
             />
           )}
         </div>
+        {state.panel === 'activity' && <ActivityView state={state} store={store} />}
+        {state.panel === 'saved' && <SavedView state={state} store={store} />}
       </main>
+
+      {state.panel === 'prefs' && <PrefsView state={state} store={store} />}
+      {state.panel === 'switcher' && <QuickSwitcher state={state} store={store} />}
+      {state.panel === 'search' && <SearchPanel state={state} store={store} />}
 
       <NewDmDialog
         open={newDmOpen}
-        defaultCwd={state.lastCwd}
+        defaultCwd={dmSection?.folder ?? state.lastCwd}
+        section={dmSection ? { id: dmSection.id, name: dmSection.name } : null}
+        folders={
+          dmSection?.folder
+            ? launchFolders(dmSection.folder, state.folders[dmSection.id]?.sessions ?? [])
+            : []
+        }
         onClose={() => setNewDmOpen(false)}
-        onCreate={(cwd, name) => store.create(cwd, name)}
+        onCreate={(cwd, name) => store.create(cwd, name, dmSection?.id ?? null)}
         onPick={(p) => store.pickFolder(p)}
       />
     </div>

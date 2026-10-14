@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { drain, openWithDm } from './helpers';
+import { chooseNew, drain, openWithDm } from './helpers';
 
 test.describe('shell', () => {
   test('Homeroom is the default base and the sidebar lists the DM', async ({ page }) => {
@@ -88,7 +88,7 @@ test.describe('shell', () => {
 
   test('moving a DM and adding a section go through the section commands', async ({ page }) => {
     const id = await openWithDm(page, 'mock');
-    await page.getByRole('button', { name: 'New section' }).click();
+    await chooseNew(page, 'New section');
     await page.getByLabel('Section name').fill('Reviews');
     await page.getByRole('button', { name: 'Add', exact: true }).click();
     await expect(page.locator('.side [data-section]').filter({ hasText: 'Reviews' })).toBeVisible();
@@ -109,7 +109,7 @@ test.describe('shell', () => {
   test('Browse uses the backend folder picker', async ({ page }) => {
     await page.goto('/?mock');
     await page.evaluate(() => (window.__PR_MOCK__!.pickResult = '/tmp/picked-folder'));
-    await page.getByRole('button', { name: 'New DM' }).first().click();
+    await chooseNew(page, 'New DM');
     const dlg = page.getByRole('dialog', { name: 'New DM' });
     await dlg.getByRole('button', { name: 'Browse' }).click();
     await expect(dlg.getByLabel('Folder')).toHaveValue('/tmp/picked-folder');
@@ -117,7 +117,7 @@ test.describe('shell', () => {
 
   test('New DM defaults to the last folder', async ({ page }) => {
     await openWithDm(page, 'mock');
-    await page.getByRole('button', { name: 'New DM' }).first().click();
+    await chooseNew(page, 'New DM');
     await expect(page.getByRole('dialog').getByLabel('Folder')).toHaveValue('/tmp/patchroom-test');
   });
 

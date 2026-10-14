@@ -72,6 +72,15 @@ pub enum PtyEvent {
     },
     /// OSC 9 attention message, for example "Claude needs your permission".
     Notification(String),
+    /// OSC 777;notify attention message.
+    Notify {
+        /// Title, empty when absent.
+        title: String,
+        /// Body.
+        body: String,
+    },
+    /// A BEL outside any escape sequence.
+    Bell,
     /// OSC 9;4 progress report.
     Progress {
         /// State of the indicator.

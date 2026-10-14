@@ -11,9 +11,15 @@ use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::manager::{
-    CreateRequest, ImageData, PromptAnswer, SectionInfo, SessionInfo, SessionManager,
+    ActivityRow, CreateRequest, ImageData, Located, MarkInfo, PromptAnswer, Reindexed, SectionInfo,
+    SessionInfo, SessionManager,
 };
 use patchroom_claude::{ChatItem, Cursor, Page};
+use patchroom_folders::Listing;
+use patchroom_prefs::{DetectedHook, Prefs};
+use patchroom_search::SearchResult;
+use serde::Deserialize;
+use serde_json::Value;
 
 type CmdResult<T> = std::result::Result<T, String>;
 
@@ -302,4 +308,260 @@ pub async fn paste_image(
     let m = state.inner().clone();
     let path = blocking(move || m.paste_image(&id, &data, &media_type)).await?;
     Ok(PastedImage { path })
+}
+
+// ---- P3: the Slack layer ----
+
+/// `section_rename {id, name}`.
+#[tauri::command]
+pub async fn section_rename(
+    state: State<'_, SessionManager>,
+    id: String,
+    name: String,
+) -> CmdResult<()> {
+    state.section_rename(&id, &name).map_err(|e| e.to_string())
+}
+
+/// `section_delete {id}`: the section's DMs fall back to "Direct messages".
+#[tauri::command]
+pub async fn section_delete(state: State<'_, SessionManager>, id: String) -> CmdResult<()> {
+    state.section_delete(&id).map_err(|e| e.to_string())
+}
+
+/// `section_reorder {ids}`: listed sections first in that order, the rest after them.
+#[tauri::command]
+pub async fn section_reorder(state: State<'_, SessionManager>, ids: Vec<String>) -> CmdResult<()> {
+    state.section_reorder(&ids).map_err(|e| e.to_string())
+}
+
+/// `session_reorder {sectionId, ids}`: move the DMs into the section (null: unplaced) and
+/// order them, in one call.
+#[tauri::command]
+pub async fn session_reorder(
+    state: State<'_, SessionManager>,
+    section_id: Option<String>,
+    ids: Vec<String>,
+) -> CmdResult<()> {
+    state
+        .session_reorder(section_id.as_deref(), &ids)
+        .map_err(|e| e.to_string())
+}
+
+/// `session_set_flags {id, starred?, archived?}`.
+#[tauri::command]
+pub async fn session_set_flags(
+    state: State<'_, SessionManager>,
+    id: String,
+    starred: Option<bool>,
+    archived: Option<bool>,
+) -> CmdResult<()> {
+    state
+        .set_flags(&id, starred, archived)
+        .map_err(|e| e.to_string())
+}
+
+/// Result of `draft_get`.
+#[derive(Serialize)]
+pub struct DraftBody {
+    body: String,
+}
+
+/// `draft_get {id} -> {body}`.
+#[tauri::command]
+pub async fn draft_get(state: State<'_, SessionManager>, id: String) -> CmdResult<DraftBody> {
+    let body = state.draft_get(&id).map_err(|e| e.to_string())?;
+    Ok(DraftBody { body })
+}
+
+/// `draft_set {id, body}`: an empty body deletes the draft.
+#[tauri::command]
+pub async fn draft_set(
+    state: State<'_, SessionManager>,
+    id: String,
+    body: String,
+) -> CmdResult<()> {
+    state.draft_set(&id, &body).map_err(|e| e.to_string())
+}
+
+/// `mark_add {id, itemKey, kind, emoji?} -> MarkInfo`: pin, save or react. Never reaches the PTY.
+#[tauri::command]
+pub async fn mark_add(
+    state: State<'_, SessionManager>,
+    id: String,
+    item_key: String,
+    kind: String,
+    emoji: Option<String>,
+) -> CmdResult<MarkInfo> {
+    let m = state.inner().clone();
+    blocking(move || m.mark_add(&id, &item_key, &kind, emoji.as_deref())).await
+}
+
+/// `mark_remove {id, itemKey, kind, emoji?}`.
+#[tauri::command]
+pub async fn mark_remove(
+    state: State<'_, SessionManager>,
+    id: String,
+    item_key: String,
+    kind: String,
+    emoji: Option<String>,
+) -> CmdResult<()> {
+    state
+        .mark_remove(&id, &item_key, &kind, emoji.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// `mark_list {id?, kind?} -> MarkInfo[]`: no id lists across DMs.
+#[tauri::command]
+pub async fn mark_list(
+    state: State<'_, SessionManager>,
+    id: Option<String>,
+    kind: Option<String>,
+) -> CmdResult<Vec<MarkInfo>> {
+    state
+        .mark_list(id.as_deref(), kind.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// The `scope` of `search`.
+#[derive(Debug, Default, Deserialize)]
+pub struct SearchScope {
+    id: Option<String>,
+}
+
+/// `search {query, scope?: {id?}, limit?} -> {hits, tookMs}`.
+#[tauri::command]
+pub async fn search(
+    state: State<'_, SessionManager>,
+    query: String,
+    scope: Option<SearchScope>,
+    limit: Option<usize>,
+) -> CmdResult<SearchResult> {
+    let m = state.inner().clone();
+    let scope_id = scope.and_then(|s| s.id);
+    blocking(move || m.search(&query, scope_id.as_deref(), limit)).await
+}
+
+/// `search_reindex {} -> {docs, tookMs}`.
+#[tauri::command]
+pub async fn search_reindex(state: State<'_, SessionManager>) -> CmdResult<Reindexed> {
+    let m = state.inner().clone();
+    blocking(move || m.search_reindex()).await
+}
+
+/// `chat_locate {id, itemKey} -> {before}`: a `chat_history` cursor whose page holds the item.
+#[tauri::command]
+pub async fn chat_locate(
+    state: State<'_, SessionManager>,
+    id: String,
+    item_key: String,
+) -> CmdResult<Located> {
+    let m = state.inner().clone();
+    blocking(move || m.chat_locate(&id, &item_key)).await
+}
+
+/// `activity_list {} -> [{id, kind, ts, promptId?, itemKey?, summary}]`, oldest first.
+#[tauri::command]
+pub async fn activity_list(state: State<'_, SessionManager>) -> CmdResult<Vec<ActivityRow>> {
+    state.activity_list().map_err(|e| e.to_string())
+}
+
+/// `prefs_get {} -> Prefs`.
+#[tauri::command]
+pub async fn prefs_get(state: State<'_, SessionManager>) -> CmdResult<Prefs> {
+    Ok(state.prefs_get())
+}
+
+/// `prefs_set {patch} -> Prefs`: the patch replaces whole top-level keys.
+#[tauri::command]
+pub async fn prefs_set(state: State<'_, SessionManager>, patch: Value) -> CmdResult<Prefs> {
+    let m = state.inner().clone();
+    blocking(move || m.prefs_set(&patch)).await
+}
+
+/// `sound_hooks_detect {} -> [{event, command, source}]`: the user's audio hooks, read only.
+#[tauri::command]
+pub async fn sound_hooks_detect(state: State<'_, SessionManager>) -> CmdResult<Vec<DetectedHook>> {
+    let m = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || m.sound_hooks_detect())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// `notify_test {}`: post a test notification and emit `notify:fire` for it.
+#[tauri::command]
+pub async fn notify_test(state: State<'_, SessionManager>) -> CmdResult<()> {
+    state.notify_test();
+    Ok(())
+}
+
+/// `session_focus {id?}`: the DM the user is looking at (null: none), so that DM does not
+/// notify while the window is focused. Call it whenever the shown DM changes.
+#[tauri::command]
+pub async fn session_focus(state: State<'_, SessionManager>, id: Option<String>) -> CmdResult<()> {
+    state.session_focus(id.as_deref());
+    Ok(())
+}
+
+// ---- P3: folder sections ----
+
+/// `section_create_from_folder {path, name?} -> {id}`: a section with a home folder.
+#[tauri::command]
+pub async fn section_create_from_folder(
+    state: State<'_, SessionManager>,
+    path: String,
+    name: Option<String>,
+) -> CmdResult<Created> {
+    let id = state
+        .section_create_from_folder(&path, name.as_deref())
+        .map_err(|e| e.to_string())?;
+    Ok(Created { id })
+}
+
+/// `section_set_archive_days {id, days}`: the "Older than X days" threshold.
+#[tauri::command]
+pub async fn section_set_archive_days(
+    state: State<'_, SessionManager>,
+    id: String,
+    days: i64,
+) -> CmdResult<()> {
+    state
+        .section_set_archive_days(&id, days)
+        .map_err(|e| e.to_string())
+}
+
+/// `folder_sessions {sectionId} -> {sessions, hiddenCount}`: the resumable sessions found
+/// under the section's folder. Read only; nothing starts.
+#[tauri::command]
+pub async fn folder_sessions(
+    state: State<'_, SessionManager>,
+    section_id: String,
+) -> CmdResult<Listing> {
+    let m = state.inner().clone();
+    blocking(move || m.folder_sessions(&section_id)).await
+}
+
+/// `folder_session_open {sectionId, sessionId} -> SessionInfo`: create the DM row and run
+/// `claude --resume <sessionId>` from the session's launch folder.
+#[tauri::command]
+pub async fn folder_session_open(
+    state: State<'_, SessionManager>,
+    section_id: String,
+    session_id: String,
+) -> CmdResult<SessionInfo> {
+    let m = state.inner().clone();
+    blocking(move || m.folder_session_open(&section_id, &session_id)).await
+}
+
+/// `folder_session_hide {sectionId, sessionId, hidden}`: hide a row from the list; the
+/// transcript is untouched.
+#[tauri::command]
+pub async fn folder_session_hide(
+    state: State<'_, SessionManager>,
+    section_id: String,
+    session_id: String,
+    hidden: bool,
+) -> CmdResult<()> {
+    state
+        .folder_session_hide(&section_id, &session_id, hidden)
+        .map_err(|e| e.to_string())
 }

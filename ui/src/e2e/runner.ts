@@ -276,9 +276,21 @@ export class Runner {
     await invoke('e2e_report', { name: 'report.json', body });
   }
 
+  /**
+   * Mid-script restart: write this phase's report (not final), ask the driving script for a
+   * relaunch on the same data dir with `PATCHROOM_E2E_PHASE=<phase>`, and quit. Never returns.
+   */
+  async restart(phase: string): Promise<never> {
+    await this.writeReport(false);
+    await invoke('e2e_restart', { phase });
+    for (;;) await sleepNative(1000);
+  }
+
   /** Write the final report, then quit through the normal quit path. */
   async finish(quit = true): Promise<void> {
     await this.writeReport(true);
+    // Nothing a scenario started may outlive it, whether it passed or failed.
+    await invoke('e2e_outside_stop').catch(() => undefined);
     if (quit) await invoke('e2e_quit');
   }
 
@@ -451,11 +463,27 @@ export class Runner {
     click(row);
   }
 
+  /** Press the sidebar + button and pick one of its menu items, as a user does. */
+  async chooseNew(label: string): Promise<void> {
+    const btn = document.querySelector<HTMLButtonElement>(
+      'aside.side button[aria-label="Create new"]',
+    );
+    if (!btn) throw new Error('no + button');
+    click(btn);
+    const item = await this.waitFor(
+      `+ menu item ${label}`,
+      () =>
+        [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] [role="menuitem"]')].find(
+          (b) => textOf(b) === label,
+        ),
+      5000,
+    );
+    click(item);
+  }
+
   /** Open the New DM dialog and start a DM in `cwd`, through the real form. */
   async newDm(cwd: string, name: string): Promise<void> {
-    const btn = document.querySelector<HTMLButtonElement>('aside.side button[aria-label="New DM"]');
-    if (!btn) throw new Error('no New DM button');
-    click(btn);
+    await this.chooseNew('New DM');
     const dlg = await this.waitFor(
       'New DM dialog',
       () => document.querySelector<HTMLDialogElement>('dialog.newdm[open]'),
@@ -503,6 +531,50 @@ export class Runner {
   /** Press Enter in the composer as it stands. */
   pressEnterInComposer(): void {
     press(this.composer(), 'Enter');
+  }
+
+  // ---- P3 helpers: real key and pointer events on real controls -----------------------------
+
+  /** A chord as the keyboard raises it: on the focused element, bubbling up to window. */
+  chord(key: string, mods: { meta?: boolean; shift?: boolean; alt?: boolean } = {}): void {
+    press(document.activeElement ?? document.body, key, mods);
+  }
+
+  /** Click an element found by CSS selector. */
+  clickSel(selector: string): void {
+    const el = document.querySelector(selector);
+    if (!el) throw new Error(`no element ${selector}`);
+    click(el);
+  }
+
+  /** Right-click (contextmenu) on an element found by CSS selector. */
+  contextMenuOn(selector: string): void {
+    const el = document.querySelector(selector);
+    if (!el) throw new Error(`no element ${selector}`);
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(
+      new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: r.left + 8,
+        clientY: r.top + 8,
+        button: 2,
+      }),
+    );
+  }
+
+  /** Type into the focused input or textarea. */
+  typeFocused(text: string): void {
+    const el = document.activeElement;
+    if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+      throw new Error('no focused field');
+    }
+    typeInto(el, text);
+  }
+
+  /** Re-read the DM list from the backend (what a restarted view would show). */
+  async reread(): Promise<void> {
+    await window.__PR_STORE__?.refresh();
   }
 
   /** Click a button by its visible text inside `scope`. */

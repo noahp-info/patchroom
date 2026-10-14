@@ -115,7 +115,7 @@ Every feature lists its acceptance check.
 - Patchroom runs CLIs as the user, exactly as a terminal does. It grants nothing the terminal doesn't.
 - No TCP listeners. Bridge socket is `0600` in the user's Application Support folder.
 - Never writes the user's CLI settings. Hooks are injected per launch.
-- Never stores secrets. The claude.ai webview cookie store is the only credential state, scoped to the app.
+- Never stores secrets in its database, logs or exports. Credential state is the claude.ai webview cookie store, scoped to the app, plus task-connector tokens, which live only in the macOS Keychain.
 - Plugins: sandboxed webviews, capability manifest, no native code.
 - Bridge timeouts fail open to the CLI's own TUI (the CLI decides, as it would without Patchroom).
 
@@ -152,5 +152,20 @@ Phases are ordered by dependency. Each phase is a gauntlet loop: parallel builde
 
 ## 9. Open decisions for Noah
 
-- **D1** GitHub repo owner (personal account vs an org) and domain registration (patchroom.dev / patchroom.app).
+- **D1** GitHub repo owner (personal account vs an org). Domains: patchroom.dev registered by Noah on 2026-10-14. patchroom.app registration failed; Noah is following up. patchroom.com is taken.
 - **D2** Gauntlet budget per phase (iterations cap and model tier for builders vs judges).
+
+## 10. Business model
+
+Open core. Decided by Noah, 2026-10-14.
+
+- **Individual: free, MIT, forever.** It is the whole app, with no feature crippling. Each user brings their own CLI subscription, so Patchroom never resells model access.
+- **Team: per seat per month.** Hosted sync for channels, decisions and tasks across people. It adds decision routing to named teammates, shared plugins and a private marketplace, a team cost dashboard built from statusLine cost, and session handoff.
+- **Enterprise: annual contract.** SSO and SCIM, policy enforcement at launch (allowed CLIs and models, required hooks, permission rules, plugin allowlist), audit export, self-hosted sync, and support.
+- **Why teams pay instead of using many free copies:** a free copy is one person on one Mac. Every paid feature needs coordination between people, which only the sync layer provides.
+- **Boundaries:**
+  - The MIT client never contains paid features.
+  - The sync server lives in its own repository, with its license decided when it is built.
+  - The data model stays sync-ready (principle 6).
+  - Trademark the name and register the domain before launch.
+- **Timing:** build no paid features until the free app has users.

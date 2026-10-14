@@ -1,3 +1,5 @@
+import type { Theme } from '../theme/types.ts';
+
 /** Session status as reported by the backend (`session:status` and `session_list`). */
 export type SessionStatus = 'busy' | 'idle' | 'waiting' | 'exited';
 
@@ -18,6 +20,14 @@ export interface SessionInfo {
   unread?: number;
   /** A prompt waits on the user. The backend sends a boolean; a count is accepted too. */
   needsYou?: number | boolean;
+  /** P3: pinned to the Starred group. */
+  starred?: boolean;
+  /** P3: hidden from the main list; archived DMs never badge. */
+  archived?: boolean;
+  /** P3: an unsent composer draft is stored for this DM. */
+  hasDraft?: boolean;
+  /** P3 folder sections: set when the DM's cwd is outside its section's folder (e.g. "knowfirst"). */
+  folderChip?: string | null;
 }
 
 /** Reason a `waiting` session needs the user. */
@@ -29,6 +39,10 @@ export interface SectionInfo {
   name: string;
   position: number;
   collapsed: boolean;
+  /** P3: the home folder of a folder section; null for a plain section. */
+  folder?: string | null;
+  /** P3: folder sections fold sessions idle this many days into "Older than X days". */
+  archiveDays?: number;
 }
 
 export interface SessionCreateArgs {
@@ -68,6 +82,11 @@ export interface IpcEvents {
   'prompt:resolved': PromptResolvedEvent;
   'session:badges': SessionBadgesEvent;
   'statusline:update': StatuslineUpdateEvent;
+  'notify:fire': NotifyFireEvent;
+  'notify:open': { id: string };
+  'prefs:changed': PrefsChangedEvent;
+  'activity:changed': Record<string, never>;
+  'folder:changed': FolderChangedEvent;
 }
 
 export type Unlisten = () => void;
@@ -110,6 +129,41 @@ export interface Ipc {
   statuslineCycleMode(id: string): Promise<void>;
   /** Hint which view is showing, so a hidden picker can be handed to the TUI at once. */
   sessionView(id: string, view: 'chat' | 'terminal'): Promise<void>;
+
+  // ---- P3 Slack layer --------------------------------------------------------------------
+  sectionRename(id: string, name: string): Promise<void>;
+  /** The section's DMs fall back to the default Direct messages group. */
+  sectionDelete(id: string): Promise<void>;
+  sectionReorder(ids: string[]): Promise<void>;
+  /** Move a DM into `sectionId` (null: Direct messages) and set the group's order, in one call. */
+  sessionReorder(sectionId: string | null, ids: string[]): Promise<void>;
+  sessionSetFlags(id: string, flags: { starred?: boolean; archived?: boolean }): Promise<void>;
+  draftGet(id: string): Promise<{ body: string }>;
+  /** An empty body deletes the draft. */
+  draftSet(id: string, body: string): Promise<void>;
+  markAdd(id: string, itemKey: string, kind: MarkKind, emoji?: string): Promise<MarkInfo>;
+  markRemove(id: string, itemKey: string, kind: MarkKind, emoji?: string): Promise<void>;
+  /** No `id`: marks across every DM. */
+  markList(args?: { id?: string; kind?: MarkKind }): Promise<MarkInfo[]>;
+  search(args: { query: string; scope?: { id?: string }; limit?: number }): Promise<SearchResult>;
+  searchReindex(): Promise<{ docs: number; tookMs: number }>;
+  /** A `chat_history` cursor whose page holds the item. `before: null` means the newest page. */
+  chatLocate(id: string, itemKey: string): Promise<{ before: string | null }>;
+  activityList(): Promise<ActivityRow[]>;
+  prefsGet(): Promise<Prefs>;
+  prefsSet(patch: Partial<Prefs>): Promise<Prefs>;
+  soundHooksDetect(): Promise<DetectedHook[]>;
+  notifyTest(): Promise<void>;
+  /** The DM the user is looking at (null: none), so it does not notify while focused. */
+  sessionFocus(id: string | null): Promise<void>;
+  /** P3 folder sections. */
+  sectionCreateFromFolder(path: string, name?: string): Promise<{ id: string }>;
+  sectionSetArchiveDays(id: string, days: number): Promise<void>;
+  folderSessions(sectionId: string): Promise<FolderSessions>;
+  /** Creates the DM row and spawns `claude --resume` from the session's launch folder. */
+  folderSessionOpen(sectionId: string, sessionId: string): Promise<SessionInfo>;
+  /** Hides or unhides a row in the list only; the transcript is never touched. */
+  folderSessionHide(sectionId: string, sessionId: string, hidden: boolean): Promise<void>;
   on<K extends keyof IpcEvents>(
     event: K,
     handler: (payload: IpcEvents[K]) => void,
@@ -292,4 +346,124 @@ export interface StatuslineUpdateEvent {
   /** The user's own statusLine output, as ANSI. */
   text: string;
   chips: StatusChips;
+}
+
+// ---------------------------------------------------------------------------------------------
+// P3 Slack layer (docs/gauntlet/P3-BAR.md). camelCase JSON.
+// ---------------------------------------------------------------------------------------------
+
+export type MarkKind = 'pin' | 'saved' | 'reaction';
+
+/** A pin, saved item or reaction on one chat item, anchored by `(conversationId, itemKey)`. */
+export interface MarkInfo {
+  id: string;
+  conversationId: string;
+  itemKey: string;
+  kind: MarkKind;
+  emoji?: string | null;
+  /** Up to 280 chars of the item's text, for lists. */
+  snapshot: string;
+  createdAt?: Timestamp;
+}
+
+export interface SearchHit {
+  id: string;
+  itemKey: string;
+  ts: Timestamp;
+  kind: string;
+  snippet: string;
+  /** `[start, end)` offsets into `snippet`. */
+  ranges: [number, number][];
+}
+export interface SearchResult {
+  hits: SearchHit[];
+  tookMs: number;
+}
+
+export interface ActivityRow {
+  id: string;
+  kind: 'prompt' | 'unread';
+  ts: Timestamp;
+  promptId?: string;
+  itemKey?: string;
+  summary: string;
+}
+
+export type NotifyLevel = 'all' | 'needs' | 'mute';
+export type NotifyEventName = 'needs' | 'done' | 'message' | 'error' | 'bell';
+export type SoundEventName = 'needs' | 'done' | 'message' | 'error';
+
+export interface Prefs {
+  themeId: string;
+  mode: 'light' | 'dark' | 'system';
+  customThemes: Theme[];
+  notify: { default: NotifyLevel; perDm: Record<string, NotifyLevel> };
+  sound: {
+    enabled: boolean;
+    volume: number;
+    perEvent: Record<string, { on: boolean; sound: string }>;
+    perDm: Record<string, 'default' | 'mute'>;
+    hookPolicy: Record<string, 'keep' | 'both'>;
+  };
+  dnd: {
+    manual: boolean;
+    schedule: { days: number[]; start: string; end: string } | null;
+  };
+  termPerDm: Record<string, { themeId?: string; font?: string; fontSize?: number }>;
+  searchAllSessions: boolean;
+}
+
+export interface DetectedHook {
+  event: string;
+  command: string;
+  source: string;
+}
+
+export interface NotifyFireEvent {
+  id: string;
+  event: NotifyEventName;
+  title: string;
+  body: string;
+}
+export interface PrefsChangedEvent {
+  prefs: Prefs;
+}
+
+// ---------------------------------------------------------------------------------------------
+// P3 folder sections (docs/gauntlet/P3-FOLDER-SECTIONS.md). camelCase JSON.
+// ---------------------------------------------------------------------------------------------
+
+/** Where a session's name came from, first match wins in this order. */
+export type NameSource = 'user' | 'registry' | 'custom-title' | 'ai-title' | 'prompt';
+
+/** One resumable Claude Code session found under a folder section's home folder. */
+export interface FolderSession {
+  sessionId: string;
+  name: string;
+  nameSource: NameSource | (string & {});
+  /** The folder the session was launched from (where its transcript is filed). */
+  launchCwd: string;
+  /** Path of `launchCwd` inside the home folder; empty for the home folder itself. */
+  relPath: string;
+  branch?: string | null;
+  /** Newest transcript timestamp. */
+  lastActivity: Timestamp;
+  firstPrompt: string;
+  lastPrompt: string;
+  userTurns: number;
+  /** `claude agents --json` shows it running in another terminal. */
+  liveElsewhere: boolean;
+  /** Noise (no real user prompt, sidechain) or hidden by the user. */
+  hidden: boolean;
+  /** The Patchroom DM this session was opened as, once opened. */
+  dmId?: string | null;
+}
+
+export interface FolderSessions {
+  sessions: FolderSession[];
+  hiddenCount: number;
+}
+
+export interface FolderChangedEvent {
+  sectionId: string;
 }

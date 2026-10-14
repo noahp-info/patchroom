@@ -1,5 +1,7 @@
-import { memo } from 'react';
-import type { ChatItem, PromptAnswer, SubagentItem } from '../../ipc';
+import { memo, useState } from 'react';
+import type { ChatItem, MarkKind, PromptAnswer, SubagentItem } from '../../ipc';
+import { emojiName } from '../../lib/emoji';
+import { EmojiPicker } from '../EmojiPicker';
 import type { Row } from '../../lib/rows';
 import { systemLabel } from '../../lib/systemLabel';
 import { Markdown } from '../../lib/markdown';
@@ -20,6 +22,121 @@ export interface RowActions {
   /** "Answer in terminal": hand the prompt to the TUI and show the terminal. */
   handoff(promptId: string): void;
   answer(promptId: string, answer: PromptAnswer): void;
+  /** Pin, save or react; a second call with the same arguments removes the mark. */
+  toggleMark(itemKey: string, kind: MarkKind, emoji?: string): void;
+  /** Copy the item's text. Resolves false when the clipboard refused. */
+  copy(item: ChatItem): Promise<boolean>;
+}
+
+/** What marks and highlights the row carries. Identity is stable while nothing changes. */
+export interface Decor {
+  /** A search or jump landed here. */
+  hit: boolean;
+  pinned: boolean;
+  saved: boolean;
+  /** Reaction emoji on this item. A reaction is a label only. */
+  reactions: string[];
+}
+
+function HoverBar({
+  item,
+  decor,
+  actions,
+}: {
+  item: ChatItem;
+  decor?: Decor;
+  actions: RowActions;
+}) {
+  const [picker, setPicker] = useState<DOMRect | null>(null);
+  const [copied, setCopied] = useState(false);
+  const pinned = decor?.pinned ?? false;
+  const saved = decor?.saved ?? false;
+  return (
+    <div className="hbar" role="toolbar" aria-label="Message actions">
+      <button
+        type="button"
+        aria-label={copied ? 'Copied' : 'Copy'}
+        title="Copy"
+        onClick={() =>
+          void actions.copy(item).then((ok) => {
+            if (!ok) return;
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1400);
+          })
+        }
+      >
+        <Icon name="copy" />
+      </button>
+      <button
+        type="button"
+        aria-label="React"
+        title="Add a reaction"
+        aria-haspopup="dialog"
+        aria-expanded={picker !== null}
+        onClick={(e) => setPicker(e.currentTarget.getBoundingClientRect())}
+      >
+        <Icon name="smile" />
+      </button>
+      <button
+        type="button"
+        aria-label={pinned ? 'Unpin' : 'Pin'}
+        title={pinned ? 'Unpin from this DM' : 'Pin to this DM'}
+        aria-pressed={pinned}
+        onClick={() => actions.toggleMark(item.key, 'pin')}
+      >
+        <Icon name="pin" />
+      </button>
+      <button
+        type="button"
+        aria-label={saved ? 'Remove from Saved' : 'Save'}
+        title={saved ? 'Remove from Saved items' : 'Save for later'}
+        aria-pressed={saved}
+        onClick={() => actions.toggleMark(item.key, 'saved')}
+      >
+        <Icon name="bookmark" />
+      </button>
+      {picker && (
+        <EmojiPicker
+          anchor={picker}
+          onPick={(e) => actions.toggleMark(item.key, 'reaction', e)}
+          onClose={() => setPicker(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function Marks({ item, decor, actions }: { item: ChatItem; decor?: Decor; actions: RowActions }) {
+  if (!decor || (!decor.pinned && !decor.saved && decor.reactions.length === 0)) return null;
+  return (
+    <div className="mrk" data-testid="marks">
+      {decor.pinned && (
+        <span className="mtag" data-mark="pin">
+          <Icon name="pin" />
+          Pinned
+        </span>
+      )}
+      {decor.saved && (
+        <span className="mtag" data-mark="saved">
+          <Icon name="bookmark" />
+          Saved
+        </span>
+      )}
+      {decor.reactions.map((e) => (
+        <button
+          key={e}
+          type="button"
+          className="rchip"
+          data-emoji={e}
+          aria-label={`Reaction :${emojiName(e)}:. Click to remove.`}
+          title={`:${emojiName(e)}:`}
+          onClick={() => actions.toggleMark(item.key, 'reaction', e)}
+        >
+          {e}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function Who({ author, ms }: { author: 'user' | 'claude'; ms: number }) {
@@ -267,9 +384,13 @@ export interface RowViewProps {
   row: Row;
   expanded: boolean;
   actions: RowActions;
+  decor?: Decor;
 }
 
-function RowViewInner({ row, expanded, actions }: RowViewProps) {
+/** Items that get a hover bar. System lines and terminal fallbacks are not messages. */
+const MARKABLE = new Set<ChatItem['kind']>(['user', 'assistant', 'plan', 'question', 'tool']);
+
+function RowViewInner({ row, expanded, actions, decor }: RowViewProps) {
   if (row.type === 'day') {
     return (
       <div className="day" role="separator" aria-label={row.label}>
@@ -298,9 +419,12 @@ function RowViewInner({ row, expanded, actions }: RowViewProps) {
       className={`msg ${author === 'user' ? 'user' : author === 'claude' ? 'bot' : 'plain'}${row.head ? ' head' : ' cont'}`}
       data-kind={item.kind}
       data-key={item.key}
+      data-hit={decor?.hit ? 'true' : undefined}
     >
       {row.head && author !== 'none' && <Who author={author} ms={row.ms} />}
       <ItemBody item={item} expanded={expanded} prompt={row.prompt} actions={actions} />
+      <Marks item={item} decor={decor} actions={actions} />
+      {MARKABLE.has(item.kind) && <HoverBar item={item} decor={decor} actions={actions} />}
     </div>
   );
 }
@@ -310,6 +434,7 @@ export const RowView = memo(
   (a, b) =>
     a.expanded === b.expanded &&
     a.actions === b.actions &&
+    a.decor === b.decor &&
     a.row.key === b.row.key &&
     a.row.type === b.row.type &&
     (a.row.type === 'item' && b.row.type === 'item'

@@ -12,7 +12,7 @@ export async function openWithDm(
   view: 'terminal' | 'chat' = 'terminal',
 ): Promise<string> {
   await page.goto(`/?${query}`);
-  await page.getByRole('button', { name: 'New DM' }).first().click();
+  await chooseNew(page, 'New DM');
   const dlg = page.getByRole('dialog', { name: 'New DM' });
   await dlg.getByLabel('Folder').fill('/tmp/patchroom-test');
   await dlg.getByRole('button', { name: 'Start DM' }).click();
@@ -25,6 +25,15 @@ export async function openWithDm(
   await page.keyboard.press('Meta+j');
   await page.locator('[data-testid="terminal"]').first().click();
   return id;
+}
+
+/** Press the sidebar + button and pick one of its menu items. */
+export async function chooseNew(
+  page: Page,
+  item: 'New DM' | 'New section' | 'New section from folder...',
+): Promise<void> {
+  await page.getByRole('button', { name: 'Create new' }).click();
+  await page.getByRole('menuitem', { name: item, exact: true }).click();
 }
 
 /** Bytes the UI wrote to the session since the last call. */
@@ -203,5 +212,141 @@ export async function revealRow(
       await settle();
     },
     [root, key] as const,
+  );
+}
+
+// ---- P3 workspace helpers -------------------------------------------------------------------
+
+export interface DmSeed {
+  id: string;
+  name: string;
+  cwd?: string;
+  sectionId?: string | null;
+  status?: 'busy' | 'idle' | 'waiting' | 'exited';
+  starred?: boolean;
+  archived?: boolean;
+}
+
+/** Open the mock app, seed DMs (and sections) in the backend, and make the store read them. */
+export async function openSeeded(
+  page: Page,
+  dms: DmSeed[],
+  opts: { sections?: { id: string; name: string }[]; query?: string } = {},
+): Promise<void> {
+  await page.goto(`/?${opts.query ?? 'mock&grid=100x30'}`);
+  await page.waitForFunction(() => !!window.__PR_STORE__ && !!window.__PR_MOCK__);
+  await page.evaluate(
+    async ({ list, sections }) => {
+      const m = window.__PR_MOCK__!;
+      sections.forEach((s, i) => m.addSection({ id: s.id, name: s.name, position: i }));
+      for (const d of list) {
+        m.addSession({
+          id: d.id,
+          name: d.name,
+          cwd: d.cwd ?? `/work/${d.name}`,
+          sectionId: d.sectionId ?? null,
+          status: d.status ?? 'idle',
+          starred: d.starred,
+          archived: d.archived,
+        });
+      }
+      await window.__PR_STORE__!.refresh();
+    },
+    { list: dms, sections: opts.sections ?? [] },
+  );
+}
+
+/** Seed one DM's chat and reload its model once it is mounted (or load it lazily). */
+export async function setChat(page: Page, id: string, items: unknown[]): Promise<void> {
+  await page.evaluate(({ sid, list }) => window.__PR_MOCK__!.seedChat(sid, list as never), {
+    sid: id,
+    list: items,
+  });
+}
+
+/** Press-drag-release with the real mouse, in steps, between the centers of two locators. */
+export async function dragTo(
+  page: Page,
+  from: ReturnType<Page['locator']>,
+  to: ReturnType<Page['locator']>,
+  where: 'center' | 'top' | 'bottom' = 'center',
+): Promise<void> {
+  const a = (await from.boundingBox())!;
+  const b = (await to.boundingBox())!;
+  const x = b.x + b.width / 2;
+  const y =
+    where === 'top' ? b.y + 3 : where === 'bottom' ? b.y + b.height - 3 : b.y + b.height / 2;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(a.x + a.width / 2 + 8, a.y + a.height / 2 + 8, { steps: 3 });
+  await page.mouse.move(x, y, { steps: 8 });
+  await page.mouse.up();
+}
+
+/** Names of the DM rows inside one sidebar group, in order. */
+export async function groupRows(page: Page, groupId: string): Promise<string[]> {
+  return page.locator(`.side [data-group="${groupId}"] .row .nm`).allTextContents();
+}
+
+/** The mock backend's stored DMs: section, flags and order. */
+export async function backendDms(page: Page) {
+  return page.evaluate(() =>
+    window.__PR_MOCK__!.sessions().map((s) => ({
+      id: s.id,
+      sectionId: s.sectionId,
+      starred: !!s.starred,
+      archived: !!s.archived,
+    })),
+  );
+}
+
+// ---- P3 folder-section helpers ---------------------------------------------------------------
+
+export const HOME = '/Users/me/code/atlas';
+
+/**
+ * Open the mock app with one folder section over the 68-session synthetic fixture. The section
+ * is id `atlas`. Pass `home` for a folder that gets the small 4-session listing instead.
+ */
+export async function openFolder(
+  page: Page,
+  opts: { home?: string; query?: string; dms?: DmSeed[]; archiveDays?: number } = {},
+): Promise<void> {
+  await openSeeded(page, opts.dms ?? [], { query: opts.query });
+  await page.evaluate(
+    async ({ home, days }) => {
+      window.__PR_MOCK__!.addSection({
+        id: 'atlas',
+        name: 'atlas',
+        folder: home,
+        archiveDays: days,
+        position: 0,
+      });
+      await window.__PR_STORE__!.refresh();
+    },
+    { home: opts.home ?? HOME, days: opts.archiveDays ?? 14 },
+  );
+  await page.locator('.side [data-folder-body="atlas"] .fs-row').first().waitFor();
+}
+
+/** Names of the lazy session rows in the folder section's main list (Older excluded). */
+export async function folderNames(page: Page): Promise<string[]> {
+  return page
+    .locator('.side [data-folder-body="atlas"] > .fs-item .fs-row [data-testid="fs-name"]')
+    .allTextContents();
+}
+
+/** Switch theme and mode through the real prefs store, as the picker does. */
+export async function setTheme(page: Page, themeId: string, mode: 'light' | 'dark'): Promise<void> {
+  await page.evaluate(
+    ([id, m]) => window.__PR_STORE__!.setPrefs({ themeId: id, mode: m as 'light' | 'dark' }),
+    [themeId, mode],
+  );
+  await page.waitForFunction(
+    ([id, m]) => {
+      const el = document.querySelector('.pr-app');
+      return el?.getAttribute('data-theme') === id && el?.getAttribute('data-mode') === m;
+    },
+    [themeId, mode],
   );
 }

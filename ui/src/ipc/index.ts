@@ -49,7 +49,7 @@ function inTauri(): boolean {
 export function createIpc(): Ipc {
   const params = new URLSearchParams(window.location.search);
   if (inTauri() && !params.has('mock')) return createTauriIpc();
-  const { ipc, control } = createMockIpc({ banner: true });
+  const { ipc, control } = createMockIpc({ banner: true, persist: params.has('persist') });
   window.__PR_MOCK__ = control;
   if (params.has('demo')) seedDemo(control);
   return ipc;

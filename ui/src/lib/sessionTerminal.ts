@@ -198,6 +198,11 @@ export class SessionTerminal {
     if (this.host) this.host.dataset.renderer = 'dom';
   }
 
+  /** Refit the grid, after a font change. */
+  refit(): void {
+    this.scheduleFit();
+  }
+
   private scheduleFit(): void {
     if (this.opts.fixedGrid) return;
     cancelAnimationFrame(this.frame);

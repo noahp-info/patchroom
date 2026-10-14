@@ -20,6 +20,23 @@
 //! `chat:items`, `prompt:pending`, `prompt:resolved`, `session:badges`,
 //! `statusline:update`. See [`manager`] and [`events`] for the payloads.
 //!
+//! # Slack layer (P3)
+//! Commands: `section_rename`, `section_delete`, `section_reorder`, `session_reorder`,
+//! `session_set_flags`, `draft_get`, `draft_set`, `mark_add`, `mark_remove`, `mark_list`,
+//! `search`, `search_reindex`, `chat_locate`, `activity_list`, `prefs_get`, `prefs_set`,
+//! `sound_hooks_detect`, `notify_test`, plus `session_focus {id?}` (the DM on screen, so it does
+//! not notify). Events: `notify:fire`, `notify:open {id}` (a native notification was clicked),
+//! `prefs:changed`, `activity:changed`, and `session:title` for OSC 0/2. Prefs live in the
+//! `setting` table; the search index is `search.db` and the notification decision log is
+//! `notify-decisions.log`, both in the data dir. See [`manager`] (`slack` module).
+//!
+//! # Folder sections (P3 addendum)
+//! Commands: `section_create_from_folder`, `section_set_archive_days`, `folder_sessions`,
+//! `folder_session_open`, `folder_session_hide`. Event: `folder:changed {sectionId}`.
+//! `SectionInfo` gains `folder` and `archiveDays`; `SessionInfo` gains `folderChip`. A folder
+//! section lists the resumable Claude sessions found read only under its folder; opening one
+//! creates its DM and runs `claude --resume`. See [`manager`] (`folder` module).
+//!
 //! Per launch, claude gets `--settings <file>`: a Patchroom-owned file in the data dir
 //! (`bridge.sock.d/<id>.json`) that registers the hooks and the `patchroom-statusline`
 //! wrapper. User settings files are never written. The file keeps claude's own command
@@ -42,6 +59,7 @@ pub mod e2e;
 pub mod events;
 pub mod hook_path;
 pub mod manager;
+pub mod notifier;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -50,6 +68,7 @@ use tauri::{Emitter, Manager as _, RunEvent};
 
 use crate::events::{EventSink, UiEvent};
 use crate::manager::{Manager, ManagerConfig, OpenDm};
+use crate::notifier::{TauriNotifier, WindowProbe};
 
 /// Delivers [`UiEvent`]s to the webview.
 struct TauriSink(tauri::AppHandle);
@@ -111,11 +130,44 @@ macro_rules! app_handler {
             commands::session_mark_read,
             commands::statusline_cycle_mode,
             commands::session_view,
+            commands::section_rename,
+            commands::section_delete,
+            commands::section_reorder,
+            commands::session_reorder,
+            commands::session_set_flags,
+            commands::draft_get,
+            commands::draft_set,
+            commands::mark_add,
+            commands::mark_remove,
+            commands::mark_list,
+            commands::search,
+            commands::search_reindex,
+            commands::chat_locate,
+            commands::activity_list,
+            commands::prefs_get,
+            commands::prefs_set,
+            commands::sound_hooks_detect,
+            commands::notify_test,
+            commands::session_focus,
+            commands::section_create_from_folder,
+            commands::section_set_archive_days,
+            commands::folder_sessions,
+            commands::folder_session_open,
+            commands::folder_session_hide,
             e2e::e2e_report,
             e2e::e2e_pgrep,
             e2e::e2e_sleep,
             e2e::e2e_param,
             e2e::e2e_quit,
+            e2e::e2e_restart,
+            e2e::e2e_decision_log,
+            e2e::e2e_outside_session,
+            e2e::e2e_outside_done,
+            e2e::e2e_outside_stop,
+            e2e::e2e_webview_focus,
+            e2e::e2e_focus_window,
+            e2e::e2e_force_active,
+            e2e::e2e_window_state,
         ]
     };
 }
@@ -146,6 +198,30 @@ macro_rules! app_handler {
             commands::session_mark_read,
             commands::statusline_cycle_mode,
             commands::session_view,
+            commands::section_rename,
+            commands::section_delete,
+            commands::section_reorder,
+            commands::session_reorder,
+            commands::session_set_flags,
+            commands::draft_get,
+            commands::draft_set,
+            commands::mark_add,
+            commands::mark_remove,
+            commands::mark_list,
+            commands::search,
+            commands::search_reindex,
+            commands::chat_locate,
+            commands::activity_list,
+            commands::prefs_get,
+            commands::prefs_set,
+            commands::sound_hooks_detect,
+            commands::notify_test,
+            commands::session_focus,
+            commands::section_create_from_folder,
+            commands::section_set_archive_days,
+            commands::folder_sessions,
+            commands::folder_session_open,
+            commands::folder_session_hide,
         ]
     };
 }
@@ -155,7 +231,9 @@ macro_rules! app_handler {
 /// # Panics
 /// Panics if the Tauri runtime fails to start.
 pub fn run() {
-    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init());
     // Debug builds only: hand the loaded page to the e2e scenario, when one was requested.
     #[cfg(debug_assertions)]
     let builder = builder.on_page_load(|webview, payload| {
@@ -167,7 +245,15 @@ pub fn run() {
         .setup(|app| {
             let mut cfg = ManagerConfig::new(data_dir(app)?, hook_path::resolve_hook_binary());
             cfg.reconcile = true;
-            let manager = Manager::new(cfg, Arc::new(TauriSink(app.handle().clone())))?;
+            if cfg!(debug_assertions) {
+                if let Some(extra) = std::env::var_os("PATCHROOM_E2E_EXTRA_PROJECTS") {
+                    cfg.extra_projects_dirs = std::env::split_paths(&extra).collect();
+                }
+            }
+            let sink: Arc<dyn EventSink> = Arc::new(TauriSink(app.handle().clone()));
+            let manager = Manager::new(cfg, Arc::clone(&sink))?;
+            manager.set_notifier(TauriNotifier::new(app.handle().clone(), sink));
+            manager.set_focus_probe(Arc::new(WindowProbe(app.handle().clone())));
             if cfg!(debug_assertions) {
                 if let Some(req) = parse_open_dm(std::env::args().skip(1)) {
                     manager.queue_open_dm(req);
@@ -188,6 +274,8 @@ pub fn run() {
     app.run(|handle, event| {
         // Quit path: kill every child and hook before the process ends.
         if let RunEvent::Exit = event {
+            #[cfg(debug_assertions)]
+            e2e::stop_outside();
             if let Some(m) = handle.try_state::<Arc<Manager>>() {
                 m.shutdown();
             }
@@ -201,6 +289,58 @@ mod tests {
 
     fn v(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    /// Every P3 command of the IPC contract is registered in both handler lists (debug and
+    /// release), and the two lists name the same commands apart from the `e2e::` ones.
+    #[test]
+    fn p3_commands_are_registered_in_both_handler_lists() {
+        const SRC: &str = include_str!("lib.rs");
+        const P3: [&str; 25] = [
+            "section_rename",
+            "section_delete",
+            "section_reorder",
+            "session_reorder",
+            "session_set_flags",
+            "draft_get",
+            "draft_set",
+            "mark_add",
+            "mark_remove",
+            "mark_list",
+            "search",
+            "search_reindex",
+            "chat_locate",
+            "activity_list",
+            "prefs_get",
+            "prefs_set",
+            "sound_hooks_detect",
+            "notify_test",
+            "session_focus",
+            "session_view",
+            "section_create_from_folder",
+            "section_set_archive_days",
+            "folder_sessions",
+            "folder_session_open",
+            "folder_session_hide",
+        ];
+        let bodies: Vec<&str> = SRC
+            .split("generate_handler![\n")
+            .skip(1)
+            .map(|rest| rest.split(']').next().unwrap_or(""))
+            .collect();
+        assert_eq!(bodies.len(), 2, "a debug and a release handler list");
+        let names = |body: &str| -> Vec<String> {
+            body.lines()
+                .filter_map(|l| l.trim().strip_prefix("commands::"))
+                .map(|l| l.trim_end_matches(',').to_owned())
+                .collect()
+        };
+        let (debug, release) = (names(bodies[0]), names(bodies[1]));
+        assert_eq!(debug, release);
+        for c in P3 {
+            assert!(debug.iter().any(|d| d == c), "{c} is not registered");
+        }
+        assert!(bodies[0].contains("e2e::e2e_restart") && !bodies[1].contains("e2e::"));
     }
 
     #[test]

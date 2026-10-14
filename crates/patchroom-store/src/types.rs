@@ -144,6 +144,74 @@ str_enum! {
     }
 }
 
+str_enum! {
+    /// What an [`ItemMark`] says about a chat item.
+    MarkKind {
+        /// Pinned to the conversation.
+        Pin => "pin",
+        /// Saved for later, across conversations.
+        Saved => "saved",
+        /// An emoji label. Never reaches the agent.
+        Reaction => "reaction",
+    }
+}
+
+/// A pin, saved item or reaction on one chat item.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ItemMark {
+    /// Row id.
+    pub id: Id,
+    /// Writer.
+    pub author: Author,
+    /// Creation time.
+    pub created_at: Millis,
+    /// Last change time.
+    pub updated_at: Millis,
+    /// Owning conversation.
+    pub conversation_id: Id,
+    /// Stable key of the chat item.
+    pub item_key: String,
+    /// Pin, saved or reaction.
+    pub kind: MarkKind,
+    /// The emoji of a reaction, empty otherwise.
+    pub emoji: String,
+    /// Up to [`SNAPSHOT_CHARS`] characters of the item's text.
+    pub snapshot: String,
+}
+
+/// Longest `snapshot` of an [`ItemMark`], in characters.
+pub const SNAPSHOT_CHARS: usize = 280;
+
+/// When the oldest unread and needs-you items of a conversation appeared (Activity list).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivityMarks {
+    /// The conversation.
+    pub conversation_id: Id,
+    /// Unread count.
+    pub unread: u32,
+    /// A prompt waits on the user.
+    pub needs_you: bool,
+    /// Time of the oldest unread item.
+    pub unread_since: Option<Millis>,
+    /// Key of the oldest unread item.
+    pub unread_key: Option<String>,
+    /// Short text of the oldest unread item.
+    pub unread_summary: Option<String>,
+    /// Time the conversation started waiting on the user.
+    pub needs_since: Option<Millis>,
+}
+
+/// Ids of the default sections created on first run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DefaultSections {
+    /// "Starred", or `None` once the user deleted it.
+    pub starred: Option<Id>,
+    /// "Direct messages": where new DMs land and deleted sections' DMs fall back to.
+    pub dm: Id,
+    /// "Archived", or `None` once the user deleted it.
+    pub archived: Option<Id>,
+}
+
 /// A top level workspace.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Workspace {
@@ -178,6 +246,10 @@ pub struct Section {
     pub position: i64,
     /// Whether the section is collapsed in the sidebar.
     pub collapsed: bool,
+    /// Home folder of a folder section; `None` for a plain section.
+    pub folder: Option<String>,
+    /// Folder sections fold sessions idle this many days into "Older than X days".
+    pub archive_days: i64,
 }
 
 /// Input for [`crate::Store::create_conversation`].
@@ -238,6 +310,10 @@ pub struct Conversation {
     pub assign_mode: Option<AssignMode>,
     /// Lead agent DM for `Lead` channels.
     pub lead_id: Option<Id>,
+    /// Starred in the sidebar.
+    pub starred: bool,
+    /// Archived: hidden from the main list, no badges.
+    pub archived: bool,
 }
 
 /// A DM that belongs to a channel.
