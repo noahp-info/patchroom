@@ -20,10 +20,23 @@ body {
   height: 100vh;
 }
 
-/* title strip */
+/* Top bar: the only bar. The window uses an overlay title bar, so macOS draws the window
+   controls over the bar's left end. --tb-inset keeps content clear of them (16px margin, three
+   12px buttons with 8px gaps, 16px breathing room). Full screen hides them, so the inset drops. */
+.pr-app {
+  --tb-inset: 84px;
+}
+.pr-app[data-fullscreen='true'] {
+  --tb-inset: 14px;
+}
 .tb-title {
   font-weight: 700;
   letter-spacing: 0.01em;
+}
+.pr-app .tb {
+  padding-left: var(--tb-inset);
+  user-select: none;
+  -webkit-user-select: none;
 }
 .tb-spacer {
   flex: 1;

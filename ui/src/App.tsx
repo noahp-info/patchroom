@@ -6,6 +6,7 @@ import { ActivityView, PrefsView, SavedView } from './components/PanelViews';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { SearchPanel } from './components/SearchPanel';
 import { ChatView } from './components/chat/ChatView';
+import { useFullscreen } from './lib/fullscreen';
 import { Sidebar } from './components/Sidebar';
 import { clampSidebar, SIDEBAR_DEFAULT } from './components/SidebarResizer';
 import { PatchCable } from './theme/PatchCable';
@@ -122,6 +123,7 @@ export function App() {
     };
   }, [store]);
 
+  const fullscreen = useFullscreen();
   const style = { ...themeStyle, '--side-w': `${sidebarWidth}px` } as CSSProperties;
   const active = state.sessions.find((s) => s.id === state.activeId) ?? null;
   const needsYou = (s: { id: string; status: SessionStatus }) =>
@@ -136,11 +138,11 @@ export function App() {
       data-base={base}
       data-mode={mode}
       data-theme={theme.id}
+      data-fullscreen={fullscreen ? 'true' : undefined}
       style={style}
     >
-      <div className="tb">
-        <span className="tb-title">Patchroom</span>
-        <span className="tb-spacer" />
+      <div className="tb" data-testid="topbar" data-tauri-drag-region>
+        <span className="tb-spacer" data-tauri-drag-region />
         <button
           type="button"
           className="tb-search"
@@ -152,7 +154,7 @@ export function App() {
           <span>Jump to a DM</span>
           <kbd>{'\u2318K'}</kbd>
         </button>
-        <span className="tb-spacer" />
+        <span className="tb-spacer" data-tauri-drag-region />
         <button
           type="button"
           className="tb-act"
