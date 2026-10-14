@@ -364,9 +364,16 @@ export function ChatView({ store, session, visible, unread, thread, prefs, marks
                 {snap.loaded ? (
                   <>
                     <b>No messages yet.</b>
-                    <span>
-                      Say something below. <kbd>&#8984;J</kbd> shows the terminal.
-                    </span>
+                    {mirrored ? (
+                      <span>
+                        Nothing has been said in this session yet. It is read-only here. Messages
+                        appear as they are sent from {mirrorWhere(session) || 'the other terminal'}.
+                      </span>
+                    ) : (
+                      <span>
+                        Say something below. <kbd>&#8984;J</kbd> shows the terminal.
+                      </span>
+                    )}
                   </>
                 ) : (
                   <span>Loading the conversation</span>

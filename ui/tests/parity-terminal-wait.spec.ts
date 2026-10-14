@@ -69,7 +69,9 @@ test.describe('session parity: terminal-wait banner', () => {
     await page.keyboard.press('Meta+j');
     await expect(page.getByTestId('view-label')).toHaveText('Terminal');
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(200);
+    await page.evaluate(
+      () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+    );
     await expect(page.getByTestId('view-label')).toHaveText('Terminal');
   });
 });
@@ -165,11 +167,14 @@ test.describe('session parity: the composer never swallows input', () => {
   });
 
   test('a normal send shows its user item at once and leaves no notice', async ({ page }) => {
+    await page.clock.install();
     await openChat(page, []);
+    await page.clock.pauseAt(new Date(Date.now() + 5_000));
     await page.getByTestId('composer-input').fill('hi');
     await page.keyboard.press('Enter');
+    await page.clock.runFor(100);
     await expect(page.locator('.msg[data-kind="user"]')).toContainText('hi');
-    await page.waitForTimeout(3300);
+    await page.clock.runFor(3300);
     await expect(page.getByTestId('composer-notice')).toHaveCount(0);
   });
 });

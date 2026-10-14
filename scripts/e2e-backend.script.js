@@ -91,9 +91,19 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     ['session:terminal_wait_clear', clearEvents],
     ['session:mirror', mirrorEvents],
   ]) {
-    const cb = window.__TAURI_INTERNALS__.transformCallback((e) => sink.push(e.payload));
+    // Stamp each event when the webview receives it, so a step can time one against another.
+    const cb = window.__TAURI_INTERNALS__.transformCallback((e) =>
+      sink.push({ ...e.payload, __at: performance.now() }),
+    );
     await invoke('plugin:event|listen', { event: name, target: { kind: 'Any' }, handler: cb });
   }
+
+  // Raw PTY output per DM, decoded, with the time each chunk arrived (`pty:output`).
+  const ptyChunks = [];
+  const onPty = window.__TAURI_INTERNALS__.transformCallback((e) =>
+    ptyChunks.push({ id: e.payload.id, at: performance.now(), text: atob(e.payload.data) }),
+  );
+  await invoke('plugin:event|listen', { event: 'pty:output', target: { kind: 'Any' }, handler: onPty });
 
   t.startLogTrace();
   const phase = await t.param('phase');
@@ -557,7 +567,9 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     await ready('dialog');
     const id = t.dm('dialog').id;
     const waitsBefore = waitEvents.filter((e) => e.id === id).length;
+    const chunksBefore = ptyChunks.length;
     // /model opens a picker only the terminal can answer.
+    const sentAt = performance.now();
     const first = await invoke('session_send_text', { id, text: '/model' });
     if (first.outcome !== 'sent' && first.outcome !== 'queued') throw new Error(`first send ${JSON.stringify(first)}`);
     const w = await t.waitFor(
@@ -565,7 +577,24 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
       () => waitEvents.filter((e) => e.id === id).length > waitsBefore && waitEvents.filter((e) => e.id === id).pop(),
       15_000,
     );
-    t.fact('terminalWait', w);
+    // The dialog is on screen when the picker's footer reaches the PTY output after the send.
+    const DIALOG = /Esc to (cancel|exit)|Enter to confirm|Select model/i;
+    let acc = '';
+    let dialogAt = null;
+    for (const c of ptyChunks.slice(chunksBefore).filter((c) => c.id === id)) {
+      acc += c.text;
+      if (DIALOG.test(acc)) {
+        dialogAt = c.at;
+        break;
+      }
+    }
+    if (dialogAt === null) throw new Error('the picker never showed in the PTY output');
+    const sendToWait = Math.round(w.__at - sentAt);
+    const dialogToWait = Math.round(w.__at - dialogAt);
+    t.fact('terminalWaitTiming', { sendToWaitMs: sendToWait, dialogToWaitMs: dialogToWait });
+    // The event cannot come before the dialog is on screen, and must follow it within 2 s.
+    if (dialogToWait < 0) throw new Error(`terminal_wait came ${-dialogToWait} ms before the dialog drew`);
+    if (dialogToWait > 2000) throw new Error(`terminal_wait came ${dialogToWait} ms after the dialog drew (limit 2000)`);
     const listed = (await invoke('session_list', {})).find((r) => r.id === id);
     if (!listed.terminalWait) throw new Error('SessionInfo.terminalWait is empty');
     if (!listed.needsYou && !listed.needs_you) throw new Error('needs-you was not raised');
@@ -573,6 +602,14 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     if (!act.some((r) => r.id === id)) throw new Error('activity_list has no row for the dialog');
     const blocked = await invoke('session_send_text', { id, text: 'COMPOSER-TEXT-MUST-NOT-LAND' });
     if (blocked.outcome !== 'blocked_dialog') throw new Error(`send during the dialog: ${JSON.stringify(blocked)}`);
+    // Nothing was written: the refused text is in neither the PTY output nor the screen, checked
+    // before Esc so a cancelled picker cannot hide it.
+    await t.sleep(500);
+    const seen = ptyChunks.filter((c) => c.id === id).map((c) => c.text).join('');
+    if (seen.includes('COMPOSER-TEXT-MUST-NOT-LAND')) throw new Error('the refused text reached the PTY output');
+    const screen = await invoke('e2e_screen_text', { id });
+    if (typeof screen !== 'string' || !DIALOG.test(screen)) throw new Error('the terminal screen does not show the dialog');
+    if (screen.includes('COMPOSER-TEXT-MUST-NOT-LAND')) throw new Error('the refused text is on the terminal screen');
     // Esc closes the picker, as the user would in the terminal.
     await invoke('session_write', { id, data: 'Gw==' });
     await t.waitFor('session:terminal_wait_clear', () => clearEvents.some((e) => e.id === id), 15_000);
@@ -583,7 +620,7 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     await turnIdle('dialog');
     t.selectDm(NAME_A);
     t.activeName = NAME_A;
-    return `terminal_wait "${w.reason}", send blocked, cleared by Esc, next send ${after.outcome}`;
+    return `terminal_wait "${w.reason}" ${dialogToWait} ms after the dialog drew (${sendToWait} ms after the send), send blocked, PTY and screen clean, cleared by Esc, next send ${after.outcome}`;
   });
 
   // ---- 5. restart in the middle -------------------------------------------------------------------------

@@ -43,6 +43,23 @@ test.describe('session parity: mirror', () => {
     expect(errs).toEqual([]);
   });
 
+  test('an empty mirror says it is read-only and never offers Cmd+J', async ({ page }) => {
+    await page.goto('/?mock&grid=100x30');
+    await page.waitForFunction(() => !!window.__PR_STORE__ && !!window.__PR_MOCK__);
+    await page.evaluate(async () => {
+      const m = window.__PR_MOCK__!;
+      const s = m.addSession({ id: 'bare', name: 'bare', cwd: '/work/bare', status: 'idle' });
+      m.setMirror(s.id, { where: 'tmux', pid: 78, takeoverWhenClosed: false });
+      await window.__PR_STORE__!.refresh();
+      window.__PR_STORE__!.openDm(s.id);
+    });
+    const empty = page.getByTestId('chat-empty');
+    await expect(empty).toContainText('read-only');
+    await expect(empty).toContainText('tmux');
+    await expect(empty).not.toContainText('Say something');
+    await expect(empty.locator('kbd')).toHaveCount(0);
+  });
+
   test('a send that reaches a mirror is refused and says why', async ({ page }) => {
     const id = await openLiveMirror(page);
     const result = await page.evaluate((sid) => window.__PR_STORE__!.sendText(sid, 'hello'), id);

@@ -23,7 +23,9 @@ test.describe('session parity: truthful delivery copy', () => {
     await expect(page.getByTestId('composer-hint')).toContainText('Enter keeps your message here');
     // Closing the dialog does not send by itself.
     await page.evaluate((sid) => window.__PR_MOCK__!.setTerminalDialog(sid, false), id);
-    await page.waitForTimeout(400);
+    await expect(page.getByTestId('composer-hint')).toHaveText(
+      'Enter sends. Shift+Enter adds a line.',
+    );
     expect(await page.evaluate(() => window.__PR_MOCK__!.texts)).toEqual([]);
     await expect(box).toHaveValue('hello');
     await expect(page.getByTestId('composer-hint')).toHaveText(

@@ -18,6 +18,8 @@
 //!   as a terminal outside Patchroom would, in a folder named by a `PATCHROOM_E2E_DIR_*`
 //!   variable. Returns the epoch ms when its prompt was sent; the session ends on its own
 //!   (`e2e_outside_done` says when), `holdSecs` (at most 300) seconds after its reply;
+//! - `e2e_screen_text {id} -> string | null`: the emulated terminal screen of a DM as text
+//!   (what the PTY shows right now), so a scenario can prove what did not reach the terminal;
 //! - `e2e_decision_log`: the notification decision log (`notify-decisions.log` in the data
 //!   dir): event, DM id, decision and reason per line, never a message body;
 //! - `e2e_window_state -> {nativeFocused, webviewFocused, visible, minimized, forced, active}`:
@@ -481,6 +483,17 @@ pub async fn e2e_outside_session(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// `e2e_screen_text {id} -> string | null`: the DM's emulated terminal screen as text.
+#[tauri::command]
+pub async fn e2e_screen_text(
+    app: AppHandle,
+    manager: tauri::State<'_, crate::manager::SessionManager>,
+    id: String,
+) -> Result<Option<String>, String> {
+    state(&app)?;
+    Ok(manager.screen_text(&id))
 }
 
 /// `e2e_decision_log -> string`: the notification decision log of this run's data dir.

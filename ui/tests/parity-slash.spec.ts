@@ -33,6 +33,16 @@ const INTERACTIVE = [
 ];
 
 const label = (page: Page) => page.getByTestId('view-label');
+/**
+ * Freeze the page clock after the chat is open, so the 2 s fallback timer moves only when the
+ * test says so. Call before `openChat`.
+ */
+const freeze = async (page: Page) => {
+  await page.clock.install();
+};
+const pause = async (page: Page) => {
+  await page.clock.pauseAt(new Date(Date.now() + 5_000));
+};
 const send = async (page: Page, text: string) => {
   const box = page.getByTestId('composer-input');
   await box.fill(text);
@@ -90,21 +100,27 @@ test.describe('session parity: slash commands fall back to the terminal', () => 
     await expect(label(page)).toHaveText('Chat');
   });
 
-  test('an unknown command with no transcript item flips after 2 s while the PTY repaints', async ({
+  test('an unknown command with no transcript item flips at 2 s, not before, while the PTY repaints', async ({
     page,
   }) => {
+    await freeze(page);
     await openChat(page, []);
+    await pause(page);
     await send(page, '/frobnicate now');
-    await page.waitForTimeout(1200);
+    await page.clock.runFor(1999);
     await expect(label(page)).toHaveText('Chat');
-    await expect(label(page)).toHaveText('Terminal', { timeout: 3000 });
+    await page.clock.runFor(1);
+    await expect(label(page)).toHaveText('Terminal');
     await expect(page.getByTestId('term-note')).toContainText('/frobnicate');
     await page.keyboard.press('Escape');
+    await page.clock.runFor(10); // the view change is deferred by a 0 ms timer
     await expect(label(page)).toHaveText('Chat');
   });
 
   test('an unknown command that produces a transcript item stays in chat', async ({ page }) => {
+    await freeze(page);
     await openChat(page, []);
+    await pause(page);
     await send(page, '/review-pr 12');
     await page.evaluate(() => {
       const m = window.__PR_MOCK__!;
@@ -112,25 +128,29 @@ test.describe('session parity: slash commands fall back to the terminal', () => 
         { key: 'slash-1', ts: Date.now(), kind: 'user', text: '/review-pr 12', images: [] },
       ]);
     });
-    await page.waitForTimeout(2600);
+    await page.clock.runFor(2600);
     await expect(label(page)).toHaveText('Chat');
   });
 
   test('an unknown command while the PTY stays quiet stays in chat', async ({ page }) => {
+    await freeze(page);
     await openChat(page, []);
+    await pause(page);
     await page.evaluate(() => {
       window.__PR_MOCK__!.repaintOnSlash = false;
     });
     await send(page, '/quiet');
-    await page.waitForTimeout(2600);
+    await page.clock.runFor(2600);
     await expect(label(page)).toHaveText('Chat');
   });
 
   test('a plain message and a pasted path never trigger the fallback', async ({ page }) => {
+    await freeze(page);
     await openChat(page, []);
+    await pause(page);
     await send(page, 'what does /usage do?');
     await send(page, '/Users/me/code/x.ts is the file');
-    await page.waitForTimeout(2600);
+    await page.clock.runFor(2600);
     await expect(label(page)).toHaveText('Chat');
   });
 
@@ -143,5 +163,18 @@ test.describe('session parity: slash commands fall back to the terminal', () => 
     await send(page, '/usage');
     await expect(page.getByTestId('composer-notice')).toContainText('Queued');
     await expect(label(page)).toHaveText('Chat');
+  });
+
+  test('the Queued notice clears when the session exits', async ({ page }) => {
+    await openChat(page, []);
+    const id = await page.evaluate(() => {
+      const m = window.__PR_MOCK__!;
+      m.setStatus(m.sessions()[0].id, 'busy');
+      return m.sessions()[0].id;
+    });
+    await send(page, '/usage');
+    await expect(page.getByTestId('composer-notice')).toContainText('Queued');
+    await page.evaluate((sid) => window.__PR_MOCK__!.exit(sid, 0), id);
+    await expect(page.getByTestId('composer-notice')).toHaveCount(0);
   });
 });

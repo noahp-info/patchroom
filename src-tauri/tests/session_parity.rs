@@ -18,13 +18,13 @@ const SID: &str = "aaaaaaaa-0000-4000-8000-000000000001";
 
 #[derive(Default)]
 struct Sink {
-    events: Mutex<Vec<UiEvent>>,
+    events: Mutex<Vec<(Instant, UiEvent)>>,
     cv: Condvar,
 }
 
 impl EventSink for Sink {
     fn emit(&self, event: UiEvent) {
-        self.events.lock().unwrap().push(event);
+        self.events.lock().unwrap().push((Instant::now(), event));
         self.cv.notify_all();
     }
 }
@@ -35,8 +35,38 @@ impl Sink {
             .lock()
             .unwrap()
             .iter()
-            .filter(|e| e.name() == name)
+            .filter(|(_, e)| e.name() == name)
             .count()
+    }
+
+    /// When the first event of this DM that `name`s and satisfies `pred` reached the sink.
+    fn first_at(&self, name: &str, pred: impl Fn(&Value) -> bool) -> Option<Instant> {
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(_, e)| e.name() == name && pred(&e.payload()))
+            .map(|(t, _)| *t)
+    }
+
+    /// Everything the PTY of `id` has printed so far (the `pty:output` stream), decoded.
+    fn pty_text(&self, id: &str) -> String {
+        use base64::Engine as _;
+        let bytes: Vec<u8> = self
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, e)| e.name() == "pty:output")
+            .map(|(_, e)| e.payload())
+            .filter(|p| p["id"] == id)
+            .flat_map(|p| {
+                base64::engine::general_purpose::STANDARD
+                    .decode(p["data"].as_str().unwrap())
+                    .unwrap()
+            })
+            .collect();
+        String::from_utf8_lossy(&bytes).into_owned()
     }
 
     /// Wait until more than `before` events called `name` arrived; return the newest payload.
@@ -46,8 +76,8 @@ impl Sink {
         loop {
             let hits: Vec<Value> = g
                 .iter()
-                .filter(|e| e.name() == name)
-                .map(UiEvent::payload)
+                .filter(|(_, e)| e.name() == name)
+                .map(|(_, e)| e.payload())
                 .collect();
             if hits.len() > before {
                 return hits.last().unwrap().clone();
@@ -272,8 +302,8 @@ impl Sink {
             .lock()
             .unwrap()
             .iter()
-            .rfind(|e| e.name() == name)
-            .map(UiEvent::payload)
+            .rfind(|(_, e)| e.name() == name)
+            .map(|(_, e)| e.payload())
             .unwrap()
     }
 }
@@ -418,14 +448,36 @@ fn dm_in(e: &Env) -> String {
 fn a_terminal_only_dialog_is_signalled_blocks_the_composer_and_clears() {
     let e = env(DIALOG_STUB);
     let id = dm_in(&e);
-    let started = Instant::now();
 
     let p = e.sink.wait_for("session:terminal_wait", 0, 3);
     assert_eq!(p["id"], id.as_str());
+    // Measure from the dialog appearing in the PTY output, not from the DM's creation (the
+    // spawn and the stub's start-up are not the signal's latency).
+    let shown_at = e
+        .sink
+        .first_at("pty:output", |p| {
+            p["id"] == id.as_str()
+                && p["data"].as_str().is_some_and(|d| {
+                    use base64::Engine as _;
+                    base64::engine::general_purpose::STANDARD
+                        .decode(d)
+                        .is_ok_and(|b| String::from_utf8_lossy(&b).contains("Esc to cancel"))
+                })
+        })
+        .expect("the dialog footer never reached the PTY output");
+    let signalled_at = e
+        .sink
+        .first_at("session:terminal_wait", |p| p["id"] == id.as_str())
+        .unwrap();
+    let latency = signalled_at.saturating_duration_since(shown_at);
+    println!("terminal_wait latency from the dialog drawing: {latency:?}");
     assert!(
-        started.elapsed() < Duration::from_millis(2500),
-        "signalled after {:?}",
-        started.elapsed()
+        signalled_at >= shown_at,
+        "the wait was signalled before the dialog was on screen"
+    );
+    assert!(
+        latency < Duration::from_secs(2),
+        "terminal_wait came {latency:?} after the dialog drew"
     );
     assert_eq!(p["reason"], "dialog open");
     assert!(p["since"].as_i64().unwrap() > 1_700_000_000_000);
@@ -455,6 +507,26 @@ fn a_terminal_only_dialog_is_signalled_blocks_the_composer_and_clears() {
         serde_json::to_value(&out).unwrap(),
         json!({"outcome":"blocked_dialog","reason":"dialog open"})
     );
+
+    // Nothing reached the PTY: not in the output stream, not on the emulated screen. The tty
+    // echoes whatever is written to it, so a write would show up in both. The control token
+    // proves the check can see a write.
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        !e.sink.pty_text(&id).contains("typed into the void"),
+        "the refused text was echoed by the PTY"
+    );
+    assert!(
+        !e.m.screen_text(&id)
+            .unwrap()
+            .contains("typed into the void"),
+        "the refused text is on the terminal screen"
+    );
+    e.m.write(&id, b"CONTROL-TOKEN".to_vec()).unwrap();
+    wait_until("the control write to echo", 2, || {
+        e.sink.pty_text(&id).contains("CONTROL-TOKEN")
+            && e.m.screen_text(&id).unwrap().contains("CONTROL-TOKEN")
+    });
 
     // The dialog goes away (the stub repaints): the wait clears and sends work again.
     let c = e.sink.wait_for("session:terminal_wait_clear", 0, 8);

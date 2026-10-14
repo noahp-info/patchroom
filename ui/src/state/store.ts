@@ -475,6 +475,7 @@ export class AppStore {
       }),
       this.ipc.on('pty:exit', (e) => {
         this.patchSession(e.id, { status: 'exited', exitCode: e.code });
+        this.chat(e.id).clearNotice('queued');
       }),
       this.ipc.on('session:title', (e) => this.patchSession(e.id, { title: e.title })),
       this.ipc.on('session:status', (e) => {

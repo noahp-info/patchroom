@@ -807,6 +807,17 @@ impl Manager {
             .is_some_and(|l| l.pty.exit_info().is_some())
     }
 
+    /// The emulated terminal screen of `id` as text (what the user would see), if the DM has
+    /// a live claude screen. Used by the tests and the debug e2e hooks to prove what did and
+    /// did not reach the terminal.
+    #[must_use]
+    pub fn screen_text(&self, id: &str) -> Option<String> {
+        let live = lock(&self.live);
+        let screen = live.get(id)?.screen.as_ref()?;
+        let text = lock(screen).text();
+        Some(text)
+    }
+
     /// Pid of the session's child, if it is known.
     #[must_use]
     pub fn pid_of(&self, id: &str) -> Option<u32> {
