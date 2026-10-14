@@ -6,10 +6,20 @@ export interface EmojiPickerProps {
   anchor: Anchor;
   onPick(emoji: string): void;
   onClose(): void;
+  /** Accessible name of the dialog. Defaults to the reaction wording. */
+  label?: string;
+  /** When set, the picker offers "No emoji", which calls this. */
+  onClear?(): void;
 }
 
 /** Emoji picker for reactions: a search box, the recent emoji, then the full set. */
-export function EmojiPicker({ anchor, onPick, onClose }: EmojiPickerProps) {
+export function EmojiPicker({
+  anchor,
+  onPick,
+  onClose,
+  label = 'Add a reaction',
+  onClear,
+}: EmojiPickerProps) {
   const [q, setQ] = useState('');
   const [recent] = useState(readRecent);
   const term = q.trim().toLowerCase().replace(/^:|:$/g, '');
@@ -42,7 +52,7 @@ export function EmojiPicker({ anchor, onPick, onClose }: EmojiPickerProps) {
   );
 
   return (
-    <Floating anchor={anchor} onClose={onClose} label="Add a reaction" className="picker">
+    <Floating anchor={anchor} onClose={onClose} label={label} className="picker">
       <input
         className="picker__q"
         type="search"
@@ -58,6 +68,19 @@ export function EmojiPicker({ anchor, onPick, onClose }: EmojiPickerProps) {
         aria-label="Find an emoji"
         autoFocus
       />
+      {onClear && (
+        <button
+          type="button"
+          className="picker__clear"
+          data-testid="emoji-clear"
+          onClick={() => {
+            onClear();
+            onClose();
+          }}
+        >
+          No emoji
+        </button>
+      )}
       {term === '' && recent.length > 0 && (
         <div className="picker__sec" data-testid="emoji-recent">
           <h3>Recent</h3>

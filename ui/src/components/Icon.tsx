@@ -21,6 +21,7 @@ const PATHS: Record<string, ReactNode> = {
   branch: (
     <path d="M5 3v6.5M5 9.5a2 2 0 1 0 0 .01M11 3.5a1.5 1.5 0 1 0 0 .01M11 5v1a3 3 0 0 1-3 3H5" />
   ),
+  worktree: <path d="M4 2.5v11M4 8h5.5A2.5 2.5 0 0 0 12 5.5v-2M10 3.5h4M2.5 2.5h3M2.5 13.5h3" />,
   down2: <path d="M8 3v9M4 8.5l4 4 4-4" />,
   pencil: <path d="M10.5 3 13 5.5 6 12.5l-3.2.7.7-3.2zM9 4.5 11.5 7" />,
   star: <path d="m8 2 1.8 3.7 4 .6-2.9 2.8.7 4L8 11.2 4.4 13.1l.7-4L2.2 6.3l4-.6z" />,

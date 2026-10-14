@@ -43,7 +43,14 @@ export interface SectionInfo {
   folder?: string | null;
   /** P3: folder sections fold sessions idle this many days into "Older than X days". */
   archiveDays?: number;
+  /** `divider` rows hold no DMs: a rule with an optional label. Absent means `section`. */
+  kind?: SectionKind;
+  /** Leading emoji of the header; null for none. */
+  emoji?: string | null;
 }
+
+/** What a stored sidebar row is. */
+export type SectionKind = 'section' | 'divider';
 
 export interface SessionCreateArgs {
   cwd: string;
@@ -110,7 +117,12 @@ export interface Ipc {
   /** Move a DM to a stored section, or to the default group with null. */
   sessionSetSection(id: string, sectionId: string | null): Promise<void>;
   sectionList(): Promise<SectionInfo[]>;
-  sectionCreate(name: string): Promise<{ id: string }>;
+  /** `kind` defaults to a section. A divider may have an empty name (a rule with no label). */
+  sectionCreate(
+    name: string,
+    opts?: { kind?: SectionKind; emoji?: string | null },
+  ): Promise<{ id: string }>;
+  sectionSetEmoji(id: string, emoji: string | null): Promise<void>;
   sectionSetCollapsed(id: string, collapsed: boolean): Promise<void>;
   /** Native folder picker (`pick_folder`). Resolves null when cancelled. */
   pickFolder(defaultPath?: string): Promise<string | null>;
@@ -450,6 +462,8 @@ export interface FolderSession {
   /** Path of `launchCwd` inside the home folder; empty for the home folder itself. */
   relPath: string;
   branch?: string | null;
+  /** The branch currently checked out in the section's home folder (read only). */
+  folderBranch?: string | null;
   /** Newest transcript timestamp. */
   lastActivity: Timestamp;
   firstPrompt: string;

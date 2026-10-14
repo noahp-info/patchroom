@@ -406,6 +406,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
         launchCwd: home,
         relPath: '',
         branch: null,
+        folderBranch: folderRows.get(sectionId)?.[0]?.folderBranch ?? null,
         lastActivity: Date.now(),
         firstPrompt: row.name,
         lastPrompt: row.name,
@@ -542,6 +543,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
         collapsed: info.collapsed ?? false,
         folder: info.folder ?? null,
         archiveDays: info.archiveDays ?? 14,
+        kind: info.kind ?? 'section',
+        emoji: info.emoji ?? null,
       };
       sections.set(sec.id, sec);
       if (sec.folder && !folderRows.has(sec.id)) {
@@ -624,6 +627,9 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       save();
     },
     async sessionSetSection(id, sectionId) {
+      if (sectionId && sections.get(sectionId)?.kind === 'divider') {
+        throw new Error('a divider cannot hold conversations');
+      }
       const s = sessions.get(id);
       if (s) s.sectionId = sectionId;
       save();
@@ -631,8 +637,16 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     async sectionList() {
       return control.sections().map((x) => ({ ...x }));
     },
-    async sectionCreate(name) {
-      return { id: control.addSection({ name }).id };
+    async sectionCreate(name, opts) {
+      const kind = opts?.kind ?? 'section';
+      if (kind === 'section' && !name.trim()) throw new Error('section name must not be empty');
+      return { id: control.addSection({ name: name.trim(), kind, emoji: opts?.emoji ?? null }).id };
+    },
+    async sectionSetEmoji(id, emoji) {
+      const sec = sections.get(id);
+      if (!sec) throw new Error(`no such section: ${id}`);
+      sec.emoji = emoji?.trim() || null;
+      save();
     },
     async sectionSetCollapsed(id, collapsed) {
       const sec = sections.get(id);
@@ -684,7 +698,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     async sectionRename(id, name) {
       const sec = sections.get(id);
       if (!sec) throw new Error(`no such section: ${id}`);
-      sec.name = name.trim() || sec.name;
+      // A divider may lose its label; a section keeps its name when the new one is blank.
+      sec.name = sec.kind === 'divider' ? name.trim() : name.trim() || sec.name;
       save();
     },
     async sectionDelete(id) {

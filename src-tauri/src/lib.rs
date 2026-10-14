@@ -37,6 +37,13 @@
 //! section lists the resumable Claude sessions found read only under its folder; opening one
 //! creates its DM and runs `claude --resume`. See [`manager`] (`folder` module).
 //!
+//! # Sidebar organization
+//! Command: `section_set_emoji {id, emoji|null}`; `section_create {name, kind?, emoji?}` takes
+//! `kind` `section` (default) or `divider` (a rule with an optional label, no DMs).
+//! `SectionInfo` gains `kind` and `emoji`; `folder_sessions` rows gain `folderBranch`, the
+//! branch checked out in the section's folder (read only), so the UI draws a branch chip only
+//! when a session's branch differs.
+//!
 //! Per launch, claude gets `--settings <file>`: a Patchroom-owned file in the data dir
 //! (`bridge.sock.d/<id>.json`) that registers the hooks and the `patchroom-statusline`
 //! wrapper. User settings files are never written. The file keeps claude's own command
@@ -121,6 +128,7 @@ macro_rules! app_handler {
             commands::session_set_section,
             commands::section_list,
             commands::section_create,
+            commands::section_set_emoji,
             commands::section_set_collapsed,
             commands::pick_folder,
             commands::chat_history,
@@ -189,6 +197,7 @@ macro_rules! app_handler {
             commands::session_set_section,
             commands::section_list,
             commands::section_create,
+            commands::section_set_emoji,
             commands::section_set_collapsed,
             commands::pick_folder,
             commands::chat_history,
@@ -296,7 +305,7 @@ mod tests {
     #[test]
     fn p3_commands_are_registered_in_both_handler_lists() {
         const SRC: &str = include_str!("lib.rs");
-        const P3: [&str; 25] = [
+        const P3: [&str; 26] = [
             "section_rename",
             "section_delete",
             "section_reorder",
@@ -322,6 +331,7 @@ mod tests {
             "folder_sessions",
             "folder_session_open",
             "folder_session_hide",
+            "section_set_emoji",
         ];
         let bodies: Vec<&str> = SRC
             .split("generate_handler![\n")

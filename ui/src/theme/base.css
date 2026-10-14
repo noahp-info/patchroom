@@ -224,7 +224,7 @@
   font-size: 12px;
   color: var(--side-muted);
 }
-:where(.pr-app) .row .bdg {
+:where(.pr-app) :is(.row, .sec-h) .bdg {
   font-size: 11px;
   font-weight: 700;
   min-width: 18px;
@@ -236,7 +236,7 @@
   background: var(--unread);
   color: var(--unread-fg);
 }
-:where(.pr-app) .row .bdg.needs {
+:where(.pr-app) :is(.row, .sec-h) .bdg.needs {
   background: var(--needs);
   color: var(--needs-fg);
 }
@@ -256,16 +256,23 @@
   opacity: 0.7;
 }
 :where(.pr-app) .sec {
-  margin-top: 14px;
+  margin-top: 0;
 }
+/* A hairline above every section but the first, so sections read as blocks. */
+:where(.pr-app) .side-scroll > .sec + .sec {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--side-line);
+}
+/* Headers are the strongest ink in the sidebar; rows below them use side-fg at 400. */
 :where(.pr-app) .sec-h {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 2px 8px 4px;
-  color: var(--side-muted);
+  color: var(--side-strong);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
 }
 :where(.pr-app) .sec-h svg.i {
   width: 12px;

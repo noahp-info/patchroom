@@ -45,6 +45,8 @@ function section(r: Loose): SectionInfo {
     collapsed: Boolean(r.collapsed),
     folder: (r.folder as string | null | undefined) ?? null,
     archiveDays: Number(pick(r, 'archiveDays', 'archive_days') ?? 14),
+    kind: r.kind === 'divider' ? 'divider' : 'section',
+    emoji: (r.emoji as string | null | undefined) ?? null,
   };
 }
 function folderSession(r: Loose): FolderSession {
@@ -55,6 +57,7 @@ function folderSession(r: Loose): FolderSession {
     launchCwd: String(pick(r, 'launchCwd', 'launch_cwd') ?? ''),
     relPath: String(pick(r, 'relPath', 'rel_path') ?? ''),
     branch: (r.branch as string | null | undefined) ?? null,
+    folderBranch: (pick(r, 'folderBranch', 'folder_branch') as string | null | undefined) ?? null,
     lastActivity: pick(r, 'lastActivity', 'last_activity') as FolderSession['lastActivity'],
     firstPrompt: String(pick(r, 'firstPrompt', 'first_prompt') ?? ''),
     lastPrompt: String(pick(r, 'lastPrompt', 'last_prompt') ?? ''),
@@ -114,7 +117,9 @@ export function createTauriIpc(): Ipc {
     sessionDelete: (id) => invoke('session_delete', { id }),
     sessionSetSection: (id, sectionId) => invoke('session_set_section', { id, sectionId }),
     sectionList: async () => (await invoke<Loose[]>('section_list')).map(section),
-    sectionCreate: (name) => invoke('section_create', { name }),
+    sectionCreate: (name, opts) =>
+      invoke('section_create', { name, kind: opts?.kind, emoji: opts?.emoji ?? undefined }),
+    sectionSetEmoji: (id, emoji) => invoke('section_set_emoji', { id, emoji }),
     sectionSetCollapsed: (id, collapsed) => invoke('section_set_collapsed', { id, collapsed }),
     pickFolder: (defaultPath) => invoke<string | null>('pick_folder', { defaultPath }),
     chatHistory: (id, before, limit) => invoke('chat_history', { id, before, limit }),

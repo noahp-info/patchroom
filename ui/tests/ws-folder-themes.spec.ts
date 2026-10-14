@@ -72,7 +72,7 @@ test.describe('workspace: folder sections in every theme, light and dark (checkl
           '.fs-row [data-testid="fs-name"]',
           '.fs-row .fs-age',
           '.fs-row [data-chip="branch"]',
-          '.fs-row [data-chip="path"]',
+          '.fs-row .fs-wt',
           '.fs-row [data-chip="live"]',
           '.fs-toggle',
           '.fs-confirm p',

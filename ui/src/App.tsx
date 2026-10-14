@@ -220,11 +220,13 @@ export function App() {
                   aria-label="Section"
                 >
                   <option value="">Direct messages</option>
-                  {state.sections.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
+                  {state.sections
+                    .filter((s) => s.kind !== 'divider')
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
                 </select>
               </label>
               {active.status !== 'exited' && (

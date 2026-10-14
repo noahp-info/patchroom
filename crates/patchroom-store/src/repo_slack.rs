@@ -125,7 +125,9 @@ impl Store {
         if id == fallback {
             return Err(Error::invalid("cannot move a section's DMs into itself"));
         }
-        self.section(fallback)?;
+        if self.section(fallback)?.kind == crate::types::SectionKind::Divider {
+            return Err(Error::invalid("a divider cannot hold conversations"));
+        }
         let tx = self.conn.unchecked_transaction()?;
         let ids: Vec<String> = {
             let mut st = tx.prepare(
@@ -163,7 +165,9 @@ impl Store {
             return Err(Error::invalid("a conversation is listed twice"));
         }
         if let Some(s) = section_id {
-            self.section(s)?;
+            if self.section(s)?.kind == crate::types::SectionKind::Divider {
+                return Err(Error::invalid("a divider cannot hold conversations"));
+            }
         }
         let tx = self.conn.unchecked_transaction()?;
         let rest: Vec<String> = {

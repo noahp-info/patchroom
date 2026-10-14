@@ -5,7 +5,7 @@ export const DEFAULT_GROUP = '__default__';
 export const STARRED_GROUP = '__starred__';
 export const ARCHIVED_GROUP = '__archived__';
 
-export type GroupKind = 'starred' | 'section' | 'default' | 'archived';
+export type GroupKind = 'starred' | 'section' | 'divider' | 'default' | 'archived';
 
 export interface Group {
   id: string;
@@ -22,7 +22,7 @@ export interface Group {
  * starred one only under Starred; neither shows in its section.
  */
 export function buildGroups(sections: SectionInfo[], sessions: SessionInfo[]): Group[] {
-  const known = new Set(sections.map((s) => s.id));
+  const known = new Set(sections.filter((s) => s.kind !== 'divider').map((s) => s.id));
   const live = sessions.filter((s) => !s.archived);
   const plain = live.filter((s) => !s.starred);
   return [
@@ -35,10 +35,11 @@ export function buildGroups(sections: SectionInfo[], sessions: SessionInfo[]): G
     },
     ...sections.map<Group>((section) => ({
       id: section.id,
-      kind: 'section',
+      kind: section.kind === 'divider' ? 'divider' : 'section',
       title: section.name,
       section,
-      items: plain.filter((s) => s.sectionId === section.id),
+      // A divider holds no DMs of its own.
+      items: section.kind === 'divider' ? [] : plain.filter((s) => s.sectionId === section.id),
     })),
     {
       id: DEFAULT_GROUP,
@@ -63,4 +64,25 @@ export function visibleOrder(sections: SectionInfo[], sessions: SessionInfo[]): 
   return buildGroups(sections, sessions)
     .filter((g) => g.kind !== 'archived')
     .flatMap((g) => g.items);
+}
+
+/** A divider with a label can fold the groups below it; one without is a rule only. */
+export const isFoldingDivider = (g: Group) => g.kind === 'divider' && g.title.trim() !== '';
+
+/**
+ * For each group, the labeled divider it sits under: the nearest labeled divider above it with no
+ * other divider in between. Starred comes first, so it never sits under one. An unlabeled divider
+ * still ends the group above it. Direct messages and Archived, which follow the stored sections,
+ * belong to the last divider's group.
+ */
+export function dividerOf(groups: Group[]): Map<string, Group | null> {
+  const out = new Map<string, Group | null>();
+  let cur: Group | null = null;
+  for (const g of groups) {
+    if (g.kind === 'divider') {
+      out.set(g.id, null);
+      cur = isFoldingDivider(g) ? g : null;
+    } else out.set(g.id, cur);
+  }
+  return out;
 }

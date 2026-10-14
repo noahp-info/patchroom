@@ -77,8 +77,10 @@ test.describe('shell', () => {
     await sec('sec-play')
       .getByRole('button', { name: /Side projects/ })
       .click();
-    await expect(sec('sec-play').locator('.row')).toHaveCount(0);
-    await expect(sec('sec-play').locator('.bdg.needs')).toHaveText('1');
+    // Collapsing never hides what needs you: the waiting DM stays as a row under the header.
+    await expect(sec('sec-play').locator('.row')).toHaveCount(1);
+    await expect(sec('sec-play').locator('.row')).toHaveText(/beta/);
+    await expect(sec('sec-play').locator('.sec-h .bdg.needs')).toHaveText('1');
     expect(
       await page.evaluate(
         () => window.__PR_MOCK__!.sections().find((s) => s.id === 'sec-play')!.collapsed,

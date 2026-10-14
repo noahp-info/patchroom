@@ -1,4 +1,5 @@
 import { createMockIpc, type MockControl } from './mock';
+import { seedSidebarDemo } from './sidebarDemo';
 import { createTauriIpc } from './tauri';
 import type { Ipc } from './types';
 
@@ -52,5 +53,6 @@ export function createIpc(): Ipc {
   const { ipc, control } = createMockIpc({ banner: true, persist: params.has('persist') });
   window.__PR_MOCK__ = control;
   if (params.has('demo')) seedDemo(control);
+  if (params.has('sidebar-demo')) seedSidebarDemo(control);
   return ipc;
 }

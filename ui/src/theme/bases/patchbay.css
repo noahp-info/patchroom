@@ -75,13 +75,13 @@
   border-color: var(--panel-edge);
 }
 [data-base='patchbay'] .sec-h {
-  font: 600 12px var(--f-label);
+  font: 700 12px var(--f-label);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--silk-muted);
+  color: var(--side-strong);
   padding-top: 4px;
 }
-[data-base='patchbay'] .sec-h::after {
+[data-base='patchbay'] .sec-h:not(.sec-h--divider)::after {
   content: '';
   flex: 1;
   height: 1px;
@@ -178,7 +178,7 @@
     0 0 0 2px var(--hole),
     0 0 0 3.5px var(--plug);
 }
-[data-base='patchbay'] .row .bdg {
+[data-base='patchbay'] :is(.row, .sec-h) .bdg {
   border-radius: 3px;
   font: 700 12px var(--f-label);
   letter-spacing: 0.04em;

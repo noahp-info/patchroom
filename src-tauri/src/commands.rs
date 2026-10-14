@@ -158,11 +158,30 @@ pub async fn section_list(state: State<'_, SessionManager>) -> CmdResult<Vec<Sec
     state.sections().map_err(|e| e.to_string())
 }
 
-/// `section_create {name} -> {id}`.
+/// `section_create {name, kind?, emoji?} -> {id}`. `kind` is `section` (default) or `divider`.
 #[tauri::command]
-pub async fn section_create(state: State<'_, SessionManager>, name: String) -> CmdResult<Created> {
-    let id = state.create_section(&name).map_err(|e| e.to_string())?;
+pub async fn section_create(
+    state: State<'_, SessionManager>,
+    name: String,
+    kind: Option<String>,
+    emoji: Option<String>,
+) -> CmdResult<Created> {
+    let id = state
+        .create_section_of(&name, kind.as_deref(), emoji.as_deref())
+        .map_err(|e| e.to_string())?;
     Ok(Created { id })
+}
+
+/// `section_set_emoji {id, emoji|null}`.
+#[tauri::command]
+pub async fn section_set_emoji(
+    state: State<'_, SessionManager>,
+    id: String,
+    emoji: Option<String>,
+) -> CmdResult<()> {
+    state
+        .set_section_emoji(&id, emoji.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 /// `section_set_collapsed {id, collapsed}`.
