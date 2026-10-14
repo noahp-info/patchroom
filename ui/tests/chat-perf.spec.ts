@@ -114,6 +114,10 @@ test.describe('virtualized log', () => {
   });
 
   test('scrolling stays smooth with the CPU throttled 3x', async ({ page }) => {
+    // Stands in for a slower Mac on a fast dev machine. A CI runner is already that slower
+    // machine, and the 1x test above gates it on the same long-task limit; throttling it again
+    // would model a machine far slower than any we support.
+    test.skip(!!process.env.CI, 'the CI runner is the slow machine; the 1x test covers it');
     await scrollAtFrameRate(page, 3);
   });
 
