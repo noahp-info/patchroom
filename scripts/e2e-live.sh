@@ -10,13 +10,13 @@
 #        E2E_SKIP_BUILD=1 scripts/e2e-live.sh   reuse the last e2e build
 #        E2E_TIMEOUT=900 ...            seconds before the run is killed
 #
-# Everything runs in temp dirs under $E2E_BASE (default /tmp/pr-e2e) with PATCHROOM_DATA_DIR
+# Everything runs in temp dirs under $E2E_BASE (default /tmp/pr-e2e-<pid>) with PATCHROOM_DATA_DIR
 # there too. Only `--model haiku` is used. The only network use is claude's own API traffic.
 # This script never writes the user's claude settings, shell profiles or ~/.claude.json.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BASE="${E2E_BASE:-/tmp/pr-e2e}"
+BASE="${E2E_BASE:-/tmp/pr-e2e-$$}"  # per-run dir: parallel runs never share or delete each other's files
 TIMEOUT="${E2E_TIMEOUT:-900}"
 APP="$ROOT/target/debug/bundle/macos/Patchroom.app/Contents/MacOS/patchroom"
 SCRIPT="$ROOT/ui/src/e2e/both.script.js"
@@ -50,7 +50,8 @@ try:
 except Exception:
     d = {}
 projects = d.pop("projects", {}) or {}
-mine = {k: v for k, v in projects.items() if k.startswith(base) or k.startswith("/private" + base)}
+# Any e2e-live run's folders count as "mine" (a parallel run adds its own entries meanwhile).
+mine = {k: v for k, v in projects.items() if k.startswith(base) or k.startswith("/private" + base) or k.startswith("/tmp/pr-e2e") or k.startswith("/private/tmp/pr-e2e")}
 other = {k: v for k, v in projects.items() if k not in mine}
 print(json.dumps({"top": d, "other_projects": sorted(other), "mine": sorted(mine)}, sort_keys=True))
 PY
@@ -67,13 +68,19 @@ sums >"$BASE/sums.before"
 claude_json_view >"$BASE/claude-json.before"
 patchroom_refs >"$BASE/refs.before"
 
-# Processes of ours: claude (or a hook) whose cwd is under $BASE.
+# Processes of THIS run only: claude or a hook whose cwd is under $BASE, or whose command
+# line names this run's data dir ($BASE/data, through --socket or --settings). Another run's
+# processes (a second e2e-live, the live_chat tests) match neither.
 ours() {
-  local pid cwd
-  for pid in $(ps -axo pid=,command= | grep -E '(^|[ /])claude( |$)|patchroom-hook' | grep -v grep | awk '{print $1}'); do
+  local pid cwd cmd
+  while read -r pid cmd; do
+    [[ -n "$pid" ]] || continue
     cwd="$(lsof -a -d cwd -p "$pid" -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
-    case "$cwd" in "$BASE"*|"/private$BASE"*) echo "$pid" ;; esac
-  done
+    case "$cwd" in
+      "$BASE"/*|"/private$BASE"/*) echo "$pid"; continue ;;
+    esac
+    case "$cmd" in *"$BASE/data/"*|*"/private$BASE/data/"*) echo "$pid" ;; esac
+  done < <(ps -axww -o pid=,command= | grep -E '(^|[ /])claude( |$)|patchroom-hook' | grep -v grep)
 }
 
 # ---- run ----------------------------------------------------------------------------------------------------

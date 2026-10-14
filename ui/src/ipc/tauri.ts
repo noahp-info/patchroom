@@ -42,6 +42,7 @@ export function createTauriIpc(): Ipc {
     chatThread: (id, toolUseId) => invoke('chat_thread', { id, toolUseId }),
     chatImage: (id, ref) => invoke('chat_image', { id, ref }),
     promptAnswer: (id, promptId, answer) => invoke('prompt_answer', { id, promptId, answer }),
+    promptList: (id) => invoke('prompt_list', { id }),
     sessionMarkRead: (id) => invoke('session_mark_read', { id }),
     statuslineCycleMode: (id) => invoke('statusline_cycle_mode', { id }),
     sessionView: (id, view) => invoke('session_view', { id, view }),

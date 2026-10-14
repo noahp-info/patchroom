@@ -256,6 +256,15 @@ pub async fn session_mark_read(state: State<'_, SessionManager>, id: String) -> 
     state.mark_read(&id).map_err(|e| e.to_string())
 }
 
+/// `prompt_list {id}`: the DM's announced, unresolved prompts as `prompt:pending` payloads.
+#[tauri::command]
+pub async fn prompt_list(
+    state: State<'_, SessionManager>,
+    id: String,
+) -> CmdResult<Vec<serde_json::Value>> {
+    state.prompt_list(&id).map_err(|e| e.to_string())
+}
+
 /// `statusline_cycle_mode {id}`: writes Shift+Tab to the PTY.
 #[tauri::command]
 pub async fn statusline_cycle_mode(state: State<'_, SessionManager>, id: String) -> CmdResult<()> {

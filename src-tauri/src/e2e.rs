@@ -154,7 +154,10 @@ pub async fn e2e_report(app: AppHandle, name: String, body: String) -> Result<St
 }
 
 /// Pids whose full command line matches `pattern`, never counting this process or `pgrep`.
-fn pgrep(pattern: &str) -> Vec<u32> {
+/// With `scope`, only processes whose command line also contains it (the run's own data
+/// dir: hook and claude command lines carry it through `--socket` and `--settings`), so a
+/// second app instance or a test run on the same machine never counts.
+fn pgrep(pattern: &str, scope: Option<&str>) -> Vec<u32> {
     let me = std::process::id();
     let out = Command::new("/usr/bin/pgrep")
         .args(["-f", pattern])
@@ -166,10 +169,33 @@ fn pgrep(pattern: &str) -> Vec<u32> {
         .lines()
         .filter_map(|l| l.trim().parse::<u32>().ok())
         .filter(|p| *p != me)
+        .filter(|p| scope.is_none_or(|sc| command_line(*p).contains(sc)))
         .collect()
 }
 
-/// `e2e_pgrep {pattern} -> [pid]`: `pgrep -f pattern`, empty when nothing matches.
+fn command_line(pid: u32) -> String {
+    Command::new("/bin/ps")
+        .args(["-ww", "-o", "command=", "-p", &pid.to_string()])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+/// The data dir of this run: `PATCHROOM_DATA_DIR`, else the app data dir.
+fn run_scope(app: &AppHandle) -> Option<String> {
+    std::env::var("PATCHROOM_DATA_DIR")
+        .ok()
+        .filter(|d| !d.is_empty())
+        .or_else(|| {
+            app.path()
+                .app_data_dir()
+                .ok()
+                .map(|p| p.to_string_lossy().into_owned())
+        })
+}
+
+/// `e2e_pgrep {pattern} -> [pid]`: `pgrep -f pattern` limited to this run's processes,
+/// empty when nothing matches.
 #[tauri::command]
 pub async fn e2e_pgrep(app: AppHandle, pattern: String) -> Result<Vec<u32>, String> {
     state(&app)?;
@@ -180,7 +206,8 @@ pub async fn e2e_pgrep(app: AppHandle, pattern: String) -> Result<Vec<u32>, Stri
     {
         return Err("bad pgrep pattern".into());
     }
-    tauri::async_runtime::spawn_blocking(move || pgrep(&pattern))
+    let scope = run_scope(&app);
+    tauri::async_runtime::spawn_blocking(move || pgrep(&pattern, scope.as_deref()))
         .await
         .map_err(|e| e.to_string())
 }
@@ -254,6 +281,22 @@ mod tests {
 
     #[test]
     fn pgrep_finds_nothing_for_an_unlikely_pattern() {
-        assert!(pgrep("patchroom-no-such-process-zz9").is_empty());
+        assert!(pgrep("patchroom-no-such-process-zz9", None).is_empty());
+    }
+
+    #[test]
+    fn pgrep_scope_excludes_other_runs() {
+        let dir = std::env::temp_dir().join("pr-scope-test-a");
+        let mut a = Command::new("/bin/sh")
+            .args(["-c", "sleep 37.25; :", &dir.to_string_lossy()])
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let mine = pgrep("sleep 37.25", Some(&dir.to_string_lossy()));
+        let other = pgrep("sleep 37.25", Some("/tmp/pr-scope-test-other"));
+        let _ = a.kill();
+        let _ = a.wait();
+        assert!(mine.contains(&a.id()), "{mine:?}");
+        assert!(other.is_empty(), "{other:?}");
     }
 }

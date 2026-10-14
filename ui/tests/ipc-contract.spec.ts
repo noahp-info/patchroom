@@ -34,6 +34,7 @@ const P2_COMMANDS = [
   'chat_thread',
   'paste_image',
   'prompt_answer',
+  'prompt_list',
   'session_mark_read',
   'statusline_cycle_mode',
 ];
@@ -147,6 +148,7 @@ async function recordTauriCalls(): Promise<Call[]> {
   await ipc.chatThread('i', 'tu');
   await ipc.chatImage('i', 'r');
   await ipc.promptAnswer('i', 'p', { kind: 'questions', answers: { Q: 'a, b' } });
+  await ipc.promptList('i');
   await ipc.sessionMarkRead('i');
   await ipc.statuslineCycleMode('i');
   await ipc.sessionView('i', 'terminal');
@@ -218,6 +220,7 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
       promptId: 'p',
       answer: { kind: 'questions', answers: { Q: 'a, b' } },
     });
+    expect(byCmd.prompt_list).toEqual({ id: 'i' });
     expect(byCmd.session_mark_read).toEqual({ id: 'i' });
     expect(byCmd.statusline_cycle_mode).toEqual({ id: 'i' });
     // Nothing goes through the ungranted dialog plugin.

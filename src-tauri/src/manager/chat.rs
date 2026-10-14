@@ -21,6 +21,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Weak;
+use std::time::Instant;
 
 use patchroom_bridge::statusline::{chips_from_payload, resolve_user_status_line, Chips};
 use patchroom_bridge::{
@@ -84,6 +85,8 @@ struct OpenPrompt {
     emitted: bool,
     /// `prompt:pending` went out without a `toolUseId`; re-emit it when the line lands.
     awaiting_link: bool,
+    /// When the prompt reached the chat (the sweep forces out one that stays unannounced).
+    since: Instant,
 }
 
 #[derive(Default)]
@@ -272,6 +275,12 @@ fn compose_chips(payload: &Chips, meta: &Meta, screen_mode: Option<&str>) -> Chi
     c
 }
 
+pub(super) fn trace(msg: &str) {
+    if std::env::var_os("PATCHROOM_TRACE").is_some() {
+        eprintln!("[trace {:?}] {msg}", std::time::SystemTime::now());
+    }
+}
+
 impl Manager {
     // ---- lifecycle ----
 
@@ -429,6 +438,35 @@ impl Manager {
         let b = lock(&self.store).clear_unread(&Author::me(), conv)?;
         self.emit_badges(id, b.unread, b.needs_you);
         Ok(())
+    }
+
+    /// `prompt_list {id}`: every prompt of `id` already announced and not yet resolved, as
+    /// `prompt:pending` payloads, oldest first. A reloaded UI calls it to catch up.
+    ///
+    /// # Errors
+    /// Malformed id.
+    pub fn prompt_list(&self, id: &str) -> Result<Vec<Value>> {
+        parse_id(id)?;
+        let Some(chat) = self.chat_of(id) else {
+            return Ok(Vec::new());
+        };
+        let st = lock(&chat.state);
+        let mut ids: Vec<&PromptId> = st
+            .prompts
+            .iter()
+            .filter(|(_, p)| p.emitted)
+            .map(|(k, _)| k)
+            .collect();
+        ids.sort();
+        Ok(ids
+            .into_iter()
+            .filter_map(|pid| {
+                let p = st.prompts.get(pid)?;
+                let mut shown = p.tool_input.clone();
+                patchroom_claude::cap_strings(&mut shown, PROMPT_INPUT_STRING_LIMIT);
+                Some(pending_payload_with(id, *pid, p, &shown))
+            })
+            .collect())
     }
 
     /// `statusline_cycle_mode {id}`: Shift+Tab to the PTY.
@@ -710,13 +748,47 @@ impl Manager {
 
     // ---- prompts ----
 
+    /// The chat that must show a held prompt, created on demand. When no chat can exist
+    /// the prompt is released to the TUI at once, so nothing is ever held invisibly.
+    /// `None` also means "already handled" (a replayed prompt the chat already has).
+    fn chat_for_prompt(
+        self: &Arc<Self>,
+        id: PromptId,
+        key: Option<&str>,
+    ) -> Option<(String, Arc<Chat>)> {
+        let found = key.and_then(|k| {
+            self.chat_of(k)
+                .or_else(|| {
+                    let c = self.chat_for_read(k).ok();
+                    if let Some(c) = &c {
+                        c.watcher.set_interval(LIVE_POLL);
+                    }
+                    c
+                })
+                .map(|c| (k.to_owned(), c))
+        });
+        match found {
+            Some((k, chat)) if !lock(&chat.state).prompts.contains_key(&id) => Some((k, chat)),
+            Some(_) => None,
+            None => {
+                trace(&format!(
+                    "prompt {id} has no chat (key {key:?}): release to TUI"
+                ));
+                self.bridge.release_to_terminal(id);
+                None
+            }
+        }
+    }
+
     pub(super) fn on_permission_prompt(self: &Arc<Self>, p: &PermissionPrompt) {
-        let Some(key) = p.session.key.as_deref() else {
+        trace(&format!(
+            "permission event {} key={:?} tool={}",
+            p.id, p.session.key, p.tool_name
+        ));
+        let Some((key, chat)) = self.chat_for_prompt(p.id, p.session.key.as_deref()) else {
             return;
         };
-        let Some(chat) = self.chat_of(key) else {
-            return;
-        };
+        let key = key.as_str();
         let can_always = match &p.suggestions {
             Value::Array(a) => !a.is_empty(),
             Value::Null => false,
@@ -733,6 +805,7 @@ impl Manager {
                 can_always,
                 emitted: false,
                 awaiting_link: false,
+                since: Instant::now(),
             },
         );
         // Look now, then once more after the grace period (the tool_use line trails the
@@ -753,13 +826,48 @@ impl Manager {
         drop(timer);
     }
 
-    pub(super) fn on_question_prompt(&self, q: &QuestionPrompt) {
-        let Some(key) = q.session.key.as_deref() else {
+    /// Safety net, run about once a second: every prompt the bridge holds must be in a chat
+    /// and announced to the UI. A prompt whose event was lost is replayed (creating the chat
+    /// when needed, or releasing the hook to the TUI when no chat can exist); a permission
+    /// prompt stuck unannounced is forced out.
+    pub(super) fn sweep_prompts(self: &Arc<Self>) {
+        for held in self.bridge.pending() {
+            let chat = held.session.key.as_deref().and_then(|k| self.chat_of(k));
+            let state = chat.as_ref().and_then(|c| {
+                lock(&c.state)
+                    .prompts
+                    .get(&held.id)
+                    .map(|p| (p.emitted, p.since))
+            });
+            match (state, chat) {
+                (None, _) => {
+                    let Some(ev) = self.bridge.pending_event(held.id) else {
+                        continue;
+                    };
+                    trace(&format!(
+                        "sweep: prompt {} never reached a chat, replaying",
+                        held.id
+                    ));
+                    self.on_bridge_event(&ev);
+                }
+                (Some((false, since)), Some(chat)) if since.elapsed() > LINK_WAIT * 2 => {
+                    let Some(key) = held.session.key.as_deref() else {
+                        continue;
+                    };
+                    trace(&format!("sweep: prompt {} unannounced, forcing", held.id));
+                    chat.watcher
+                        .with(|a| self.try_emit_prompts(key, &chat, a, true));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub(super) fn on_question_prompt(self: &Arc<Self>, q: &QuestionPrompt) {
+        let Some((key, chat)) = self.chat_for_prompt(q.id, q.session.key.as_deref()) else {
             return;
         };
-        let Some(chat) = self.chat_of(key) else {
-            return;
-        };
+        let key = key.as_str();
         let questions = serde_json::to_value(&q.questions).unwrap_or(Value::Null);
         let mut input = q.tool_input.clone();
         patchroom_claude::cap_strings(&mut input, PROMPT_INPUT_STRING_LIMIT);
@@ -779,6 +887,7 @@ impl Manager {
                         can_always: false,
                         emitted: true,
                         awaiting_link: false,
+                        since: Instant::now(),
                     },
                 );
                 if let Some(p) = st.prompts.get(&q.id) {
@@ -796,13 +905,11 @@ impl Manager {
         }
     }
 
-    pub(super) fn on_plan_prompt(&self, p: &PlanPrompt) {
-        let Some(key) = p.session.key.as_deref() else {
+    pub(super) fn on_plan_prompt(self: &Arc<Self>, p: &PlanPrompt) {
+        let Some((key, chat)) = self.chat_for_prompt(p.id, p.session.key.as_deref()) else {
             return;
         };
-        let Some(chat) = self.chat_of(key) else {
-            return;
-        };
+        let key = key.as_str();
         let mut input = p.tool_input.clone();
         patchroom_claude::cap_strings(&mut input, PLAN_STRING_LIMIT);
         let release_now = {
@@ -822,6 +929,7 @@ impl Manager {
                         can_always: true,
                         emitted: true,
                         awaiting_link: false,
+                        since: Instant::now(),
                     },
                 );
                 if let Some(open) = st.prompts.get(&p.id) {
@@ -876,6 +984,10 @@ impl Manager {
                 let mut shown = p.tool_input.clone();
                 patchroom_claude::cap_strings(&mut shown, PROMPT_INPUT_STRING_LIMIT);
                 let payload = pending_payload_with(id, pid, p, &shown);
+                trace(&format!(
+                    "emit prompt:pending {pid} force={force} linked={}",
+                    p.tool_use_id.is_some()
+                ));
                 self.sink.emit(UiEvent::PromptPending {
                     id: id.to_owned(),
                     payload,
@@ -916,6 +1028,10 @@ impl Manager {
                 let mut shown = p.tool_input.clone();
                 patchroom_claude::cap_strings(&mut shown, PROMPT_INPUT_STRING_LIMIT);
                 let payload = pending_payload_with(id, pid, p, &shown);
+                trace(&format!(
+                    "emit prompt:pending {pid} force={force} linked={}",
+                    p.tool_use_id.is_some()
+                ));
                 self.sink.emit(UiEvent::PromptPending {
                     id: id.to_owned(),
                     payload,
@@ -1064,6 +1180,7 @@ mod tests {
             can_always: true,
             emitted: true,
             awaiting_link: true,
+            since: Instant::now(),
         };
         assert!(!relink(&mut p, None));
         assert!(p.awaiting_link);

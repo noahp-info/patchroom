@@ -406,6 +406,72 @@ test.describe('ask widgets', () => {
     ).toHaveCount(0);
   });
 
+  test('a repeated prompt:pending fills in the toolUseId of the open widget', async ({ page }) => {
+    // Old timestamps: an unlinked prompt goes to the end of the log, a linked one right after
+    // its tool row.
+    const id = await openChat(page, [
+      {
+        key: 'tool-late',
+        ts: '2026-01-01T10:00:00.000Z',
+        kind: 'tool',
+        toolUseId: 'tu-late',
+        name: 'Bash',
+        input: { command: 'make' },
+        state: 'pending',
+      },
+      {
+        key: 'after-tool',
+        ts: '2026-01-01T10:00:01.000Z',
+        kind: 'assistant',
+        text: 'Still going.',
+      },
+    ]);
+    const base = {
+      promptId: 'p-late',
+      kind: 'permission' as const,
+      toolName: 'Bash',
+      toolInput: { command: 'make' },
+    };
+    const order = () =>
+      page.evaluate(() =>
+        Array.from(document.querySelectorAll('.vrow')).map((r) =>
+          r.querySelector('.ask') ? 'ask' : (r.getAttribute('data-rk') ?? ''),
+        ),
+      );
+    await page.evaluate(([sid, p]) => window.__PR_MOCK__!.emitPrompt(sid, p), [id, base] as const);
+    await expect(page.locator('.ask[data-kind="permission"]')).toHaveCount(1);
+    expect((await order()).filter((k) => k !== '' && !k.startsWith('day')).slice(-1)).toEqual([
+      'ask',
+    ]);
+    await page.evaluate(
+      ([sid, p]) => window.__PR_MOCK__!.emitPrompt(sid, { ...p, toolUseId: 'tu-late' }),
+      [id, base] as const,
+    );
+    await expect
+      .poll(async () => {
+        const o = await order();
+        return o.indexOf('ask') < o.indexOf('after-tool');
+      })
+      .toBe(true);
+    await expect(page.locator('.ask[data-kind="permission"]')).toHaveCount(1);
+  });
+
+  test('a reloaded view catches up on prompts announced before it loaded', async ({ page }) => {
+    const id = await openChat(page, []);
+    await page.evaluate(async (sid) => {
+      window.__PR_MOCK__!.seedPrompt(sid, {
+        promptId: 'p-missed',
+        kind: 'permission',
+        toolName: 'Bash',
+        toolInput: { command: 'cargo test' },
+      });
+      await (
+        window as unknown as { __PR_CHATS__: Record<string, { reload(): Promise<void> }> }
+      ).__PR_CHATS__[sid].reload();
+    }, id);
+    await expect(page.locator('.ask[data-kind="permission"]')).toContainText('cargo test');
+  });
+
   test('widgets are keyboard reachable: radios by arrow keys, buttons by Tab', async ({ page }) => {
     const id = await openChat(page, []);
     await prompt(page, id, 'question');

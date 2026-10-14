@@ -49,6 +49,8 @@ export interface MockControl {
   pushItems(id: string, items: ChatItem[]): void;
   /** Emit `prompt:pending`; the session's needs-you count goes up. Returns the prompt id. */
   emitPrompt(id: string, prompt: Omit<PromptPendingEvent, 'id'>): string;
+  /** Hold a prompt without emitting it: an announcement this view missed (`prompt_list` has it). */
+  seedPrompt(id: string, prompt: Omit<PromptPendingEvent, 'id'>): void;
   /** Emit `prompt:resolved`, as the arbiter does when the terminal answers first or a timeout hits. */
   resolvePrompt(id: string, promptId: string, by: ResolvedBy): void;
   /** `needsYou` is a boolean on the wire, as the backend sends it. */
@@ -95,6 +97,8 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
   const chats = new Map<string, ChatItem[]>();
   const badges = new Map<string, { unread: number; needsYou: boolean }>();
   const pending = new Map<string, Set<string>>();
+  /** Announced payloads by promptId, for `prompt_list`. */
+  const promptPayloads = new Map<string, PromptPendingEvent>();
   let counter = 0;
 
   const emit = <K extends keyof IpcEvents>(event: K, payload: IpcEvents[K]) => {
@@ -147,14 +151,22 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
       const set = pending.get(id) ?? new Set<string>();
       set.add(prompt.promptId);
       pending.set(id, set);
+      promptPayloads.set(prompt.promptId, { id, ...prompt });
       emit('prompt:pending', { id, ...prompt });
       const b = badges.get(id) ?? { unread: 0, needsYou: false };
       control.setBadges(id, b.unread, set.size > 0);
       return prompt.promptId;
     },
+    seedPrompt(id, prompt) {
+      const set = pending.get(id) ?? new Set<string>();
+      set.add(prompt.promptId);
+      pending.set(id, set);
+      promptPayloads.set(prompt.promptId, { id, ...prompt });
+    },
     resolvePrompt(id, promptId, by) {
       const set = pending.get(id);
       set?.delete(promptId);
+      promptPayloads.delete(promptId);
       emit('prompt:resolved', { id, promptId, by });
       const b = badges.get(id) ?? { unread: 0, needsYou: false };
       control.setBadges(id, b.unread, (set?.size ?? 0) > 0);
@@ -314,6 +326,12 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
       control.answers.push({ id, promptId, answer });
       // Handing a prompt to the terminal does not resolve it: the TUI dialog answers later.
       if (answer.kind !== 'terminal') control.resolvePrompt(id, promptId, 'chat');
+    },
+    async promptList(id) {
+      return [...(pending.get(id) ?? [])].flatMap((pid) => {
+        const p = promptPayloads.get(pid);
+        return p ? [p] : [];
+      });
     },
     async sessionMarkRead(id) {
       control.marks.push(id);

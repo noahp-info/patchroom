@@ -30,6 +30,7 @@ Commands:
 - `chat_thread {id, toolUseId} -> {items: ChatItem[]}`: a subagent's items.
 - `chat_image {id, ref} -> {dataUrl}`: image bytes are fetched on demand, never inlined in items.
 - `prompt_answer {id, promptId, answer}`. `answer` is `{kind:"allow"} | {kind:"allow_always"} | {kind:"deny", message?} | {kind:"questions", answers: {[questionText]: string}}`. Multi-select joins labels with ", ".
+- `prompt_list {id} -> PromptPendingEvent[]` (added after wave 4): announced, unresolved prompts, so a reloaded UI catches up.
 - `session_mark_read {id}`
 - `statusline_cycle_mode {id}`: writes Shift+Tab to the PTY.
 - `paste_image {id, data, mediaType} -> {path}` (added wave 3): `data` is base64. The backend writes the bytes to a 0600 file under the app data dir (`pastes/`) and returns its absolute path. The composer inserts that path, as in V8. Nothing is written to the PTY at paste time.

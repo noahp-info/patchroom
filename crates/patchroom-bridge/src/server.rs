@@ -185,6 +185,8 @@ struct Pending {
     transcript_path: Option<PathBuf>,
     questions: Vec<Question>,
     suggestions: Value,
+    /// The event announcing this prompt, kept so a consumer that missed it can be given it again.
+    event: BridgeEvent,
     tx: Sender<(Outcome, Resolution)>,
 }
 
@@ -392,6 +394,12 @@ impl Bridge {
             .collect();
         v.sort_by_key(|p| p.id);
         v
+    }
+
+    /// The event that announced a held prompt, for a consumer that missed it.
+    /// `None` once the prompt is gone.
+    pub fn pending_event(&self, id: PromptId) -> Option<BridgeEvent> {
+        lock(&self.inner.pending).get(&id).map(|p| p.event.clone())
     }
 
     /// Register a Patchroom session for reconciliation and key lookup.
@@ -736,22 +744,8 @@ impl Inner {
         } else {
             Vec::new()
         };
-        lock(&self.pending).insert(
-            id,
-            Pending {
-                session: session.clone(),
-                kind,
-                tool_name: info.tool_name.clone().unwrap_or_default(),
-                tool_input: info.tool_input.clone(),
-                tool_use_id: info.tool_use_id.clone(),
-                transcript_path: info.transcript_path.clone(),
-                questions: questions.clone(),
-                suggestions: info.permission_suggestions.clone(),
-                tx,
-            },
-        );
-        match kind {
-            PendingKind::Permission => self.emit(BridgeEvent::Permission(PermissionPrompt {
+        let event = match kind {
+            PendingKind::Permission => BridgeEvent::Permission(PermissionPrompt {
                 id,
                 session: session.clone(),
                 tool_name: info.tool_name.clone().unwrap_or_default(),
@@ -760,8 +754,8 @@ impl Inner {
                 cwd: info.cwd.clone(),
                 permission_mode: info.permission_mode.clone(),
                 prompt_id: info.prompt_id.clone(),
-            })),
-            PendingKind::Plan => self.emit(BridgeEvent::Plan(PlanPrompt {
+            }),
+            PendingKind::Plan => BridgeEvent::Plan(PlanPrompt {
                 id,
                 session: session.clone(),
                 tool_use_id: info.tool_use_id.clone(),
@@ -773,16 +767,32 @@ impl Inner {
                     .to_owned(),
                 tool_input: info.tool_input.clone(),
                 wait,
-            })),
-            PendingKind::Question => self.emit(BridgeEvent::Question(QuestionPrompt {
+            }),
+            PendingKind::Question => BridgeEvent::Question(QuestionPrompt {
                 id,
                 session: session.clone(),
                 tool_use_id: info.tool_use_id.clone(),
-                questions,
+                questions: questions.clone(),
                 tool_input: info.tool_input.clone(),
                 wait,
-            })),
-        }
+            }),
+        };
+        lock(&self.pending).insert(
+            id,
+            Pending {
+                session: session.clone(),
+                kind,
+                tool_name: info.tool_name.clone().unwrap_or_default(),
+                tool_input: info.tool_input.clone(),
+                tool_use_id: info.tool_use_id.clone(),
+                transcript_path: info.transcript_path.clone(),
+                questions,
+                suggestions: info.permission_suggestions.clone(),
+                event: event.clone(),
+                tx,
+            },
+        );
+        self.emit(event);
 
         let deadline = Instant::now() + wait;
         let (outcome, resolution) = loop {

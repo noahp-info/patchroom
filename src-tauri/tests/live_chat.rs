@@ -75,6 +75,13 @@ impl Sink {
             if left.is_zero() {
                 drop(g);
                 let screen = self.screen_text();
+                {
+                    let g = self.events.lock().unwrap();
+                    for s in g.iter().filter(|s| s.event.name() != "pty:output") {
+                        let p: String = s.event.payload().to_string().chars().take(160).collect();
+                        eprintln!("  event {} {p}", s.event.name());
+                    }
+                }
                 let tail: String = screen
                     .chars()
                     .rev()
@@ -84,6 +91,31 @@ impl Sink {
                     .rev()
                     .collect();
                 panic!("timed out after {timeout:?} waiting for {what}. Screen tail:\n{tail}");
+            }
+            g = self.cv.wait_timeout(g, left).unwrap().0;
+        }
+    }
+
+    /// Like `wait`, but `None` on timeout instead of a panic.
+    fn try_wait<T>(
+        &self,
+        from: usize,
+        timeout: Duration,
+        mut f: impl FnMut(&UiEvent) -> Option<T>,
+    ) -> Option<(usize, Instant, T)> {
+        let end = Instant::now() + timeout;
+        let mut g = self.events.lock().unwrap();
+        let mut i = from;
+        loop {
+            while i < g.len() {
+                if let Some(t) = f(&g[i].event) {
+                    return Some((i + 1, g[i].at, t));
+                }
+                i += 1;
+            }
+            let left = end.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return None;
             }
             g = self.cv.wait_timeout(g, left).unwrap().0;
         }
@@ -308,7 +340,28 @@ impl Live {
     /// hold that line until the prompt is answered, so only use this where the line
     /// reliably lands first (a plain Bash call in a fresh session).
     fn wait_prompt_linked(&self, from: usize) -> (usize, Value) {
-        self.wait_prompt_where(from, "permission", true)
+        let (i, first) = self.wait_prompt_where(from, "permission", false);
+        if first["toolUseId"].is_string() {
+            return (i, first);
+        }
+        // Not linked yet: claude may hold the tool_use line until the prompt is answered, so
+        // a short wait for the re-announcement is a bonus, never a requirement.
+        let linked = self
+            .sink
+            .try_wait(from, Duration::from_secs(3), |e| match e {
+                UiEvent::PromptPending { payload, .. }
+                    if payload["kind"] == "permission"
+                        && payload["promptId"] == first["promptId"]
+                        && payload["toolUseId"].is_string() =>
+                {
+                    Some(payload.clone())
+                }
+                _ => None,
+            });
+        match linked {
+            Some((j, _, v)) => (j, v),
+            None => (i, first),
+        }
     }
 
     fn wait_prompt_where(&self, from: usize, kind: &str, linked: bool) -> (usize, Value) {
@@ -351,10 +404,17 @@ impl Live {
         (i, v)
     }
 
+    /// Command-line pattern of the hook processes of this run only: every hook is started
+    /// with `--session-key <this DM's id>`, and ids are unique per run, so parallel runs
+    /// (another live_chat, scripts/e2e-live.sh) never match each other.
+    fn hook_pattern(&self) -> String {
+        format!("patchroom-hook.*--session-key {}", self.id)
+    }
+
     fn no_hook_processes(&self) {
         let end = Instant::now() + Duration::from_secs(2);
         loop {
-            let left = pgrep("patchroom-hook");
+            let left = pgrep(&self.hook_pattern());
             if left.is_empty() {
                 return;
             }
@@ -423,7 +483,10 @@ fn permission_from_chat_then_terminal_then_always() {
     let (i, tool) = l.wait_item(i, "tool ok", |x| {
         x["kind"] == "tool" && x["name"] == "Bash" && x["state"] == "ok"
     });
-    assert_eq!(tool["toolUseId"], p["toolUseId"].clone());
+    if p["toolUseId"].is_string() {
+        assert_eq!(tool["toolUseId"], p["toolUseId"].clone());
+    }
+    let first_tool = tool["toolUseId"].clone();
     assert!(Path::new("/tmp/patchroom-live-p2/p1.txt").exists());
     let i = settle_models_turn(&l, i);
 
@@ -445,7 +508,7 @@ fn permission_from_chat_then_terminal_then_always() {
         x["kind"] == "tool"
             && x["name"] == "Bash"
             && x["state"] == "ok"
-            && x["toolUseId"] != p["toolUseId"]
+            && x["toolUseId"] != first_tool
     });
     assert!(Path::new("/tmp/patchroom-live-p2/p2.txt").exists());
     let i = settle_models_turn(&l, i);
@@ -926,17 +989,17 @@ fn quit_leaves_no_claude_or_hook_process() {
     // A permission hook is in flight when the app quits.
     let _ = l.wait_prompt(mark, "permission");
     assert!(
-        !pgrep("patchroom-hook").is_empty(),
+        !pgrep(&l.hook_pattern()).is_empty(),
         "the held hook process is running"
     );
     assert!(!pgrep(&sid).is_empty(), "claude is running");
     l.m.shutdown();
     let end = Instant::now() + Duration::from_secs(3);
-    while !(pgrep("patchroom-hook").is_empty() && pgrep(&sid).is_empty()) {
+    while !(pgrep(&l.hook_pattern()).is_empty() && pgrep(&sid).is_empty()) {
         assert!(
             Instant::now() < end,
             "left after quit: hooks {:?}, claude {:?}",
-            pgrep("patchroom-hook"),
+            pgrep(&l.hook_pattern()),
             pgrep(&sid)
         );
         std::thread::sleep(Duration::from_millis(100));

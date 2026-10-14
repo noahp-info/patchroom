@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -44,6 +44,8 @@ pub use chat::{ImageData, PromptAnswer};
 use crate::agents::LoginShellAgents;
 use crate::events::{EventSink, Needs, PresenceStatus, UiEvent};
 
+/// How often the manager checks that every held prompt is visible in a chat.
+const PROMPT_SWEEP: Duration = Duration::from_secs(1);
 /// Background reconcile period while a session is busy or waiting.
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(15);
 
@@ -1017,17 +1019,37 @@ impl Manager {
         let me = Arc::clone(self);
         thread::Builder::new()
             .name("patchroom-bridge-events".into())
-            .spawn(move || loop {
-                if me.shutting_down.load(Ordering::SeqCst) {
-                    break;
-                }
-                match rx.recv_timeout(Duration::from_millis(200)) {
-                    Ok(ev) => me.on_bridge_event(&ev),
-                    Err(RecvTimeoutError::Timeout) => {}
-                    Err(RecvTimeoutError::Disconnected) => break,
+            .spawn(move || {
+                let mut last_sweep = Instant::now();
+                loop {
+                    if me.shutting_down.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    match rx.recv_timeout(Duration::from_millis(200)) {
+                        Ok(ev) => me.on_bridge_event(&ev),
+                        Err(RecvTimeoutError::Timeout) => {}
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    }
+                    if last_sweep.elapsed() >= PROMPT_SWEEP {
+                        last_sweep = Instant::now();
+                        // Handle everything already queued first, so the sweep never
+                        // replays a prompt whose event is merely waiting its turn.
+                        while let Ok(ev) = rx.try_recv() {
+                            me.on_bridge_event(&ev);
+                        }
+                        if me.any_busy_or_waiting() || !me.bridge.pending().is_empty() {
+                            me.sweep_prompts();
+                        }
+                    }
                 }
             })?;
         Ok(())
+    }
+
+    fn any_busy_or_waiting(&self) -> bool {
+        lock(&self.presence)
+            .values()
+            .any(|p| matches!(p.status, PresenceStatus::Busy | PresenceStatus::Waiting))
     }
 
     fn on_bridge_event(self: &Arc<Self>, ev: &BridgeEvent) {

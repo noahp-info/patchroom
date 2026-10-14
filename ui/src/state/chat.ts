@@ -200,6 +200,13 @@ export class ChatModel {
         this.hasMore = page.hasMore;
         this.loaded = true;
         this.loading = false;
+        // Prompts announced before this view existed (a reloaded webview) catch up here.
+        void this.ipc.promptList(this.id).then(
+          (list) => {
+            if (gen === this.loadGen) for (const e of list) this.addPrompt(e);
+          },
+          () => undefined,
+        );
       })
       .catch((err: unknown) => {
         if (gen !== this.loadGen) return;
@@ -285,8 +292,21 @@ export class ChatModel {
 
   // ---- prompts ---------------------------------------------------------------------------
 
+  /** A repeat with the same promptId replaces the open prompt's fields (e.g. a late toolUseId). */
   addPrompt(e: PromptPendingEvent): void {
-    if (this.prompts.some((p) => p.promptId === e.promptId)) return;
+    const prev = this.prompts.find((p) => p.promptId === e.promptId);
+    if (prev) {
+      if (prev.resolved) return;
+      this.patchPrompt(e.promptId, {
+        kind: e.kind,
+        toolName: e.toolName,
+        toolInput: e.toolInput,
+        toolUseId: e.toolUseId ?? prev.toolUseId,
+        questions: e.questions ?? prev.questions,
+        canAlways: e.canAlways,
+      });
+      return;
+    }
     this.prompts = [
       ...this.prompts,
       {

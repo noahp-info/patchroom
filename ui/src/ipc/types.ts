@@ -102,6 +102,8 @@ export interface Ipc {
   /** Image bytes are fetched on demand, never inlined in items. */
   chatImage(id: string, ref: string): Promise<{ dataUrl: string }>;
   promptAnswer(id: string, promptId: string, answer: PromptAnswer): Promise<void>;
+  /** Announced, unresolved prompts as `prompt:pending` payloads (catch-up after a reload). */
+  promptList(id: string): Promise<PromptPendingEvent[]>;
   /** Clears the unread count. Never clears needs-you. */
   sessionMarkRead(id: string): Promise<void>;
   /** Writes Shift+Tab to the PTY. */

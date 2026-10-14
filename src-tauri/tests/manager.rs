@@ -205,26 +205,44 @@ fn slow_consumer_never_blocks_the_pty_drain() {
 fn quit_leaves_no_child_or_hook_processes() {
     let dir = data_dir();
     let sink = Sink::new(Duration::ZERO);
-    let m = manager(dir.path(), sink.clone());
+    // A hook is only held when its session can show a chat (otherwise it is released to
+    // the TUI at once), so the held hook names a real claude DM and a config dir exists.
+    let stub_dir = tempfile::tempdir().unwrap();
+    let cfg_dir = tempfile::tempdir().unwrap();
+    let mut cfg = ManagerConfig::new(dir.path(), hook_bin());
+    cfg.shell = Some("/bin/sh".into());
+    cfg.kill_grace = Duration::from_millis(500);
+    cfg.claude_program = stub_claude(stub_dir.path()).to_string_lossy().into_owned();
+    cfg.claude_config_dir = Some(cfg_dir.path().to_path_buf());
+    let m = Manager::new(cfg, sink.clone()).unwrap();
+    let key = m
+        .create(&CreateRequest {
+            cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+            ..CreateRequest::default()
+        })
+        .unwrap();
+    sink.wait_exit(Duration::from_secs(20));
     // The bridge holds permission hooks open only while a chat client is attached.
     m.bridge().set_chat_attached(true);
     let sock = m.bridge().socket_path().to_string_lossy().into_owned();
     let hook = hook_bin().to_string_lossy().into_owned();
+    // Scoped to this test's own socket path, so parallel tests and runs never match.
+    let mine = format!("patchroom-hook --socket {sock}");
     let payload = r#"{"hook_event_name":"PermissionRequest","session_id":"s1","tool_name":"Bash","tool_input":{"command":"echo hi"}}"#;
     let script = format!(
-        "sleep 41357 & sleep 41358 & printf '%s' '{payload}' | '{hook}' --socket '{sock}' --wait-ms 60000 --session-key k1 & wait"
+        "sleep 41357 & sleep 41358 & printf '%s' '{payload}' | '{hook}' --socket '{sock}' --wait-ms 60000 --session-key {key} & wait"
     );
     sh_dm(&m, &script);
     wait_for("sleepers and a held hook", Duration::from_secs(15), || {
         !pgrep(&["-f", "sleep 41357"]).is_empty()
-            && !pgrep(&["-x", "patchroom-hook"]).is_empty()
+            && !pgrep(&["-f", &mine]).is_empty()
             && !m.bridge().pending().is_empty()
     });
 
     m.shutdown();
 
     wait_for("all processes gone", Duration::from_secs(10), || {
-        pgrep(&["-f", "sleep 4135[78]"]).is_empty() && pgrep(&["-x", "patchroom-hook"]).is_empty()
+        pgrep(&["-f", "sleep 4135[78]"]).is_empty() && pgrep(&["-f", &mine]).is_empty()
     });
     assert!(
         !Path::new(&sock).exists(),
@@ -362,5 +380,146 @@ fn bad_cwd_is_rejected_and_leaves_no_row() {
         .unwrap_err();
     assert!(err.to_string().contains("does not exist"));
     assert!(m.list().unwrap().is_empty());
+    m.shutdown();
+}
+
+// ---- held prompts are never invisible ----
+
+impl Sink {
+    /// The first `prompt:pending` payload, waiting up to `timeout`.
+    fn wait_prompt(&self, timeout: Duration) -> Option<serde_json::Value> {
+        let end = Instant::now() + timeout;
+        let mut g = self.events.lock().unwrap();
+        loop {
+            if let Some(p) = g.iter().find_map(|e| match e {
+                UiEvent::PromptPending { payload, .. } => Some(payload.clone()),
+                _ => None,
+            }) {
+                return Some(p);
+            }
+            let left = end.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return None;
+            }
+            g = self.cv.wait_timeout(g, left).unwrap().0;
+        }
+    }
+}
+
+/// Send a PermissionRequest hook for DM `key` to the bridge socket as `patchroom-hook`
+/// would. Returns the open stream; the reply comes only when the bridge answers.
+fn send_permission_hook(sock: &Path, key: &str) -> std::os::unix::net::UnixStream {
+    use std::io::Write;
+    let mut s = std::os::unix::net::UnixStream::connect(sock).unwrap();
+    let line = serde_json::json!({
+        "v": 1,
+        "type": "hook",
+        "session_key": key,
+        "hook_pid": 1,
+        "ppid": 0,
+        "wait_ms": 30_000,
+        "payload": {
+            "hook_event_name": "PermissionRequest",
+            "session_id": "00000000-0000-4000-8000-000000000001",
+            "tool_name": "Bash",
+            "tool_input": {"command": "echo held"},
+            "cwd": "/tmp",
+            "permission_suggestions": []
+        }
+    });
+    s.write_all(format!("{line}\n").as_bytes()).unwrap();
+    s.flush().unwrap();
+    s
+}
+
+fn read_reply(s: &std::os::unix::net::UnixStream, timeout: Duration) -> Option<String> {
+    use std::io::BufRead;
+    s.set_read_timeout(Some(timeout)).unwrap();
+    let mut line = String::new();
+    match std::io::BufReader::new(s).read_line(&mut line) {
+        Ok(n) if n > 0 => Some(line),
+        _ => None,
+    }
+}
+
+/// A claude DM that was created in an earlier run: stub claude exits at once, the manager
+/// restarts, and no chat exists in memory for it.
+fn restarted_claude_dm(
+    dir: &Path,
+    config_dir: Option<&Path>,
+) -> (SessionManager, Arc<Sink>, String) {
+    let stub_dir = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let mk = |sink: Arc<Sink>| {
+        let mut cfg = ManagerConfig::new(dir, hook_bin());
+        cfg.shell = Some("/bin/sh".into());
+        cfg.claude_program = stub_claude(stub_dir.path()).to_string_lossy().into_owned();
+        cfg.claude_config_dir = config_dir.map(Path::to_path_buf);
+        Manager::new(cfg, sink).unwrap()
+    };
+    let sink1 = Sink::new(Duration::ZERO);
+    let m1 = mk(sink1.clone());
+    let id = m1
+        .create(&CreateRequest {
+            cwd: cwd.path().to_string_lossy().into_owned(),
+            name: Some("held".into()),
+            ..CreateRequest::default()
+        })
+        .unwrap();
+    sink1.wait_exit(Duration::from_secs(20));
+    m1.shutdown();
+    let sink2 = Sink::new(Duration::ZERO);
+    let m2 = mk(sink2.clone());
+    // Keep the temp dirs alive for the rest of the test process.
+    std::mem::forget(stub_dir);
+    std::mem::forget(cwd);
+    (m2, sink2, id)
+}
+
+#[test]
+fn held_prompt_without_any_possible_chat_is_released_at_once() {
+    let dir = data_dir();
+    // No claude config dir: no transcript can be found, so no chat can exist.
+    let (m, sink, id) = restarted_claude_dm(dir.path(), None);
+    let hook = send_permission_hook(&dir.path().join("bridge.sock"), &id);
+    let reply = read_reply(&hook, Duration::from_secs(5))
+        .expect("the hook is released to the TUI at once, not held invisibly");
+    assert!(reply.contains("\"decision\""), "{reply}");
+    assert!(reply.contains("\"output\":null"), "{reply}");
+    assert!(m.bridge().pending().is_empty());
+    assert!(sink.wait_prompt(Duration::from_millis(100)).is_none());
+    m.shutdown();
+}
+
+#[test]
+fn held_prompt_of_a_dm_without_a_live_chat_creates_the_chat_and_surfaces() {
+    let dir = data_dir();
+    let cfg_dir = tempfile::tempdir().unwrap();
+    let (m, sink, id) = restarted_claude_dm(dir.path(), Some(cfg_dir.path()));
+    let hook = send_permission_hook(&dir.path().join("bridge.sock"), &id);
+    let p = sink
+        .wait_prompt(Duration::from_secs(5))
+        .expect("a held prompt always reaches the chat");
+    assert_eq!(p["kind"], "permission");
+    assert_eq!(p["toolName"], "Bash");
+    // A reloaded UI catches up through prompt_list.
+    let listed = m.prompt_list(&id).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["promptId"], p["promptId"]);
+    // Answering from chat releases the hook.
+    let pid = p["promptId"].as_str().unwrap().to_owned();
+    m.prompt_answer(&id, &pid, patchroom_lib::manager::PromptAnswer::Allow)
+        .unwrap();
+    let reply = read_reply(&hook, Duration::from_secs(5)).expect("hook answered");
+    assert!(reply.contains("\"allow\""), "{reply}");
+    // Resolved prompts leave the list.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !m.prompt_list(&id).unwrap().is_empty() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "resolved prompt still listed"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
     m.shutdown();
 }
