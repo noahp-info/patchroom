@@ -128,6 +128,11 @@ export function FolderRow(p: FolderRowProps) {
                 Live elsewhere
               </span>
             )}
+            {info.liveState === 'checking' && !info.liveElsewhere && (
+              <span className="fs-chip" data-chip="checking">
+                Checking
+              </span>
+            )}
             {info.hidden && (
               <span className="fs-chip" data-chip="hidden">
                 Hidden
@@ -151,8 +156,8 @@ export function FolderRow(p: FolderRowProps) {
           }}
         >
           <p>
-            This session is running in another terminal. Two processes on one session can corrupt
-            it.
+            This session is running in another terminal. It opens as a read-only mirror. Patchroom
+            never starts a second copy.
           </p>
           <div className="fs-confirm__acts">
             <button type="button" className="fs-btn" ref={cancelRef} onClick={p.onCancel}>

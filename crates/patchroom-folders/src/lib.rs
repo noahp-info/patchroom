@@ -19,5 +19,5 @@ pub mod names;
 pub mod scan;
 pub mod worktrees;
 
-pub use discover::{signature, Discovery, FolderSession, Listing, NameSource, Query};
+pub use discover::{signature, Discovery, FolderSession, Listing, LiveState, NameSource, Query};
 pub use scan::FileScan;

@@ -261,6 +261,7 @@ fn list(
         dms,
         hidden: &hidden,
         live: &live,
+        live_checked: true,
     })
 }
 

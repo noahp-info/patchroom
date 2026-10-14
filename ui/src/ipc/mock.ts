@@ -17,9 +17,11 @@ import type {
   ResolvedBy,
   StatusChips,
   IpcEvents,
+  MirrorInfo,
   Needs,
   SectionInfo,
   SessionInfo,
+  SendOutcome,
   SessionStatus,
   Unlisten,
 } from './types';
@@ -34,6 +36,22 @@ export interface MockControl {
   texts: { id: string; text: string }[];
   /** Every `paste_image` call (bytes as base64). */
   pastes: { id: string; data: string; mediaType: string }[];
+  /** Every `session_send_text` call with the outcome the mock returned. */
+  sends: { id: string; text: string; outcome: string }[];
+  /** Every `session_takeover` call. */
+  takeovers: string[];
+  /** Every `session_mirror_takeover_when_closed` call. */
+  takeoverArms: { id: string; enabled: boolean }[];
+  /** Processes the mock "spawned": session_create, session_resume, and non-mirror folder opens. */
+  spawns: string[];
+  /** Put a DM into mirror mode (or out of it with null) and emit `session:mirror`. */
+  setMirror(id: string, mirror: MirrorInfo | null): void;
+  /** The other terminal's process exits. An armed mirror is taken over at once. */
+  closeMirror(id: string): void;
+  /** Raise or clear a terminal-only dialog (`session:terminal_wait` and its clear). */
+  setTerminalDialog(id: string, on: boolean, reason?: string): void;
+  /** Emit PTY bytes for a slash command, as a TUI panel repaint. Default true. */
+  repaintOnSlash: boolean;
   /** Feed bytes (base64) to a session's terminal as if the pty produced them. */
   emitOutput(id: string, base64: string): void;
   emitText(id: string, text: string): void;
@@ -168,6 +186,7 @@ const DEFAULT_PREFS: Prefs = {
   dnd: { manual: false, schedule: null },
   termPerDm: {},
   searchAllSessions: false,
+  statusBar: { default: null, perDm: {} },
 };
 
 /** Text a search or a snapshot can see for one chat item. */
@@ -229,6 +248,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
   /** Folder section id to its listing rows, and the user's hide/unhide overrides by row. */
   const folderRows = new Map<string, FolderSession[]>();
   const hideOverride = new Map<string, boolean>();
+  /** Mirrored DMs whose other process has exited. */
+  const closedMirrors = new Set<string>();
   let marks: MarkInfo[] = [];
   let prefs: Prefs = structuredClone(DEFAULT_PREFS);
   let counter = 0;
@@ -339,6 +360,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
   /** A row as `folder_sessions` returns it: hide overrides applied, DM link dropped if gone. */
   const viewRow = (sectionId: string, r: FolderSession): FolderSession => ({
     ...r,
+    liveState: r.liveState ?? (r.liveElsewhere ? 'live' : 'free'),
     hidden: hideOverride.get(rowKey(sectionId, r.sessionId)) ?? r.hidden,
     dmId: r.dmId && sessions.has(r.dmId) ? r.dmId : null,
   });
@@ -351,6 +373,43 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     writes: {},
     resizes: [],
     texts: [],
+    sends: [],
+    takeovers: [],
+    takeoverArms: [],
+    spawns: [],
+    repaintOnSlash: true,
+    setMirror(id, m) {
+      const s = sessions.get(id);
+      if (!s) return;
+      s.mirror = m;
+      emit('session:mirror', { id, mirror: m });
+      save();
+    },
+    closeMirror(id) {
+      const s = sessions.get(id);
+      if (!s?.mirror) return;
+      // The other process is gone. Armed: the backend resumes the session by itself.
+      closedMirrors.add(id);
+      if (s.mirror.takeoverWhenClosed) {
+        closedMirrors.delete(id);
+        control.spawns.push(id);
+        control.setMirror(id, null);
+        control.setStatus(id, 'idle');
+      }
+    },
+    setTerminalDialog(id, on, reason = 'dialog open') {
+      const s = sessions.get(id);
+      if (!s) return;
+      if (on) {
+        s.terminalWait = { reason, since: Date.now() };
+        emit('session:terminal_wait', { id, ...s.terminalWait });
+        control.setBadges(id, badges.get(id)?.unread ?? 0, true);
+      } else {
+        s.terminalWait = null;
+        emit('session:terminal_wait_clear', { id });
+        control.setBadges(id, badges.get(id)?.unread ?? 0, false);
+      }
+    },
     pastes: [],
     resumes: [],
     pickResult: null,
@@ -526,6 +585,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
         starred: info.starred ?? false,
         archived: info.archived ?? false,
         hasDraft: false,
+        mirror: info.mirror ?? null,
+        terminalWait: null,
       };
       sessions.set(s.id, s);
       control.writes[s.id] = [];
@@ -561,6 +622,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
   const ipc: Ipc = {
     async sessionCreate(args) {
       const s = control.addSession({ cwd: args.cwd, name: args.name });
+      control.spawns.push(s.id);
       if (opts.banner) {
         queueMicrotask(() =>
           control.emitText(
@@ -581,7 +643,30 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       return { path: `/tmp/patchroom-mock/pastes/${id}-${control.pastes.length}.${ext}` };
     },
     async sessionSendText(id, text) {
+      const sess = sessions.get(id);
+      const outcome: SendOutcome = sess?.mirror
+        ? 'mirror_readonly'
+        : sess?.terminalWait
+          ? 'blocked_dialog'
+          : sess?.status === 'busy'
+            ? 'queued'
+            : 'sent';
+      control.sends.push({ id, text, outcome });
+      if (outcome === 'mirror_readonly') {
+        return {
+          outcome,
+          where: sess?.mirror?.where ?? 'another terminal',
+          pid: sess?.mirror?.pid,
+        };
+      }
+      if (outcome === 'blocked_dialog') return { outcome, reason: sess?.terminalWait?.reason };
       control.texts.push({ id, text });
+      // A slash command that opens a TUI panel repaints the PTY and adds no transcript item.
+      if (text.startsWith('/')) {
+        if (control.repaintOnSlash)
+          control.emitText(id, `\x1b[2J\x1b[H\x1b[1m${text}\x1b[0m panel\r\n`);
+        return { outcome };
+      }
       if (control.autoEcho) {
         const n = control.texts.length;
         setTimeout(
@@ -592,6 +677,28 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
           40,
         );
       }
+      return { outcome };
+    },
+    async sessionTakeover(id) {
+      control.takeovers.push(id);
+      const s = sessions.get(id);
+      if (!s?.mirror) throw new Error(`not a mirror: ${id}`);
+      if (!closedMirrors.has(id)) {
+        throw new Error(
+          `still running in ${s.mirror.where ?? 'another terminal'} (pid ${s.mirror.pid ?? 0})`,
+        );
+      }
+      closedMirrors.delete(id);
+      control.spawns.push(id);
+      control.setMirror(id, null);
+      control.setStatus(id, 'idle');
+      return { ...s };
+    },
+    async sessionMirrorTakeoverWhenClosed(id, enabled) {
+      control.takeoverArms.push({ id, enabled });
+      const s = sessions.get(id);
+      if (!s?.mirror) return;
+      control.setMirror(id, { ...s.mirror, takeoverWhenClosed: enabled });
     },
     async sessionResize(id, cols, rows) {
       control.resizes.push({ id, cols, rows });
@@ -606,6 +713,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     },
     async sessionResume(id, cols, rows) {
       control.resumes.push({ id, cols, rows });
+      control.spawns.push(id);
       const s = sessions.get(id);
       if (!s) throw new Error(`no such session: ${id}`);
       s.status = 'busy';
@@ -868,12 +976,16 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       control.folderOpens.push({ sectionId, sessionId, cwd: row.launchCwd });
       const have = row.dmId ? sessions.get(row.dmId) : undefined;
       if (have) return { ...have, folderChip: chipOf(have) };
+      // Live in another terminal: a read-only mirror, never a second process.
+      const live = row.liveElsewhere;
       const s = control.addSession({
         cwd: row.launchCwd,
         name: row.name,
         sectionId,
-        status: 'busy',
+        status: live ? 'idle' : 'busy',
+        mirror: live ? { where: 'iTerm', pid: 4242, takeoverWhenClosed: false } : null,
       });
+      if (!live) control.spawns.push(s.id);
       row.dmId = s.id;
       // The resumed session replays its history into the chat.
       const t = Date.now();
@@ -886,7 +998,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
           text: `Picking up where we left off: ${row.lastPrompt}`,
         },
       ]);
-      if (opts.banner) control.emitText(s.id, `\x1b[1mResumed ${row.name}\x1b[0m\r\n`);
+      if (opts.banner && !live) control.emitText(s.id, `\x1b[1mResumed ${row.name}\x1b[0m\r\n`);
       save();
       emit('folder:changed', { sectionId });
       return { ...s, folderChip: chipOf(s) };

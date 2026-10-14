@@ -67,6 +67,8 @@ const FOLDER_COMMANDS = [
   'section_create_from_folder',
   'section_set_archive_days',
 ];
+/** Session parity additions (docs/gauntlet/SESSION-PARITY-BAR.md, Contract: backend). */
+const PARITY_COMMANDS = ['session_mirror_takeover_when_closed', 'session_takeover'];
 /** Declared by the backend beyond the fixed contract; the UI uses them when present. */
 const P2_OPTIONAL = ['session_view', 'session_focus'];
 const P1B_EVENTS = ['pty:exit', 'pty:output', 'session:status', 'session:title'];
@@ -82,6 +84,8 @@ const P3_EVENTS = ['activity:changed', 'notify:fire', 'prefs:changed'];
 const P3_OPTIONAL_EVENTS = ['notify:open'];
 /** Folder sections: the filesystem watch tells the UI a section's listing changed. */
 const FOLDER_EVENTS = ['folder:changed'];
+/** Session parity: mirror state and terminal-only waits. */
+const PARITY_EVENTS = ['session:mirror', 'session:terminal_wait', 'session:terminal_wait_clear'];
 
 /**
  * Backend and frontend build in parallel against this contract. Once the backend declares any P2
@@ -90,6 +94,8 @@ const FOLDER_EVENTS = ['folder:changed'];
 const requireP2 = (declared: string[], p2: string[]) =>
   !!process.env.CI || process.env.PR_REQUIRE_P2 === '1' || p2.some((c) => declared.includes(c));
 const requireFolder = (declared: string[], names: string[]) =>
+  !!process.env.CI || process.env.PR_REQUIRE_P3 === '1' || names.some((c) => declared.includes(c));
+const requireParity = (declared: string[], names: string[]) =>
   !!process.env.CI || process.env.PR_REQUIRE_P3 === '1' || names.some((c) => declared.includes(c));
 const requireP3 = (declared: string[], p3: string[]) =>
   !!process.env.CI || process.env.PR_REQUIRE_P3 === '1' || p3.some((c) => declared.includes(c));
@@ -137,7 +143,7 @@ function declaredCommands(): Map<string, Declared> {
 /** Event names `UiEvent::name` returns in events.rs. */
 function declaredEvents(): string[] {
   const src = readFileSync(join(RUST, 'events.rs'), 'utf8');
-  return [...src.matchAll(/=>\s*"([a-z]+:[a-z]+)"/g)].map((m) => m[1]);
+  return [...src.matchAll(/=>\s*"([a-z]+:[a-z_]+)"/g)].map((m) => m[1]);
 }
 
 interface Call {
@@ -177,6 +183,10 @@ async function recordTauriCalls(): Promise<Call[]> {
           };
         if (cmd === 'folder_session_open')
           return { id: 'd', name: 'n', cwd: '/w', title: '', status: 'busy', section_id: 's' };
+        if (cmd === 'session_send_text')
+          return { outcome: 'blocked_dialog', reason: 'dialog open' };
+        if (cmd === 'session_takeover')
+          return { id: 'd', name: 'n', cwd: '/w', title: '', status: 'busy', section_id: null };
         if (cmd === 'chat_history') return { items: [], hasMore: false };
         if (cmd === 'chat_thread') return { items: [] };
         if (cmd === 'chat_image') return { dataUrl: 'data:,' };
@@ -198,7 +208,8 @@ async function recordTauriCalls(): Promise<Call[]> {
   const ipc = createTauriIpc();
   await ipc.sessionCreate({ cwd: '/w', command: 'claude', args: ['--model', 'haiku'], name: 'n' });
   await ipc.sessionWrite('i', 'AA==');
-  await ipc.sessionSendText('i', 't');
+  const sent = await ipc.sessionSendText('i', 't');
+  expect(sent).toMatchObject({ outcome: 'blocked_dialog', reason: 'dialog open' });
   await ipc.pasteImage('i', 'AA==', 'image/png');
   await ipc.sessionResize('i', 80, 24);
   await ipc.sessionKill('i');
@@ -249,6 +260,9 @@ async function recordTauriCalls(): Promise<Call[]> {
   const opened = await ipc.folderSessionOpen('s', 'sid');
   expect(opened).toMatchObject({ id: 'd', sectionId: 's', folderChip: null });
   await ipc.folderSessionHide('s', 'sid', true);
+  const taken = await ipc.sessionTakeover('i', 80, 24);
+  expect(taken).toMatchObject({ id: 'd', mirror: null });
+  await ipc.sessionMirrorTakeoverWhenClosed('i', true);
   void listens;
   return calls;
 }
@@ -267,11 +281,15 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     if (requireFolder(declared, FOLDER_COMMANDS)) {
       for (const c of FOLDER_COMMANDS) expect(declared, `folder command ${c}`).toContain(c);
     }
+    if (requireParity(declared, PARITY_COMMANDS)) {
+      for (const c of PARITY_COMMANDS) expect(declared, `parity command ${c}`).toContain(c);
+    }
     const known = new Set([
       ...P1B_COMMANDS,
       ...P2_COMMANDS,
       ...P3_COMMANDS,
       ...FOLDER_COMMANDS,
+      ...PARITY_COMMANDS,
       ...P2_OPTIONAL,
     ]);
     expect(declared.filter((c) => !known.has(c))).toEqual([]);
@@ -284,6 +302,7 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     const mustExist = requireP2(names, P2_COMMANDS);
     const mustExist3 = requireP3(names, P3_COMMANDS);
     const mustExistF = requireFolder(names, FOLDER_COMMANDS);
+    const mustExistS = requireParity(names, PARITY_COMMANDS);
     for (const { cmd, args } of calls) {
       const d = declared.get(cmd);
       if (!d) {
@@ -292,6 +311,7 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
           (!mustExist && P2_COMMANDS.includes(cmd)) ||
           (!mustExist3 && P3_COMMANDS.includes(cmd)) ||
           (!mustExistF && FOLDER_COMMANDS.includes(cmd)) ||
+          (!mustExistS && PARITY_COMMANDS.includes(cmd)) ||
           P2_OPTIONAL.includes(cmd);
         expect(mayBeMissing, `${cmd} is declared in commands.rs`).toBe(true);
         continue;
@@ -359,6 +379,9 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     expect(byCmd.folder_sessions).toEqual({ sectionId: 's' });
     expect(byCmd.folder_session_open).toEqual({ sectionId: 's', sessionId: 'sid' });
     expect(byCmd.folder_session_hide).toEqual({ sectionId: 's', sessionId: 'sid', hidden: true });
+    // Session parity: a mirror is taken over with the terminal grid, or armed with a flag.
+    expect(byCmd.session_takeover).toEqual({ id: 'i', cols: 80, rows: 24 });
+    expect(byCmd.session_mirror_takeover_when_closed).toEqual({ id: 'i', enabled: true });
     // Nothing goes through the ungranted dialog plugin.
     expect(Object.keys(byCmd).some((c) => c.startsWith('plugin:'))).toBe(false);
   });
@@ -375,6 +398,9 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     if (requireP3(events, P3_EVENTS)) {
       for (const e of P3_EVENTS) expect(events, `P3 event ${e}`).toContain(e);
     }
+    if (requireParity(events, PARITY_EVENTS)) {
+      for (const e of PARITY_EVENTS) expect(events, `parity event ${e}`).toContain(e);
+    }
     const store = readFileSync(join(here, '..', 'src', 'state', 'store.ts'), 'utf8');
     // The UI subscribes to every event of the contract, declared yet or not.
     for (const e of [
@@ -383,6 +409,7 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
       ...P3_EVENTS,
       ...P3_OPTIONAL_EVENTS,
       ...FOLDER_EVENTS,
+      ...PARITY_EVENTS,
     ]) {
       expect(store, `store.ts subscribes to ${e}`).toContain(`'${e}'`);
     }
@@ -392,6 +419,7 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
       ...P3_EVENTS,
       ...P3_OPTIONAL_EVENTS,
       ...FOLDER_EVENTS,
+      ...PARITY_EVENTS,
     ];
     for (const e of events) expect(all).toContain(e);
   });

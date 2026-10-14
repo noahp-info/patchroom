@@ -14,10 +14,10 @@
 //! - `e2e_restart {phase}`: quit the same way and ask `scripts/e2e-live.sh` to start the app
 //!   again on the same data dir with `PATCHROOM_E2E_PHASE=<phase>` (the scenario reads it with
 //!   `e2e_param("phase")`), so one run can check what survives a restart;
-//! - `e2e_outside_session {dir}`: start an interactive `claude --model haiku` in a pty, as a
-//!   terminal outside Patchroom would, in a folder named by a `PATCHROOM_E2E_DIR_*` variable.
-//!   Returns the epoch ms when its prompt was sent; the session ends on its own
-//!   (`e2e_outside_done` says when);
+//! - `e2e_outside_session {dir, holdSecs?}`: start an interactive `claude --model haiku` in a pty,
+//!   as a terminal outside Patchroom would, in a folder named by a `PATCHROOM_E2E_DIR_*`
+//!   variable. Returns the epoch ms when its prompt was sent; the session ends on its own
+//!   (`e2e_outside_done` says when), `holdSecs` (at most 300) seconds after its reply;
 //! - `e2e_decision_log`: the notification decision log (`notify-decisions.log` in the data
 //!   dir): event, DM id, decision and reason per line, never a message body;
 //! - `e2e_window_state -> {nativeFocused, webviewFocused, visible, minimized, forced, active}`:
@@ -428,7 +428,11 @@ pub async fn e2e_outside_done(app: AppHandle) -> Result<bool, String> {
 /// starts an interactive `claude --model haiku` in a pty, as a terminal outside Patchroom
 /// would. Returns the time its prompt was sent; the session finishes and exits by itself.
 #[tauri::command]
-pub async fn e2e_outside_session(app: AppHandle, dir: String) -> Result<i64, String> {
+pub async fn e2e_outside_session(
+    app: AppHandle,
+    dir: String,
+    hold_secs: Option<u64>,
+) -> Result<i64, String> {
     use std::io::{BufRead, BufReader};
     use std::process::Stdio;
     state(&app)?;
@@ -440,6 +444,10 @@ pub async fn e2e_outside_session(app: AppHandle, dir: String) -> Result<i64, Str
     tauri::async_runtime::spawn_blocking(move || {
         let mut child = Command::new("/usr/bin/python3")
             .args(["-I", &driver, &dir])
+            .env(
+                "E2E_OUTSIDE_HOLD_SECS",
+                hold_secs.unwrap_or(0).min(300).to_string(),
+            )
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

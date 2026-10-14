@@ -10,6 +10,9 @@ import type {
   FolderSessions,
   SearchResult,
   SectionInfo,
+  MirrorInfo,
+  SendOutcome,
+  SendResult,
   SessionInfo,
 } from './types';
 
@@ -60,8 +63,42 @@ function folderSession(r: Loose): FolderSession {
     lastPrompt: String(pick(r, 'lastPrompt', 'last_prompt') ?? ''),
     userTurns: Number(pick(r, 'userTurns', 'user_turns') ?? 0),
     liveElsewhere: Boolean(pick(r, 'liveElsewhere', 'live_elsewhere')),
+    liveState: pick<FolderSession['liveState']>(r, 'liveState', 'live_state'),
     hidden: Boolean(r.hidden),
     dmId: pick<string | null>(r, 'dmId', 'dm_id') ?? null,
+  };
+}
+const OUTCOMES: SendOutcome[] = ['sent', 'queued', 'blocked_dialog', 'mirror_readonly'];
+function sendResult(r: Loose): SendResult {
+  const o = String(r.outcome) as SendOutcome;
+  return {
+    outcome: OUTCOMES.includes(o) ? o : 'sent',
+    reason: r.reason as string | undefined,
+    where: r.where as string | undefined,
+    pid: r.pid as number | undefined,
+  };
+}
+function mirror(v: unknown): MirrorInfo | null {
+  if (!v || typeof v !== 'object') return null;
+  const r = v as Loose;
+  return {
+    where: r.where as string | undefined,
+    pid: r.pid as number | undefined,
+    takeoverWhenClosed: Boolean(pick(r, 'takeoverWhenClosed', 'takeover_when_closed')),
+  };
+}
+
+/** A `session_list` or `folder_session_open` row, camelCase. */
+function wireSession(r: WireSession): SessionInfo {
+  const { section_id, needs_you, has_draft, folder_chip, ...rest } = r;
+  return {
+    ...rest,
+    sectionId: section_id ?? null,
+    needsYou: rest.needsYou ?? needs_you,
+    hasDraft: rest.hasDraft ?? has_draft,
+    folderChip: rest.folderChip ?? folder_chip ?? null,
+    mirror: mirror(rest.mirror),
+    terminalWait: rest.terminalWait ?? null,
   };
 }
 function hit(r: Loose): SearchHit {
@@ -94,20 +131,21 @@ export function createTauriIpc(): Ipc {
   return {
     sessionCreate: (args) => invoke('session_create', { ...args }),
     sessionWrite: (id, data) => invoke('session_write', { id, data }),
-    sessionSendText: (id, text) => invoke('session_send_text', { id, text }),
+    sessionSendText: async (id, text) => {
+      const r = await invoke<Loose | null>('session_send_text', { id, text });
+      return r && typeof r.outcome === 'string' ? sendResult(r) : undefined;
+    },
+    sessionTakeover: async (id, cols, rows) =>
+      wireSession(await invoke<WireSession>('session_takeover', { id, cols, rows })),
+    sessionMirrorTakeoverWhenClosed: (id, enabled) =>
+      invoke('session_mirror_takeover_when_closed', { id, enabled }),
     pasteImage: (id, data, mediaType) =>
       invoke<{ path: string }>('paste_image', { id, data, mediaType }),
     sessionResize: (id, cols, rows) => invoke('session_resize', { id, cols, rows }),
     sessionKill: (id) => invoke('session_kill', { id }),
     async sessionList() {
       const rows = await invoke<WireSession[]>('session_list');
-      return rows.map(({ section_id, needs_you, has_draft, folder_chip, ...rest }) => ({
-        ...rest,
-        sectionId: section_id ?? null,
-        needsYou: rest.needsYou ?? needs_you,
-        hasDraft: rest.hasDraft ?? has_draft,
-        folderChip: rest.folderChip ?? folder_chip ?? null,
-      }));
+      return rows.map(wireSession);
     },
     sessionResume: (id, cols, rows) => invoke('session_resume', { id, cols, rows }),
     sessionRename: (id, name) => invoke('session_rename', { id, name }),
@@ -168,17 +206,8 @@ export function createTauriIpc(): Ipc {
         hiddenCount: Number(pick(r, 'hiddenCount', 'hidden_count') ?? 0),
       } satisfies FolderSessions;
     },
-    folderSessionOpen: async (sectionId, sessionId) => {
-      const r = await invoke<WireSession>('folder_session_open', { sectionId, sessionId });
-      const { section_id, needs_you, has_draft, folder_chip, ...rest } = r;
-      return {
-        ...rest,
-        sectionId: section_id ?? null,
-        needsYou: rest.needsYou ?? needs_you,
-        hasDraft: rest.hasDraft ?? has_draft,
-        folderChip: rest.folderChip ?? folder_chip ?? null,
-      };
-    },
+    folderSessionOpen: async (sectionId, sessionId) =>
+      wireSession(await invoke<WireSession>('folder_session_open', { sectionId, sessionId })),
     folderSessionHide: (sectionId, sessionId, hidden) =>
       invoke('folder_session_hide', { sectionId, sessionId, hidden }),
     on: (event, handler) => listen(event, (e) => handler(e.payload as never)),

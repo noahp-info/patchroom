@@ -475,7 +475,14 @@ fn live_elsewhere_comes_from_the_agents_listing_and_not_for_our_own_dms() {
     ));
     let l = e.m.folder_sessions(&sec).unwrap();
     assert!(l.sessions.iter().all(|s| s.live_elsewhere));
-    // Once we run the second one ourselves, it is no longer "elsewhere".
+    // The second one stops running elsewhere; once we run it ourselves it is no longer
+    // "elsewhere". (Opening a session that does run elsewhere mirrors it instead of spawning:
+    // see tests/session_parity.rs.)
+    e.m.set_folder_live_override(Some(
+        ["eeeeeeee-0000-4000-8000-000000000001"]
+            .map(String::from)
+            .into(),
+    ));
     e.m.folder_session_open(&sec, "eeeeeeee-0000-4000-8000-000000000002")
         .unwrap();
     let l = e.m.folder_sessions(&sec).unwrap();

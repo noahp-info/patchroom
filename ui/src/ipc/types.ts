@@ -28,6 +28,32 @@ export interface SessionInfo {
   hasDraft?: boolean;
   /** P3 folder sections: set when the DM's cwd is outside its section's folder (e.g. "knowfirst"). */
   folderChip?: string | null;
+  /**
+   * Session parity: the session runs in another terminal. The DM is a read-only mirror of its
+   * transcript and no process of Patchroom's own exists. Cleared once it takes over.
+   */
+  mirror?: MirrorInfo | null;
+  /**
+   * Claude waits on something only the terminal can show (no chat prompt). Set by
+   * `session:terminal_wait`, cleared by `session:terminal_wait_clear`.
+   */
+  terminalWait?: TerminalWait | null;
+}
+
+/** Where a mirrored session really runs. */
+export interface MirrorInfo {
+  /** `iTerm`, `Terminal`, `tmux`, `Ghostty`, ... or `another terminal`. */
+  where?: string;
+  pid?: number;
+  /** "Take over when it closes" is on: the backend resumes the session when that process exits. */
+  takeoverWhenClosed?: boolean;
+}
+
+export interface TerminalWait {
+  /** The CLI's `waitingFor`, else `dialog open`. */
+  reason: string;
+  /** Epoch milliseconds. */
+  since: number;
 }
 
 /** Reason a `waiting` session needs the user. */
@@ -87,6 +113,36 @@ export interface IpcEvents {
   'prefs:changed': PrefsChangedEvent;
   'activity:changed': Record<string, never>;
   'folder:changed': FolderChangedEvent;
+  'session:mirror': SessionMirrorEvent;
+  'session:terminal_wait': TerminalWaitEvent;
+  'session:terminal_wait_clear': { id: string };
+}
+
+export interface TerminalWaitEvent extends TerminalWait {
+  id: string;
+}
+
+/** A DM entered or left mirror mode (`mirror: null` once the session is its own process). */
+export interface SessionMirrorEvent {
+  id: string;
+  mirror: MirrorInfo | null;
+}
+
+/**
+ * What `session_send_text` did with the text.
+ * - `sent`: written to claude's input.
+ * - `queued`: claude is busy; the text waits its turn.
+ * - `blocked_dialog`: a terminal-only dialog is up; nothing was written and the draft stays.
+ * - `mirror_readonly`: the session runs in another terminal; nothing was written.
+ */
+export type SendOutcome = 'sent' | 'queued' | 'blocked_dialog' | 'mirror_readonly';
+export interface SendResult {
+  outcome: SendOutcome;
+  /** `blocked_dialog`: what claude waits for. */
+  reason?: string;
+  /** `mirror_readonly`: where the session runs, and the other process. */
+  where?: string;
+  pid?: number;
 }
 
 export type Unlisten = () => void;
@@ -96,7 +152,12 @@ export interface Ipc {
   sessionCreate(args: SessionCreateArgs): Promise<{ id: string }>;
   /** `data` is base64. */
   sessionWrite(id: string, data: string): Promise<void>;
-  sessionSendText(id: string, text: string): Promise<void>;
+  /** An older backend returns nothing; the UI reads that as `sent`. */
+  sessionSendText(id: string, text: string): Promise<SendResult | void>;
+  /** Resume a mirrored DM now. Rejects while the other process lives (it is never killed). */
+  sessionTakeover(id: string, cols?: number, rows?: number): Promise<SessionInfo>;
+  /** Arm or disarm "Take over when it closes" on a mirrored DM. */
+  sessionMirrorTakeoverWhenClosed(id: string, enabled: boolean): Promise<void>;
   /** Save pasted image bytes (`data` is base64) to a private file and return its absolute path. */
   pasteImage(id: string, data: string, mediaType: string): Promise<{ path: string }>;
   sessionResize(id: string, cols: number, rows: number): Promise<void>;
@@ -335,6 +396,7 @@ export interface SessionBadgesEvent {
 }
 export interface StatusChips {
   model?: string;
+  branch?: string;
   contextPct?: number;
   cost?: number | string;
   mode?: string;
@@ -415,6 +477,21 @@ export interface Prefs {
   };
   termPerDm: Record<string, { themeId?: string; font?: string; fontSize?: number }>;
   searchAllSessions: boolean;
+  /** Status strip layout. Absent: the built-in default with duplicates hidden. */
+  statusBar?: StatusBarPrefs;
+}
+
+/** Ids of the status strip modules, in the order the built-in default shows them. */
+export type StatusModuleId =
+  'model' | 'folder' | 'worktree' | 'context' | 'cost' | 'mode' | 'branch' | 'pr' | 'statusline';
+
+/**
+ * Enabled modules in display order. A module missing from the list is removed (it sits in the
+ * tray). `default` is null until the user customizes it; `perDm` overrides it for one DM.
+ */
+export interface StatusBarPrefs {
+  default: string[] | null;
+  perDm: Record<string, string[]>;
 }
 
 export interface DetectedHook {
@@ -457,6 +534,8 @@ export interface FolderSession {
   userTurns: number;
   /** `claude agents --json` shows it running in another terminal. */
   liveElsewhere: boolean;
+  /** `checking` until the first live answer, and again when it is stale. Never "free" from a guess. */
+  liveState?: 'checking' | 'live' | 'free';
   /** Noise (no real user prompt, sidechain) or hidden by the user. */
   hidden: boolean;
   /** The Patchroom DM this session was opened as, once opened. */

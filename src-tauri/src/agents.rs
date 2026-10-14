@@ -9,7 +9,7 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -37,6 +37,56 @@ impl LoginShellAgents {
             timeout: Duration::from_secs(10),
             active,
         }
+    }
+}
+
+impl LoginShellAgents {
+    /// A source for one synchronous check right before a spawn: always active, and bounded
+    /// by `timeout` (the caller waits at most that long).
+    #[must_use]
+    pub fn checker(timeout: Duration) -> Self {
+        let mut s = Self::new(Arc::new(AtomicBool::new(true)));
+        s.timeout = timeout;
+        s
+    }
+}
+
+/// The newest answer the reconciler's `claude agents --json` call produced. The manager reads
+/// the `waitingFor` text from it, so a terminal-only wait can say what claude waits for
+/// without a second call.
+#[derive(Default)]
+pub struct AgentsTap {
+    latest: Mutex<Option<(Instant, Vec<AgentEntry>)>>,
+}
+
+impl AgentsTap {
+    /// The entries of the last answer, if it is younger than `max_age`.
+    #[must_use]
+    pub fn recent(&self, max_age: Duration) -> Option<Vec<AgentEntry>> {
+        let g = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
+        g.as_ref()
+            .filter(|(at, _)| at.elapsed() <= max_age)
+            .map(|(_, v)| v.clone())
+    }
+}
+
+/// An [`AgentsSource`] that records each successful answer in an [`AgentsTap`].
+pub struct TappedAgents<S> {
+    /// The real source.
+    pub inner: S,
+    /// Where answers are recorded.
+    pub tap: Arc<AgentsTap>,
+}
+
+impl<S: AgentsSource> AgentsSource for TappedAgents<S> {
+    fn list(&self) -> io::Result<Vec<AgentEntry>> {
+        let entries = self.inner.list()?;
+        *self
+            .tap
+            .latest
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some((Instant::now(), entries.clone()));
+        Ok(entries)
     }
 }
 
@@ -109,6 +159,30 @@ mod tests {
         assert_eq!(json_array("hello\n[{\"pid\":1}]\nbye"), "[{\"pid\":1}]");
         assert_eq!(json_array("[]"), "[]");
         assert_eq!(json_array("nothing"), "nothing");
+    }
+
+    struct Fixed(Vec<AgentEntry>);
+    impl AgentsSource for Fixed {
+        fn list(&self) -> io::Result<Vec<AgentEntry>> {
+            Ok(self.0.clone())
+        }
+    }
+
+    #[test]
+    fn the_tap_keeps_the_newest_answer() {
+        let entries = parse_agents(
+            r#"[{"pid":9,"sessionId":"s","status":"waiting","waitingFor":"dialog open"}]"#,
+        )
+        .unwrap();
+        let tap = Arc::new(AgentsTap::default());
+        assert!(tap.recent(Duration::from_secs(60)).is_none());
+        let src = TappedAgents {
+            inner: Fixed(entries.clone()),
+            tap: Arc::clone(&tap),
+        };
+        assert_eq!(src.list().unwrap(), entries);
+        let seen = tap.recent(Duration::from_secs(60)).unwrap();
+        assert_eq!(seen[0].waiting_for.as_deref(), Some("dialog open"));
     }
 
     #[test]

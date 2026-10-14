@@ -62,6 +62,19 @@ export function App() {
         fn();
       };
       const snap = store.getSnapshot();
+      // A terminal opened as a fallback (a TUI panel or dialog): Esc reaches the TUI, which
+      // closes the panel, and the view returns to chat right after.
+      if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        const id = snap.activeId;
+        if (
+          id &&
+          !snap.panel &&
+          store.viewOf(id) === 'terminal' &&
+          snap.termNotes[id] !== undefined
+        ) {
+          window.setTimeout(() => store.setView(id, 'chat'), 0);
+        }
+      }
       if (e.metaKey && !e.ctrlKey && !e.altKey) {
         if (key === 'j' && !e.shiftKey) {
           const id = snap.activeId;
@@ -205,8 +218,9 @@ export function App() {
                 <button
                   type="button"
                   aria-label="Terminal"
-                  title="Terminal (\u2318J)"
+                  title={active.mirror ? 'Runs in another terminal' : 'Terminal (\u2318J)'}
                   aria-pressed={view === 'terminal'}
+                  disabled={!!active.mirror}
                   onClick={() => store.setView(active.id, 'terminal')}
                 >
                   <Icon name="term" />
@@ -287,6 +301,15 @@ export function App() {
             </div>
           )}
 
+          {active && view === 'terminal' && state.termNotes[active.id] !== undefined && (
+            <div className="tnote" role="status" data-testid="term-note">
+              <span>{state.termNotes[active.id]}</span>
+              <button type="button" onClick={() => store.setView(active.id, 'chat')}>
+                Back to chat
+              </button>
+            </div>
+          )}
+
           <div
             className="stage"
             style={
@@ -323,6 +346,7 @@ export function App() {
               visible={view === 'chat'}
               unread={state.badges[active.id]?.unread ?? 0}
               thread={state.thread}
+              prefs={state.prefs}
               marks={state.marks}
             />
           )}

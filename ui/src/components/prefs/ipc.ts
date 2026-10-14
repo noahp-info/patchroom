@@ -41,6 +41,7 @@ export interface Prefs {
   dnd: { manual: boolean; schedule: DndSchedule | null };
   termPerDm: Record<string, TermStyle>;
   searchAllSessions: boolean;
+  statusBar?: { default: string[] | null; perDm: Record<string, string[]> };
 }
 
 /** One row of `sound_hooks_detect`: a command hook of the user's that plays audio. */
@@ -76,10 +77,25 @@ export const DEFAULT_PREFS: Prefs = {
   dnd: { manual: false, schedule: null },
   termPerDm: {},
   searchAllSessions: false,
+  statusBar: { default: null, perDm: {} },
 };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function normalizeStatusBar(raw: unknown): NonNullable<Prefs['statusBar']> {
+  const r = isRecord(raw) ? raw : {};
+  const list = (v: unknown): string[] | null =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : null;
+  const perDm: Record<string, string[]> = {};
+  if (isRecord(r.perDm)) {
+    for (const [k, v] of Object.entries(r.perDm)) {
+      const l = list(v);
+      if (l) perDm[k] = l;
+    }
+  }
+  return { default: list(r.default), perDm };
 }
 
 /** Fill anything missing in stored or backend prefs from the defaults, one level deep per group. */
@@ -107,6 +123,7 @@ export function normalizePrefs(raw: unknown): Prefs {
     },
     dnd: { ...d.dnd, ...(dnd as Partial<Prefs['dnd']>) },
     termPerDm: isRecord(r.termPerDm) ? (r.termPerDm as Prefs['termPerDm']) : {},
+    statusBar: normalizeStatusBar(r.statusBar),
   };
 }
 

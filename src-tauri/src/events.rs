@@ -125,6 +125,30 @@ pub enum UiEvent {
         /// The folder section.
         section_id: String,
     },
+    /// `session:terminal_wait {id, reason, since}`: claude waits on something the chat cannot
+    /// render (no bridge prompt). Sent when it begins and again if `reason` changes.
+    TerminalWait {
+        /// Session id.
+        id: String,
+        /// What it waits for, for example `dialog open`.
+        reason: String,
+        /// When the wait began, epoch milliseconds.
+        since: i64,
+    },
+    /// `session:terminal_wait_clear {id}`: the terminal-only wait ended.
+    TerminalWaitClear {
+        /// Session id.
+        id: String,
+    },
+    /// `session:mirror {id, mirror}`: the DM became a read-only mirror of a session that runs
+    /// in another terminal (`mirror` is `{where, pid, takeoverWhenClosed}`), or stopped being one
+    /// (`mirror` is null).
+    Mirror {
+        /// Session id.
+        id: String,
+        /// The mirror state, or `Null`.
+        mirror: Value,
+    },
     /// `statusline:update {id, text, chips}`.
     Statusline {
         /// Session id.
@@ -154,6 +178,9 @@ impl UiEvent {
             UiEvent::PrefsChanged { .. } => "prefs:changed",
             UiEvent::ActivityChanged => "activity:changed",
             UiEvent::FolderChanged { .. } => "folder:changed",
+            UiEvent::TerminalWait { .. } => "session:terminal_wait",
+            UiEvent::TerminalWaitClear { .. } => "session:terminal_wait_clear",
+            UiEvent::Mirror { .. } => "session:mirror",
             UiEvent::Statusline { .. } => "statusline:update",
         }
     }
@@ -189,6 +216,11 @@ impl UiEvent {
             UiEvent::PrefsChanged { prefs } => json!({ "prefs": prefs }),
             UiEvent::ActivityChanged => json!({}),
             UiEvent::FolderChanged { section_id } => json!({ "sectionId": section_id }),
+            UiEvent::TerminalWait { id, reason, since } => {
+                json!({ "id": id, "reason": reason, "since": since })
+            }
+            UiEvent::TerminalWaitClear { id } => json!({ "id": id }),
+            UiEvent::Mirror { id, mirror } => json!({ "id": id, "mirror": mirror }),
             UiEvent::Statusline { id, text, chips } => {
                 json!({ "id": id, "text": text, "chips": chips })
             }
@@ -289,6 +321,38 @@ mod tests {
         );
         let e = UiEvent::NotifyOpen { id: "a".into() };
         assert_eq!((e.name(), e.payload()), ("notify:open", json!({"id":"a"})));
+    }
+
+    #[test]
+    fn session_parity_event_payloads_match_the_contract() {
+        let e = UiEvent::TerminalWait {
+            id: "a".into(),
+            reason: "dialog open".into(),
+            since: 5,
+        };
+        assert_eq!(
+            (e.name(), e.payload()),
+            (
+                "session:terminal_wait",
+                json!({"id":"a","reason":"dialog open","since":5})
+            )
+        );
+        let e = UiEvent::TerminalWaitClear { id: "a".into() };
+        assert_eq!(
+            (e.name(), e.payload()),
+            ("session:terminal_wait_clear", json!({"id":"a"}))
+        );
+        let e = UiEvent::Mirror {
+            id: "a".into(),
+            mirror: json!({"where":"iTerm","pid":7,"takeoverWhenClosed":false}),
+        };
+        assert_eq!(e.name(), "session:mirror");
+        assert_eq!(e.payload()["mirror"]["where"], "iTerm");
+        let e = UiEvent::Mirror {
+            id: "a".into(),
+            mirror: Value::Null,
+        };
+        assert_eq!(e.payload(), json!({"id":"a","mirror":null}));
     }
 
     #[test]

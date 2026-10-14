@@ -727,7 +727,12 @@ impl Manager {
                     ts: m.needs_since.unwrap_or_else(now_ms),
                     prompt_id: None,
                     item_key: None,
-                    summary: "Waiting for you".into(),
+                    summary: match self.terminal_wait_of(&id) {
+                        Some(w) => {
+                            format!("Claude is showing something in the terminal: {}", w.reason)
+                        }
+                        None => "Waiting for you".into(),
+                    },
                 });
             }
             if m.unread > 0 && !archived.contains(&id) {

@@ -5,6 +5,9 @@ Used by the live e2e only (src-tauri/src/e2e.rs `e2e_outside_session`). It answe
 trust dialog, sends one prompt, prints `SENT <epoch ms>` the moment it presses Enter, waits for
 the reply, then quits the session. Usage: e2e-outside-session.py <folder>
 
+With E2E_OUTSIDE_HOLD_SECS=<n> it keeps the session open n seconds after the reply (still
+draining its output), so Patchroom can meet a session that is live in another terminal.
+
 It only runs claude with `--model haiku`, in the folder it is given. It writes nothing itself.
 """
 import fcntl
@@ -93,6 +96,19 @@ def main() -> int:
             break
         elif sent and time.time() - sent_at > 90:
             break
+    # Stay open for a while when asked, so Patchroom can meet the live session.
+    hold = float(os.environ.get("E2E_OUTSIDE_HOLD_SECS", "0") or 0)
+    if sent and hold > 0:
+        end = time.time() + hold
+        while time.time() < end:
+            ready, _, _ = select.select([fd], [], [], 0.25)
+            if not ready:
+                continue
+            try:
+                if not os.read(fd, 65536):
+                    break
+            except OSError:
+                break
     if not sent:
         print("NOT_SENT", flush=True)
         if os.environ.get("E2E_OUTSIDE_DEBUG"):

@@ -40,7 +40,7 @@ use super::{
 /// Transcript poll interval while a session runs.
 const LIVE_POLL: Duration = Duration::from_millis(50);
 /// Transcript poll interval once the process has exited.
-const IDLE_POLL: Duration = Duration::from_secs(2);
+pub(super) const IDLE_POLL: Duration = Duration::from_secs(2);
 /// How long a permission prompt waits for its `tool_use` line before it is announced anyway.
 const LINK_WAIT: Duration = Duration::from_millis(700);
 /// Pause between handing a picker to the TUI and the first typed key.
@@ -120,6 +120,11 @@ impl Chat {
         lock(&self.state).last_resolved_ms
     }
 
+    /// Does the chat hold any prompt, announced or not? Such a prompt is the chat's to show.
+    pub(in crate::manager) fn has_prompts(&self) -> bool {
+        !lock(&self.state).prompts.is_empty()
+    }
+
     /// Activity rows for this DM's announced, unresolved prompts, in arrival order.
     pub(in crate::manager) fn open_prompt_rows(&self, id: &str) -> Vec<super::slack::ActivityRow> {
         let st = lock(&self.state);
@@ -151,7 +156,7 @@ impl Chat {
     }
 }
 
-fn now_ms() -> i64 {
+pub(super) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)
@@ -183,7 +188,7 @@ impl Screen {
     }
 
     /// The visible screen as text, one line per row.
-    fn text(&self) -> String {
+    pub(super) fn text(&self) -> String {
         self.parser.screen().contents()
     }
 

@@ -36,6 +36,10 @@ const PATHS: Record<string, ReactNode> = {
   gear: (
     <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1" />
   ),
+  grip: (
+    <path d="M6 3.5h.01M10 3.5h.01M6 8h.01M10 8h.01M6 12.5h.01M10 12.5h.01" strokeWidth="2.2" />
+  ),
+  lock: <path d="M4.5 7.5h7v5.5h-7zM6 7.5V5.5a2 2 0 0 1 4 0v2" />,
   resume: <path d="M3.5 8a4.5 4.5 0 1 0 1.4-3.3M3 2.5v3h3" />,
 };
 

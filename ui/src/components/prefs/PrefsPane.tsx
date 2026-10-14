@@ -3,6 +3,7 @@ import './prefs.css';
 import { DndSection } from './DndSection.tsx';
 import { HooksSection } from './HooksSection.tsx';
 import { NotificationsSection } from './NotificationsSection.tsx';
+import { StatusBarSection } from './StatusBarSection.tsx';
 import { SoundsSection } from './SoundsSection.tsx';
 import { getPrefsStore } from './store.ts';
 import { TerminalSection } from './TerminalSection.tsx';
@@ -12,6 +13,7 @@ import type { PrefsDm } from './types.ts';
 const TABS = [
   { id: 'themes', label: 'Themes' },
   { id: 'terminal', label: 'Terminal' },
+  { id: 'statusbar', label: 'Status bar' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'sounds', label: 'Sounds' },
   { id: 'dnd', label: 'Do Not Disturb' },
@@ -75,6 +77,7 @@ export function PrefsPane({ onClose, dms = [], initialTab = 'themes' }: PrefsPan
         <div className="prefs__main">
           {tab === 'themes' && <ThemesSection />}
           {tab === 'terminal' && <TerminalSection dms={dms} />}
+          {tab === 'statusbar' && <StatusBarSection dms={dms} />}
           {tab === 'notifications' && <NotificationsSection dms={dms} />}
           {tab === 'sounds' && <SoundsSection dms={dms} />}
           {tab === 'dnd' && <DndSection />}

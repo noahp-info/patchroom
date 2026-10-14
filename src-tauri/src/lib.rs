@@ -154,6 +154,8 @@ macro_rules! app_handler {
             commands::folder_sessions,
             commands::folder_session_open,
             commands::folder_session_hide,
+            commands::session_takeover,
+            commands::session_mirror_takeover_when_closed,
             e2e::e2e_report,
             e2e::e2e_pgrep,
             e2e::e2e_sleep,
@@ -222,6 +224,8 @@ macro_rules! app_handler {
             commands::folder_sessions,
             commands::folder_session_open,
             commands::folder_session_hide,
+            commands::session_takeover,
+            commands::session_mirror_takeover_when_closed,
         ]
     };
 }
