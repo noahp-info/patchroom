@@ -1,4 +1,4 @@
-import { DEFAULT_BASE } from './bases.ts';
+import { DEFAULT_BASE, getBase } from './bases.ts';
 import { resolveMode } from './apply.ts';
 import { validateTheme } from './validate.ts';
 import type { BaseId, Theme, ThemeMode } from './types.ts';
@@ -33,7 +33,12 @@ export function shippedThemes(): Theme[] {
 /** Shipped themes, then the user's custom themes that validate. */
 export function allThemes(prefs: Pick<Prefs, 'customThemes'>): Theme[] {
   const ship = shippedThemes();
-  const custom = prefs.customThemes.filter((t) => validateTheme(t).ok);
+  // Use the validated copy so older custom themes arrive with `cable` and `plug` filled.
+  const custom: Theme[] = [];
+  for (const t of prefs.customThemes) {
+    const r = validateTheme(t);
+    if (r.ok) custom.push(r.theme);
+  }
   return [...ship, ...custom.filter((c) => !ship.some((s) => s.id === c.id))];
 }
 
@@ -52,4 +57,7 @@ export function currentMode(prefs: Pick<Prefs, 'mode'>): ThemeMode {
   return resolveMode(prefs.mode, systemPrefersDark());
 }
 
-export const ACTIVE_BASE: BaseId = DEFAULT_BASE;
+/** The chosen layout base, or Homeroom when the stored id is unknown. */
+export function activeBase(prefs: Pick<Prefs, 'base'>): BaseId {
+  return getBase(prefs.base)?.id ?? DEFAULT_BASE;
+}

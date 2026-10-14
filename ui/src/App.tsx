@@ -7,6 +7,7 @@ import { QuickSwitcher } from './components/QuickSwitcher';
 import { SearchPanel } from './components/SearchPanel';
 import { ChatView } from './components/chat/ChatView';
 import { Sidebar } from './components/Sidebar';
+import { PatchCable } from './theme/PatchCable';
 import { Terminal } from './components/Terminal';
 import { playNotifySound, useThemeRuntime } from './lib/prefsModule';
 import { ITERM_THEME } from './lib/sessionTerminal';
@@ -30,6 +31,13 @@ const NEEDS_TEXT: Record<Needs, string> = {
   question: 'question',
   other: 'dialog open',
 };
+
+/** Presence class for the Patch Bay jack; other bases hide the jack. */
+function jackState(status: SessionStatus): 'busy' | 'idle' | 'needs' {
+  if (status === 'busy') return 'busy';
+  if (status === 'waiting') return 'needs';
+  return 'idle';
+}
 
 export function App() {
   const store = getStore();
@@ -160,6 +168,7 @@ export function App() {
       <main className="conv">
         {active ? (
           <header className="ch" inert={panelOpen}>
+            <span className={`jack ${jackState(active.status)} plugged`} data-jack-to="" />
             <h2>
               <ClaudeGlyph />
               <span className="ch__name" title={active.name}>
@@ -321,6 +330,10 @@ export function App() {
         {state.panel === 'activity' && <ActivityView state={state} store={store} />}
         {state.panel === 'saved' && <SavedView state={state} store={store} />}
       </main>
+
+      <PatchCable
+        remeasureKey={`${base}/${theme.id}/${mode}/${state.activeId ?? ''}/${state.panel ?? ''}`}
+      />
 
       {state.panel === 'prefs' && <PrefsView state={state} store={store} />}
       {state.panel === 'switcher' && <QuickSwitcher state={state} store={store} />}

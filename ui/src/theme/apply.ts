@@ -1,3 +1,4 @@
+import { presetVars } from './presets.ts';
 import { TOKEN_KEYS } from './tokens.ts';
 import type { BaseId, Theme, ThemeMode } from './types.ts';
 
@@ -8,12 +9,19 @@ export function resolveMode(pref: ModePreference, systemPrefersDark: boolean): T
   return pref;
 }
 
-/** CSS custom properties for one mode, keyed `--name`. */
-export function themeVars(theme: Theme, mode: ThemeMode): Record<string, string> {
+/**
+ * CSS custom properties for one mode, keyed `--name`. A cable preset replaces `--cable` and
+ * `--plug` only; every other token stays the theme's.
+ */
+export function themeVars(
+  theme: Theme,
+  mode: ThemeMode,
+  cablePreset?: string,
+): Record<string, string> {
   const out: Record<string, string> = {};
   const tokens = theme.modes[mode];
   for (const k of TOKEN_KEYS) out[`--${k}`] = tokens[k];
-  return out;
+  return { ...out, ...presetVars(cablePreset, mode) };
 }
 
 /**

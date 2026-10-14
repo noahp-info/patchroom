@@ -524,6 +524,9 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
           role="img"
           aria-label={PRESENCE_LABEL[s.status]}
         />
+        <span
+          className={`jack ${presence(s.status)}${s.id === state.activeId ? ' plugged' : ''}`}
+        />
         <ClaudeGlyph />
         <span className="nm">{s.name}</span>
         {chips && (

@@ -12,6 +12,8 @@ import {
   parseColor,
   readableOn,
 } from '../../src/theme/color.ts';
+import { fillLegacyTokens } from '../../src/theme/legacy.ts';
+import { CABLE_PRESETS, THEME_CABLE, presetVars } from '../../src/theme/presets.ts';
 import { importSlackTheme, parseSlackThemeString } from '../../src/theme/slack.ts';
 import { TOKEN_GROUPS, TOKEN_KEYS } from '../../src/theme/tokens.ts';
 import type { Theme, TokenMap } from '../../src/theme/types.ts';
@@ -184,10 +186,19 @@ test('applyTheme writes every token as a CSS variable and nothing else changes',
   assert.match(themeToCss(homeroom), /\[data-theme='homeroom'\]\[data-mode='dark'\]/);
 });
 
-test('cable path starts and ends at the plugs', () => {
-  const d = cablePath({ x: 10, y: 20 }, { x: 300, y: 40 });
-  assert.match(d, /^M10 20 C /);
-  assert.ok(d.endsWith('300 40'));
+test('cable path starts and ends at the plugs and rides the channel', () => {
+  const d = cablePath({ x: 250, y: 327 }, { x: 299, y: 67 }, 272);
+  assert.match(d, /^M250 327 C /);
+  assert.ok(d.endsWith('299 67'));
+  // Between the two bends the cable is a straight vertical run in the channel.
+  assert.match(d, / L 272 81 /);
+  assert.match(d, /272 313 L /);
+  // No point leaves the box spanned by the two plugs and the channel.
+  const nums = d.match(/-?\d+(\.\d+)?/g)!.map(Number);
+  for (let i = 0; i < nums.length; i += 2) {
+    assert.ok(nums[i] >= 250 && nums[i] <= 299, `x ${nums[i]}`);
+    assert.ok(nums[i + 1] >= 67 && nums[i + 1] <= 327, `y ${nums[i + 1]}`);
+  }
 });
 
 const SRC = join(import.meta.dirname, '..', '..', 'src');
@@ -281,4 +292,142 @@ test('every var(--x) in the CSS is a token or a documented base variable', () =>
 
 test('token groups are all non-empty', () => {
   for (const [g, keys] of Object.entries(TOKEN_GROUPS)) assert.ok(keys.length > 0, g);
+});
+
+const MODES = ['light', 'dark'] as const;
+
+test('Homeroom is jade: the mark color anchors the band, panel and workspace mark', () => {
+  assert.equal(homeroom.modes.light['side-bg'], '#135a4b');
+  assert.equal(homeroom.modes.light.panel, '#135a4b');
+  assert.equal(homeroom.modes.light['ws-mark-fg'], '#135a4b');
+  assert.equal(homeroom.modes.light['ws-mark'], '#f7f3e8');
+  for (const mode of MODES) {
+    const t = homeroom.modes[mode];
+    assert.equal(t['side-active'].toLowerCase().startsWith('#f2c35b') || mode === 'dark', true);
+    assert.equal(t.cable, '#f2c35b');
+    assert.equal(t.plug, '#c7cdd0');
+    // The accent reads as its own color, not as the band.
+    assert.ok(contrast(t.accent, t['side-bg']) >= 1.3, `${mode} accent too close to the band`);
+    assert.notEqual(t.accent, t['side-bg']);
+  }
+  assert.equal(validateTheme(homeroom, { requireAA: true }).ok, true);
+});
+
+test('the four shipped themes keep distinct sidebar grounds', () => {
+  for (const mode of MODES) {
+    const grounds = shipped.map((s) => s.theme.modes[mode]['side-bg']);
+    assert.equal(new Set(grounds).size, shipped.length);
+  }
+});
+
+test('cable and plug are hardware tokens in the schema and every shipped theme', () => {
+  assert.ok((TOKEN_GROUPS.hardware as readonly string[]).includes('cable'));
+  assert.ok((TOKEN_GROUPS.hardware as readonly string[]).includes('plug'));
+  const props = buildSchema() as { $defs: { tokens: { required: string[] } } };
+  assert.ok(props.$defs.tokens.required.includes('cable'));
+  assert.ok(props.$defs.tokens.required.includes('plug'));
+  for (const { theme } of shipped) {
+    for (const mode of MODES) {
+      assert.match(theme.modes[mode].cable, /^#[0-9a-f]{6}$/i);
+      assert.match(theme.modes[mode].plug, /^#[0-9a-f]{6}$/i);
+    }
+  }
+});
+
+test('a P3-era theme without cable and plug loads, validates and keeps its own tokens', () => {
+  const old = JSON.parse(JSON.stringify(homeroom));
+  for (const mode of MODES) {
+    delete old.modes[mode].cable;
+    delete old.modes[mode].plug;
+  }
+  old.id = 'p3-custom';
+  const r = validateTheme(old, { requireAA: true });
+  assert.ok(r.ok, r.ok ? '' : r.errors.join('; '));
+  if (!r.ok) return;
+  for (const mode of MODES) {
+    assert.equal(r.theme.modes[mode].cable, old.modes[mode]['c-yellow']);
+    assert.match(r.theme.modes[mode].plug, /^#[0-9a-f]{6}$/);
+    assert.equal(r.theme.modes[mode].accent, old.modes[mode].accent);
+  }
+  // The caller's object is not mutated, and a complete theme passes through untouched.
+  assert.equal(old.modes.light.cable, undefined);
+  assert.equal(fillLegacyTokens(homeroom), homeroom);
+  // A bad value is still reported, not papered over.
+  old.modes.light['c-yellow'] = 'nope';
+  assert.equal(validateTheme(old).ok, false);
+});
+
+test('Slack import derives cable and plug', () => {
+  const r = importSlackTheme('#350d36,#3e313c,#1264a3,#ffffff', {
+    base: homeroom,
+    id: 'slack-x',
+    name: 'X',
+  });
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  for (const mode of MODES) {
+    // Derived from the active row, then lifted by the AA repair so it reads in the socket.
+    assert.notEqual(r.theme.modes[mode].cable, homeroom.modes[mode].cable);
+    assert.ok(contrast(r.theme.modes[mode].cable, r.theme.modes[mode].hole) >= 3);
+    assert.notEqual(r.theme.modes[mode].plug, homeroom.modes[mode].plug);
+  }
+  assert.equal(validateTheme(r.theme, { requireAA: true }).ok, true);
+});
+
+test('at least four named presets, each overriding only cable and plug', () => {
+  assert.ok(CABLE_PRESETS.length >= 4);
+  assert.deepEqual(
+    ['jade', 'signal', 'studio', 'ocean', 'copper'].filter(
+      (id) => !CABLE_PRESETS.some((p) => p.id === id),
+    ),
+    [],
+  );
+  const pairs = new Set(CABLE_PRESETS.map((p) => `${p.modes.light.cable}/${p.modes.light.plug}`));
+  assert.equal(pairs.size, CABLE_PRESETS.length);
+  for (const { theme } of shipped) {
+    for (const mode of MODES) {
+      const base = themeVars(theme, mode);
+      for (const p of CABLE_PRESETS) {
+        const v = themeVars(theme, mode, p.id);
+        const changed = Object.keys(v).filter((k) => v[k] !== base[k]);
+        assert.ok(
+          changed.every((k) => k === '--cable' || k === '--plug'),
+          `${p.id} leaked ${changed}`,
+        );
+        assert.equal(v['--cable'], p.modes[mode].cable);
+      }
+    }
+  }
+  assert.deepEqual(presetVars(THEME_CABLE, 'light'), {});
+  assert.deepEqual(presetVars(undefined, 'dark'), {});
+  assert.deepEqual(presetVars('no-such-preset', 'dark'), {});
+});
+
+test('every preset reads against the socket hole in every shipped theme and mode (3:1)', () => {
+  for (const { theme } of shipped) {
+    for (const mode of MODES) {
+      const hole = theme.modes[mode].hole;
+      for (const p of CABLE_PRESETS) {
+        const { cable, plug } = p.modes[mode];
+        assert.ok(
+          contrast(cable, hole) >= 3,
+          `${theme.id} ${mode} ${p.id} cable ${contrast(cable, hole).toFixed(2)}`,
+        );
+        assert.ok(
+          contrast(plug, hole) >= 3,
+          `${theme.id} ${mode} ${p.id} plug ${contrast(plug, hole).toFixed(2)}`,
+        );
+      }
+    }
+  }
+});
+
+test('Patch Bay draws cables in --cable and plug metal in --plug, not in a chip color', () => {
+  const css = readFileSync(join(THEME_CSS, 'bases', 'patchbay.css'), 'utf8');
+  assert.match(css, /\.jack\.plugged::before\s*\{[^}]*var\(--cable\)/);
+  assert.match(css, /var\(--plug\)/);
+  const tsx = readFileSync(join(THEME_CSS, 'PatchCable.tsx'), 'utf8');
+  assert.match(tsx, /stroke="var\(--cable\)"/);
+  assert.match(tsx, /stroke="var\(--plug\)"/);
+  assert.doesNotMatch(tsx, /c-yellow/);
 });

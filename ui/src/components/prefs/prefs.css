@@ -306,6 +306,22 @@
   padding: 0 4px;
 }
 
+/* cable preset grid reuses the theme cards */
+.cgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cp {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--r-sm);
+}
+
 /* theme mini preview: reads only the vars set inline on it */
 .tp {
   overflow: hidden;

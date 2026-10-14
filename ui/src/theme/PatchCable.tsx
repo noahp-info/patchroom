@@ -1,6 +1,9 @@
 import { useLayoutEffect, useRef } from 'react';
 import { cablePath } from './cable.ts';
 
+/** Distance from the sidebar's right edge to the cable's vertical run, in CSS px. */
+const CHANNEL_INSET = 4;
+
 interface Props {
   /** Selector for the plug at the active row. */
   from?: string;
@@ -34,6 +37,12 @@ export function PatchCable({
       const a = root.querySelector(from);
       const b = root.querySelector(to);
       if (!a || !b || getComputedStyle(el).display === 'none') return;
+      // A row scrolled out of the sidebar has no plug to show: hide the cable rather than draw it over content.
+      const list = root.querySelector('.side-scroll')?.getBoundingClientRect();
+      const aq = a.getBoundingClientRect();
+      const visible = !list || (aq.top >= list.top && aq.bottom <= list.bottom);
+      el.style.visibility = visible ? '' : 'hidden';
+      if (!visible) return;
       const r = root.getBoundingClientRect();
       const k = r.width / root.offsetWidth || 1;
       const centre = (n: Element) => {
@@ -42,7 +51,11 @@ export function PatchCable({
       };
       const p1 = centre(a);
       const p2 = centre(b);
-      const d = cablePath(p1, p2);
+      // The channel is the padding strip at the sidebar's inner right edge: no sidebar text
+      // reaches it and no conversation content starts before it.
+      const side = root.querySelector('.side')?.getBoundingClientRect();
+      const channelX = side ? (side.right - r.left) / k - CHANNEL_INSET : p1.x;
+      const d = cablePath(p1, p2, channelX);
       el.querySelectorAll('path').forEach((p) => p.setAttribute('d', d));
       const dots = el.querySelectorAll('circle');
       dots[0]?.setAttribute('cx', String(p1.x));
@@ -54,10 +67,23 @@ export function PatchCable({
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(root);
+    const side = root.querySelector('.side');
+    const rows = root.querySelector('.side-scroll') ?? side;
+    rows?.addEventListener('scroll', measure, { passive: true });
+    const mo = new MutationObserver(measure);
+    if (side)
+      mo.observe(side, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class'],
+      });
     void document.fonts?.ready.then(measure);
     return () => {
       alive = false;
       ro.disconnect();
+      mo.disconnect();
+      rows?.removeEventListener('scroll', measure);
     };
   }, [from, to, remeasureKey]);
 
@@ -70,7 +96,7 @@ export function PatchCable({
         strokeLinecap="round"
         transform="translate(0 3)"
       />
-      <path fill="none" stroke="var(--c-yellow)" strokeWidth="5" strokeLinecap="round" />
+      <path fill="none" stroke="var(--cable)" strokeWidth="5" strokeLinecap="round" />
       <path
         fill="none"
         stroke="rgb(255 255 255 / .28)"
@@ -78,8 +104,8 @@ export function PatchCable({
         strokeLinecap="round"
         transform="translate(-.8 -1.2)"
       />
-      <circle r="5.5" fill="var(--hole)" />
-      <circle r="5.5" fill="var(--hole)" />
+      <circle r="5.5" fill="var(--hole)" stroke="var(--plug)" strokeWidth="1.6" />
+      <circle r="5.5" fill="var(--hole)" stroke="var(--plug)" strokeWidth="1.6" />
     </svg>
   );
 }
