@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -119,6 +120,57 @@ function pickAnchor(
   return i < n ? { key: rows[i].key, top: offs[i] - st } : null;
 }
 
+interface VRowProps {
+  row: Row;
+  expanded: boolean;
+  actions: RowActions;
+  decor?: Decor;
+}
+
+/** One positioned row. Memoized so a scroll frame only builds elements for rows that entered. */
+const VRow = memo(function VRow({ row, expanded, actions, decor }: VRowProps) {
+  const head = row.type !== 'day' && row.head;
+  return (
+    <div
+      className={`vrow${head ? ' head' : ''}${row.type === 'day' ? ' dayrow' : ''}`}
+      data-rk={row.key}
+    >
+      <RowView row={row} expanded={expanded} actions={actions} decor={decor} />
+    </div>
+  );
+});
+
+/**
+ * Built row elements by key. Reusing the element lets React skip the row, and skips the cost of
+ * creating it, which is large in dev builds. The cache keeps only the rows of the last render.
+ * A class, so the hook rules see method calls, not mutation.
+ */
+class RowElements {
+  private prev = new Map<string, { props: VRowProps; el: ReactNode }>();
+  private next = new Map<string, { props: VRowProps; el: ReactNode }>();
+  get(props: VRowProps): ReactNode {
+    const key = props.row.key;
+    const hit = this.prev.get(key) ?? this.next.get(key);
+    let ent = hit;
+    if (
+      !ent ||
+      ent.props.row !== props.row ||
+      ent.props.expanded !== props.expanded ||
+      ent.props.actions !== props.actions ||
+      ent.props.decor !== props.decor
+    ) {
+      ent = { props, el: <VRow key={key} {...props} /> };
+    }
+    this.next.set(key, ent);
+    return ent.el;
+  }
+  /** Call once per render, after the last `get`: drop rows that left the window. */
+  sweep(): void {
+    this.prev = this.next;
+    this.next = new Map();
+  }
+}
+
 /**
  * Virtualized message log. Only rows near the viewport are in the DOM. Heights are measured on
  * screen and cached by row key. It sticks to the bottom only while the user is at the bottom,
@@ -129,6 +181,7 @@ export function ChatLog(props: ChatLogProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   const [heights] = useState(() => new HeightCache());
+  const [elements] = useState(() => new RowElements());
   const [tick, setTick] = useState(0);
   const [view, setView] = useState({
     top: initial.atBottom ? Number.MAX_SAFE_INTEGER : initial.top,
@@ -414,22 +467,16 @@ export function ChatLog(props: ChatLogProps) {
   const rendered: ReactNode[] = [];
   for (let i = first; i < last; i++) {
     const row = rows[i];
-    const head = row.type !== 'day' && row.head;
     rendered.push(
-      <div
-        key={row.key}
-        className={`vrow${head ? ' head' : ''}${row.type === 'day' ? ' dayrow' : ''}`}
-        data-rk={row.key}
-      >
-        <RowView
-          row={row}
-          expanded={expanded.has(row.key)}
-          actions={actions}
-          decor={props.decor?.[row.key]}
-        />
-      </div>,
+      elements.get({
+        row,
+        expanded: expanded.has(row.key),
+        actions,
+        decor: props.decor?.[row.key],
+      }),
     );
   }
+  elements.sweep();
 
   return (
     <div className="logcol">
