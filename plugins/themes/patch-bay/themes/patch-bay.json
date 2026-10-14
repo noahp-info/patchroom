@@ -5,7 +5,7 @@
   "name": "Patch Bay",
   "description": "Anodized panel greys, silkscreen ink, and four cable colors on warm paper.",
   "author": "Patchroom",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "modes": {
     "light": {
       "bg": "#f1efea",
