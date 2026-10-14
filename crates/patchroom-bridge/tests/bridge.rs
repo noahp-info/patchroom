@@ -708,3 +708,137 @@ fn bridge_can_be_driven_after_dropping_a_subscriber() {
     );
     assert_eq!(c.reply(Duration::from_secs(3)), ServerMessage::Ack);
 }
+
+fn perm_payload_with(suggestions: Value) -> Value {
+    let mut p = perm_payload("s1", None);
+    p["permission_suggestions"] = suggestions;
+    p
+}
+
+#[test]
+fn allow_always_applies_the_clis_own_permission_suggestions() {
+    let env = Env::new();
+    let b = env.bridge(|_| {});
+    let rx = b.subscribe();
+    let suggestions = json!([{
+        "type": "addRules",
+        "rules": [{"toolName": "Bash", "ruleContent": "echo:*"}],
+        "behavior": "allow",
+        "destination": "localSettings"
+    }]);
+    let c = HookConn::send(&env.sock, perm_payload_with(suggestions.clone()));
+    let prompt = next_matching(&rx, |e| match e {
+        BridgeEvent::Permission(p) => Some(p.clone()),
+        _ => None,
+    });
+    assert_eq!(prompt.suggestions, suggestions);
+    b.answer_permission(prompt.id, PermissionAnswer::AllowAlways)
+        .unwrap();
+    match c.reply(Duration::from_secs(3)) {
+        ServerMessage::Decision { output, resolution } => {
+            assert_eq!(resolution, Resolution::Chat);
+            assert_eq!(
+                output.unwrap(),
+                json!({"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{
+                    "behavior":"allow","updatedPermissions": suggestions}}})
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn allow_always_without_suggestions_is_refused_and_keeps_the_prompt_open() {
+    let env = Env::new();
+    let b = env.bridge(|_| {});
+    let rx = b.subscribe();
+    let c = HookConn::send(&env.sock, perm_payload_with(json!([])));
+    let id = next_matching(&rx, |e| match e {
+        BridgeEvent::Permission(p) => Some(p.id),
+        _ => None,
+    });
+    assert_eq!(
+        b.answer_permission(id, PermissionAnswer::AllowAlways),
+        Err(AnswerError::NoSuggestions(id))
+    );
+    assert_eq!(b.pending().len(), 1);
+    b.answer_permission(id, PermissionAnswer::Allow).unwrap();
+    assert!(matches!(
+        c.reply(Duration::from_secs(3)),
+        ServerMessage::Decision {
+            output: Some(_),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn release_to_terminal_ends_the_hook_with_no_decision() {
+    let env = Env::new();
+    let b = env.bridge(|_| {});
+    let rx = b.subscribe();
+    let c = HookConn::send(&env.sock, ask_payload("s1"));
+    let id = next_matching(&rx, |e| match e {
+        BridgeEvent::Question(q) => Some(q.id),
+        _ => None,
+    });
+    assert!(b.release_to_terminal(id));
+    match c.reply(Duration::from_secs(2)) {
+        ServerMessage::Decision { output, resolution } => {
+            assert!(output.is_none());
+            assert_eq!(resolution, Resolution::Terminal);
+        }
+        other => panic!("{other:?}"),
+    }
+    let resolved = next_matching(&rx, |e| match e {
+        BridgeEvent::Resolved(r) => Some(r.clone()),
+        _ => None,
+    });
+    assert_eq!(resolved.resolution, Resolution::Terminal);
+    assert!(!b.release_to_terminal(id), "second release finds nothing");
+    assert!(b.pending().is_empty());
+}
+
+#[test]
+fn question_events_carry_the_tool_input() {
+    let env = Env::new();
+    let b = env.bridge(|_| {});
+    let rx = b.subscribe();
+    let _c = HookConn::send(&env.sock, ask_payload("s1"));
+    let q = next_matching(&rx, |e| match e {
+        BridgeEvent::Question(q) => Some(q.clone()),
+        _ => None,
+    });
+    assert_eq!(q.tool_use_id.as_deref(), Some("toolu_q"));
+    assert_eq!(
+        q.tool_input["questions"][0]["question"],
+        "Which color do you prefer?"
+    );
+}
+
+#[test]
+fn statusline_frames_are_acked_and_published() {
+    let env = Env::new();
+    let b = env.bridge(|_| {});
+    let rx = b.subscribe();
+    b.track_session("dm-1", None, Some("sid-1".into()));
+    let mut stream = UnixStream::connect(&env.sock).unwrap();
+    let req = json!({"v":1,"type":"statusline","session_key":"dm-1",
+        "payload":{"session_id":"sid-1","model":{"display_name":"Haiku"}},
+        "output":"\u{1b}[1mhi\u{1b}[0m"});
+    writeln!(stream, "{req}").unwrap();
+    let mut line = String::new();
+    BufReader::new(&stream).read_line(&mut line).unwrap();
+    assert_eq!(
+        protocol::parse_server_line(&line).unwrap(),
+        ServerMessage::Ack
+    );
+    let rec = next_matching(&rx, |e| match e {
+        BridgeEvent::Statusline(r) => Some(r.clone()),
+        _ => None,
+    });
+    assert_eq!(rec.session.key.as_deref(), Some("dm-1"));
+    assert_eq!(rec.session.session_id.as_deref(), Some("sid-1"));
+    assert_eq!(rec.payload["model"]["display_name"], "Haiku");
+    assert_eq!(rec.output, "\u{1b}[1mhi\u{1b}[0m");
+}

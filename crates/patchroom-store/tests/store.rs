@@ -858,3 +858,72 @@ proptest! {
         prop_assert_eq!(f.store.message(m.id).unwrap().body, body);
     }
 }
+
+// ---- badges ----
+
+#[test]
+fn badges_default_to_none_and_track_unread_and_needs_you_independently() {
+    let f = fixture();
+    let a = dm(&f, "a");
+    let b = badges_of(&f, &a);
+    assert_eq!((b.unread, b.needs_you), (0, false));
+    assert_eq!(f.store.add_unread(&me(), a.id, 2).unwrap().unread, 2);
+    assert_eq!(f.store.add_unread(&me(), a.id, 1).unwrap().unread, 3);
+    let b = f.store.set_needs_you(&me(), a.id, true).unwrap();
+    assert_eq!((b.unread, b.needs_you), (3, true));
+    // Viewing clears unread only: needs-you stays until the prompt is resolved.
+    let b = f.store.clear_unread(&me(), a.id).unwrap();
+    assert_eq!((b.unread, b.needs_you), (0, true));
+    let b = f.store.set_needs_you(&me(), a.id, false).unwrap();
+    assert_eq!((b.unread, b.needs_you), (0, false));
+}
+
+fn badges_of(f: &Fixture, c: &Conversation) -> Badges {
+    f.store.badges(c.id).unwrap()
+}
+
+#[test]
+fn badges_first_write_can_be_any_kind() {
+    let f = fixture();
+    let (a, b, c) = (dm(&f, "a"), dm(&f, "b"), dm(&f, "c"));
+    f.store.set_needs_you(&me(), a.id, true).unwrap();
+    f.store.add_unread(&me(), b.id, 4).unwrap();
+    f.store.clear_unread(&me(), c.id).unwrap();
+    assert_eq!(
+        (badges_of(&f, &a).needs_you, badges_of(&f, &a).unread),
+        (true, 0)
+    );
+    assert_eq!(
+        (badges_of(&f, &b).needs_you, badges_of(&f, &b).unread),
+        (false, 4)
+    );
+    assert_eq!(f.store.list_badges().unwrap().len(), 3);
+}
+
+#[test]
+fn badges_survive_reopen_and_die_with_the_conversation() {
+    let dir = tempfile::tempdir().unwrap();
+    let (conv, ws) = {
+        let s = Store::open(dir.path()).unwrap();
+        let ws = s.create_workspace(&me(), "W").unwrap();
+        let conv = s
+            .create_conversation(&me(), &new_conv(&ws, ConversationKind::Dm, "x"))
+            .unwrap();
+        s.add_unread(&me(), conv.id, 5).unwrap();
+        s.set_needs_you(&me(), conv.id, true).unwrap();
+        (conv, ws)
+    };
+    let s = Store::open(dir.path()).unwrap();
+    let b = s.badges(conv.id).unwrap();
+    assert_eq!((b.unread, b.needs_you), (5, true));
+    s.delete_conversation(conv.id).unwrap();
+    assert!(s.list_badges().unwrap().is_empty());
+    let _ = ws;
+}
+
+#[test]
+fn badges_for_an_unknown_conversation_are_refused() {
+    let f = fixture();
+    let ghost = ulid::Ulid::generate();
+    assert!(f.store.add_unread(&me(), ghost, 1).is_err());
+}

@@ -1,5 +1,5 @@
 # CI: PRs and pushes to dev/main. Stale runs are cancelled when new commits arrive.
-# ubuntu: cheap lint + test for everything that builds without WebKit.
+# ubuntu: cheap lint + test for everything that builds without WebKit, plus the Playwright suite.
 # macos: the Tauri shell (clippy + debug bundle), the only job that needs the full toolchain.
 name: CI
 
@@ -47,11 +47,44 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -C ui lint
       - run: pnpm -C ui build
+      # The debug-only e2e runner must not ship: it is bundled only with VITE_PR_E2E=1.
+      - name: No e2e runner in the production bundle
+        run: "! grep -rlE 'e2e_report|__PR_E2E__' ui/dist"
+
+  # Every UI test in a real Chromium: shell, layout sweeps, chat view, widgets, virtualization and
+  # terminal fidelity against pyte. The corpus render test skips here (CI has no local corpus).
+  ui-e2e:
+    name: UI (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The fidelity test replays a recorded claude stream through xterm.js and through pyte, the
+      # reference emulator. Create the pinned pyte virtualenv it reads (ubuntu-latest ships python3).
+      - name: Set up the pyte venv
+        run: pnpm -C ui test:setup
+      - name: Install Chromium
+        run: pnpm -C ui exec playwright install --with-deps chromium
+      - name: Run the Playwright suite
+        run: pnpm -C ui test
+      - name: Upload traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: ui/node_modules/.playwright-results
+          retention-days: 7
 
   tauri-macos:
     name: Tauri (macOS debug build)
     runs-on: macos-latest
-    needs: [rust, ui]
+    needs: [rust, ui, ui-e2e]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

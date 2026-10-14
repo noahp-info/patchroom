@@ -53,6 +53,11 @@ impl HookInfo {
         })
     }
 
+    /// True for the ExitPlanMode tool (plan approval).
+    pub fn is_exit_plan_mode(&self) -> bool {
+        self.tool_name.as_deref() == Some("ExitPlanMode")
+    }
+
     /// True for the AskUserQuestion tool.
     pub fn is_ask_user_question(&self) -> bool {
         self.tool_name.as_deref() == Some("AskUserQuestion")

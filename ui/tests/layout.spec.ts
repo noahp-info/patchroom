@@ -141,7 +141,7 @@ test.describe('layout', () => {
 
         // Nothing spills past the header, and the header itself does not scroll.
         const head = await box('.ch');
-        const end = await box('.ch .tools button');
+        const end = await box('.ch .tools button[aria-label="End session"]');
         expect(end.x + end.width, `End session inside header, ${at}`).toBeLessThanOrEqual(
           head.x + head.width,
         );

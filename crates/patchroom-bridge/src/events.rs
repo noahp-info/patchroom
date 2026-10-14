@@ -140,7 +140,30 @@ pub struct QuestionPrompt {
     pub tool_use_id: Option<String>,
     /// The questions.
     pub questions: Vec<Question>,
+    /// The tool input as the CLI sent it.
+    pub tool_input: Value,
     /// How long the bridge holds the TUI picker back before releasing it.
+    pub wait: std::time::Duration,
+}
+
+/// An ExitPlanMode plan approval waiting for a chat answer.
+///
+/// No hook decision closes the TUI approval dialog, so a chat client releases the hold
+/// ([`crate::Bridge::release`]) and answers with the dialog's own keys. Like a question,
+/// the dialog stays hidden while the hook is held.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlanPrompt {
+    /// Prompt id to pass to `release`.
+    pub id: PromptId,
+    /// The session.
+    pub session: SessionRef,
+    /// Tool use id of the ExitPlanMode call.
+    pub tool_use_id: Option<String>,
+    /// The plan (markdown).
+    pub plan: String,
+    /// The tool input as the CLI sent it.
+    pub tool_input: Value,
+    /// How long the bridge holds the TUI dialog back before releasing it.
     pub wait: std::time::Duration,
 }
 
@@ -168,6 +191,17 @@ pub struct HookRecord {
     pub transcript_path: Option<PathBuf>,
 }
 
+/// One statusLine render, teed by the statusLine wrapper.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatuslineRecord {
+    /// The session.
+    pub session: SessionRef,
+    /// The statusLine stdin JSON as the CLI sent it.
+    pub payload: Value,
+    /// Output of the user's own statusLine command (ANSI included), empty without one.
+    pub output: String,
+}
+
 /// Everything the bridge publishes.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BridgeEvent {
@@ -179,6 +213,10 @@ pub enum BridgeEvent {
     Permission(PermissionPrompt),
     /// An AskUserQuestion awaits a chat answer.
     Question(QuestionPrompt),
+    /// A plan approval awaits a chat answer.
+    Plan(PlanPrompt),
     /// A pending prompt was resolved.
     Resolved(PromptResolved),
+    /// The statusLine wrapper reported a render.
+    Statusline(StatuslineRecord),
 }

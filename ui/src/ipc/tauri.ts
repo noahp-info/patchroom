@@ -5,6 +5,7 @@ import type { Ipc, SectionInfo, SessionInfo } from './types';
 /** `session_list` row exactly as the backend serializes it (snake_case). */
 interface WireSession extends Omit<SessionInfo, 'sectionId'> {
   section_id?: string | null;
+  needs_you?: number | boolean;
 }
 
 /**
@@ -21,7 +22,11 @@ export function createTauriIpc(): Ipc {
     sessionKill: (id) => invoke('session_kill', { id }),
     async sessionList() {
       const rows = await invoke<WireSession[]>('session_list');
-      return rows.map(({ section_id, ...rest }) => ({ ...rest, sectionId: section_id ?? null }));
+      return rows.map(({ section_id, needs_you, ...rest }) => ({
+        ...rest,
+        sectionId: section_id ?? null,
+        needsYou: rest.needsYou ?? needs_you,
+      }));
     },
     sessionResume: (id, cols, rows) => invoke('session_resume', { id, cols, rows }),
     sessionRename: (id, name) => invoke('session_rename', { id, name }),
@@ -31,6 +36,13 @@ export function createTauriIpc(): Ipc {
     sectionCreate: (name) => invoke('section_create', { name }),
     sectionSetCollapsed: (id, collapsed) => invoke('section_set_collapsed', { id, collapsed }),
     pickFolder: (defaultPath) => invoke<string | null>('pick_folder', { defaultPath }),
+    chatHistory: (id, before, limit) => invoke('chat_history', { id, before, limit }),
+    chatThread: (id, toolUseId) => invoke('chat_thread', { id, toolUseId }),
+    chatImage: (id, ref) => invoke('chat_image', { id, ref }),
+    promptAnswer: (id, promptId, answer) => invoke('prompt_answer', { id, promptId, answer }),
+    sessionMarkRead: (id) => invoke('session_mark_read', { id }),
+    statuslineCycleMode: (id) => invoke('statusline_cycle_mode', { id }),
+    sessionView: (id, view) => invoke('session_view', { id, view }),
     on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
   };
 }

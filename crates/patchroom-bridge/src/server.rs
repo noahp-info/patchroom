@@ -16,8 +16,9 @@ use serde_json::{json, Value};
 
 use crate::agents::AgentsSource;
 use crate::events::{
-    BridgeEvent, HookRecord, NeedsKind, PermissionPrompt, PromptId, PromptResolved, Question,
-    QuestionPrompt, Resolution, SessionRef, Status, StatusEvent, StatusSource,
+    BridgeEvent, HookRecord, NeedsKind, PermissionPrompt, PlanPrompt, PromptId, PromptResolved,
+    Question, QuestionPrompt, Resolution, SessionRef, Status, StatusEvent, StatusSource,
+    StatuslineRecord,
 };
 use crate::hookinfo::HookInfo;
 use crate::protocol::{self, ClientMessage, ServerMessage};
@@ -43,8 +44,8 @@ impl Default for BridgeConfig {
     fn default() -> Self {
         Self {
             socket_path: PathBuf::new(),
-            permission_wait: Duration::from_secs(60),
-            ask_wait: Duration::from_secs(30),
+            permission_wait: Duration::from_secs(300),
+            ask_wait: Duration::from_secs(120),
             transcript_poll: Duration::from_millis(200),
         }
     }
@@ -92,6 +93,9 @@ pub enum AnswerError {
     /// A question has no answer.
     #[error("missing answer for question: {0}")]
     MissingAnswer(String),
+    /// "Always allow" was asked for a prompt the CLI offered no `permission_suggestions` for.
+    #[error("{0} has no permission suggestions to apply")]
+    NoSuggestions(PromptId),
 }
 
 /// A chat decision for a permission prompt.
@@ -99,6 +103,9 @@ pub enum AnswerError {
 pub enum PermissionAnswer {
     /// Allow this call.
     Allow,
+    /// Allow this call and apply the CLI's own `permission_suggestions`, as option 2 in the
+    /// TUI does ("Yes, and always allow ...").
+    AllowAlways,
     /// Deny this call with a message shown to the model.
     Deny {
         /// Reason handed to the model.
@@ -148,6 +155,8 @@ pub enum PendingKind {
     Permission,
     /// AskUserQuestion.
     Question,
+    /// ExitPlanMode plan approval.
+    Plan,
 }
 
 /// Snapshot of one pending prompt.
@@ -175,6 +184,7 @@ struct Pending {
     tool_use_id: Option<String>,
     transcript_path: Option<PathBuf>,
     questions: Vec<Question>,
+    suggestions: Value,
     tx: Sender<(Outcome, Resolution)>,
 }
 
@@ -288,21 +298,54 @@ impl Bridge {
     }
 
     /// Answer a pending permission prompt. First answer wins.
+    ///
+    /// [`PermissionAnswer::AllowAlways`] returns `updatedPermissions` equal to the
+    /// `permission_suggestions` the CLI sent with the request, so the CLI applies its own
+    /// rule exactly as if option 2 had been picked in the TUI.
     pub fn answer_permission(
         &self,
         id: PromptId,
         answer: PermissionAnswer,
     ) -> Result<(), AnswerError> {
-        let decision = match answer {
-            PermissionAnswer::Allow => json!({"behavior": "allow"}),
-            PermissionAnswer::Deny { message } => json!({"behavior": "deny", "message": message}),
-        };
-        let output = json!({"hookSpecificOutput": {
-            "hookEventName": "PermissionRequest",
-            "decision": decision,
-        }});
-        self.inner
-            .answer(id, PendingKind::Permission, |_| Ok(output))
+        self.inner.answer(id, PendingKind::Permission, |p| {
+            let decision = match &answer {
+                PermissionAnswer::Allow => json!({"behavior": "allow"}),
+                PermissionAnswer::AllowAlways => {
+                    let usable = match &p.suggestions {
+                        Value::Array(a) => !a.is_empty(),
+                        Value::Null => false,
+                        _ => true,
+                    };
+                    if !usable {
+                        return Err(AnswerError::NoSuggestions(id));
+                    }
+                    json!({"behavior": "allow", "updatedPermissions": p.suggestions})
+                }
+                PermissionAnswer::Deny { message } => {
+                    json!({"behavior": "deny", "message": message})
+                }
+            };
+            Ok(json!({"hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": decision,
+            }}))
+        })
+    }
+
+    /// Hand a pending prompt to the terminal now: the hook returns no decision and exits,
+    /// and the TUI (picker or dialog) decides. Resolves as [`Resolution::Terminal`].
+    /// Returns false when the prompt is already gone.
+    pub fn release_to_terminal(&self, id: PromptId) -> bool {
+        self.release(id, Resolution::Terminal)
+    }
+
+    /// Release a pending prompt's hook with no decision and report `resolution`.
+    ///
+    /// A chat client uses this when it will answer through the TUI itself (keystrokes), for
+    /// example a plan approval, which no hook decision can close. Returns false when the
+    /// prompt is already gone.
+    pub fn release(&self, id: PromptId, resolution: Resolution) -> bool {
+        self.inner.resolve(id, Outcome::Release, resolution)
     }
 
     /// Answer a pending AskUserQuestion prompt. First answer wins.
@@ -518,6 +561,11 @@ fn serve_connection(inner: &Arc<Inner>, stream: UnixStream) {
             wait_ms,
             payload,
         }) => inner.handle_hook(&stream, session_key, ppid, wait_ms, payload),
+        Ok(ClientMessage::Statusline {
+            session_key,
+            payload,
+            output,
+        }) => inner.handle_statusline(session_key, payload, output),
     };
     let _ = protocol::write_frame(&mut out, &reply);
 }
@@ -575,6 +623,43 @@ impl Inner {
         true
     }
 
+    fn handle_statusline(
+        &self,
+        session_key: Option<String>,
+        payload: Value,
+        output: String,
+    ) -> ServerMessage {
+        let info = HookInfo {
+            event: "Statusline".to_owned(),
+            session_id: payload
+                .get("session_id")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            tool_name: None,
+            tool_use_id: None,
+            tool_input: Value::Null,
+            transcript_path: payload
+                .get("transcript_path")
+                .and_then(Value::as_str)
+                .map(PathBuf::from),
+            prompt_id: None,
+            cwd: payload
+                .get("cwd")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            permission_mode: None,
+            notification_type: None,
+            permission_suggestions: Value::Null,
+        };
+        let session = self.resolve_session(session_key, 0, &info);
+        self.emit(BridgeEvent::Statusline(StatuslineRecord {
+            session,
+            payload,
+            output,
+        }));
+        ServerMessage::Ack
+    }
+
     fn handle_hook(
         self: &Arc<Self>,
         stream: &UnixStream,
@@ -599,9 +684,18 @@ impl Inner {
         if let Some(status) = status_for(&info) {
             self.set_status(&session, status, StatusSource::Hook);
         }
-        let kind = match (info.event.as_str(), info.is_ask_user_question()) {
-            ("PermissionRequest", _) => PendingKind::Permission,
-            ("PreToolUse", true) => PendingKind::Question,
+        let kind = match info.event.as_str() {
+            // The plan dialog cannot be answered by a PermissionRequest decision. If this
+            // fires, the PreToolUse hold already ended and the dialog is the user's.
+            "PermissionRequest" if info.is_exit_plan_mode() => {
+                return ServerMessage::Decision {
+                    output: None,
+                    resolution: Resolution::NoChat,
+                };
+            }
+            "PermissionRequest" => PendingKind::Permission,
+            "PreToolUse" if info.is_ask_user_question() => PendingKind::Question,
+            "PreToolUse" if info.is_exit_plan_mode() => PendingKind::Plan,
             _ => return ServerMessage::Ack,
         };
         if !self.chat_attached.load(Ordering::SeqCst) {
@@ -623,7 +717,7 @@ impl Inner {
     ) -> ServerMessage {
         let configured = match kind {
             PendingKind::Permission => self.config.permission_wait,
-            PendingKind::Question => self.config.ask_wait,
+            PendingKind::Question | PendingKind::Plan => self.config.ask_wait,
         };
         // Always answer before the hook's own deadline.
         let hook_bound = Duration::from_millis(wait_ms).saturating_sub(Duration::from_millis(250));
@@ -652,6 +746,7 @@ impl Inner {
                 tool_use_id: info.tool_use_id.clone(),
                 transcript_path: info.transcript_path.clone(),
                 questions: questions.clone(),
+                suggestions: info.permission_suggestions.clone(),
                 tx,
             },
         );
@@ -666,11 +761,25 @@ impl Inner {
                 permission_mode: info.permission_mode.clone(),
                 prompt_id: info.prompt_id.clone(),
             })),
+            PendingKind::Plan => self.emit(BridgeEvent::Plan(PlanPrompt {
+                id,
+                session: session.clone(),
+                tool_use_id: info.tool_use_id.clone(),
+                plan: info
+                    .tool_input
+                    .get("plan")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                tool_input: info.tool_input.clone(),
+                wait,
+            })),
             PendingKind::Question => self.emit(BridgeEvent::Question(QuestionPrompt {
                 id,
                 session: session.clone(),
                 tool_use_id: info.tool_use_id.clone(),
                 questions,
+                tool_input: info.tool_input.clone(),
                 wait,
             })),
         }
@@ -768,7 +877,7 @@ impl Inner {
                     "PostToolUse" | "PostToolUseFailure" => {
                         let same_tool = info.tool_name.as_deref() == Some(p.tool_name.as_str());
                         let matched = match (&p.tool_use_id, &info.tool_use_id) {
-                            (Some(a), Some(b)) if p.kind == PendingKind::Question => a == b,
+                            (Some(a), Some(b)) if p.kind != PendingKind::Permission => a == b,
                             (Some(a), Some(b)) => {
                                 a == b || (same_tool && p.tool_input == info.tool_input)
                             }
@@ -854,6 +963,7 @@ fn status_for(info: &HookInfo) -> Option<Status> {
         "Stop" | "StopFailure" | "SessionStart" => Some(Status::Idle),
         "PermissionRequest" => Some(Status::NeedsYou(NeedsKind::Permission)),
         "PreToolUse" if info.is_ask_user_question() => Some(Status::NeedsYou(NeedsKind::Question)),
+        "PreToolUse" if info.is_exit_plan_mode() => Some(Status::NeedsYou(NeedsKind::Permission)),
         "Notification" => match info.notification_type.as_deref() {
             Some("permission_prompt") => Some(Status::NeedsYou(NeedsKind::Permission)),
             Some("elicitation_dialog") => Some(Status::NeedsYou(NeedsKind::Question)),

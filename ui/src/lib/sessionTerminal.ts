@@ -142,12 +142,12 @@ export class SessionTerminal {
   }
 
   /** WebGL only on the visible terminal: browsers cap live GL contexts. */
-  setActive(active: boolean): void {
+  setActive(active: boolean, focus = true): void {
     if (!this.opened || this.disposed) return;
     if (active) {
       this.attachWebgl();
       this.scheduleFit();
-      this.term.focus();
+      if (focus) this.term.focus();
     } else {
       this.detachWebgl();
     }
