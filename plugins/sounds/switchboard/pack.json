@@ -16,6 +16,10 @@
     "due": "switch38.ogg",
     "session": "switch1.ogg"
   },
+  "norm": {
+    "decision": 0.9,
+    "session": 0.93
+  },
   "sounds": {
     "needs": "sounds/needs.m4a",
     "done": "sounds/done.m4a",

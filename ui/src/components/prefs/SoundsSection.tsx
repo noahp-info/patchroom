@@ -1,5 +1,6 @@
 import './sounds/sounds.css';
 import { useCatalog } from '../../sound/catalog.ts';
+import { keepGain } from '../../sound/mix.ts';
 import { ClaudeImport } from './sounds/ClaudeImport.tsx';
 import { SoundCredits } from './sounds/Credits.tsx';
 import { DmSounds } from './sounds/DmSounds.tsx';
@@ -27,7 +28,8 @@ export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string
   const setChoice = (e: SoundEvent, c: MixChoice) => patch({ mix: { ...s.mix, [e]: c } });
   const useAll = (pack: PackInfo) => {
     const mix = { ...s.mix };
-    for (const e of SOUND_EVENTS) if (pack.events[e]) mix[e] = { pack: pack.id };
+    for (const e of SOUND_EVENTS)
+      if (pack.events[e]) mix[e] = keepGain({ pack: pack.id }, s.mix[e]);
     patch({ mix });
   };
   const setDm = (id: string, pref: DmSoundPref) => {
@@ -38,7 +40,7 @@ export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string
   };
 
   return (
-    <div className="pf-section" data-testid="prefs-sounds">
+    <div className="pf-section sounds-pane" data-testid="prefs-sounds">
       <h2>Sounds</h2>
       <label className="chk">
         <input

@@ -4,6 +4,7 @@ import type {
   ImportedFile,
   MixChoice,
   PackInfo,
+  SoundFileData,
 } from '../components/prefs/ipc.ts';
 import type { Theme } from '../theme/types.ts';
 
@@ -175,9 +176,9 @@ export interface Ipc {
   notifyTest(): Promise<void>;
   /** Sound packs (docs/gauntlet/SOUND-PACKS-BAR.md). */
   soundPacks(): Promise<PackInfo[]>;
-  soundFile(packId: string, event: string): Promise<{ dataUrl: string }>;
+  soundFile(packId: string, event: string): Promise<SoundFileData>;
   soundCustomList(): Promise<ImportedFile[]>;
-  soundCustomFile(id: string): Promise<{ dataUrl: string }>;
+  soundCustomFile(id: string): Promise<SoundFileData>;
   /** Native file picker for the user's own sound. Resolves null when cancelled. */
   soundPickFile(): Promise<string | null>;
   soundImportFile(path: string): Promise<ImportedFile>;
@@ -429,6 +430,7 @@ export type {
   ImportedFile,
   MixChoice,
   PackInfo,
+  SoundFileData,
 } from '../components/prefs/ipc.ts';
 
 export interface Prefs {

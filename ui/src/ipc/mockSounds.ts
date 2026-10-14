@@ -1,4 +1,10 @@
-import type { ClaudeProfile, ImportedFile, PackInfo, SoundEvent } from '../components/prefs/ipc.ts';
+import type {
+  ClaudeProfile,
+  ImportedFile,
+  PackInfo,
+  SoundEvent,
+  SoundFileData,
+} from '../components/prefs/ipc.ts';
 import generated from '../../../plugins/sounds/generated-packs.json';
 
 /**
@@ -115,6 +121,10 @@ export interface MockDiskFile {
   name: string;
   bytes: number;
   durationMs: number;
+  /** Normalizing gain the backend would measure. Default 1. */
+  norm?: number;
+  /** Loudest sample after the gain. Default 0.5. */
+  peak?: number;
 }
 
 export const SOUND_LIMITS = {
@@ -142,9 +152,9 @@ export interface MockSoundControl {
 export interface MockSoundBackend {
   control: MockSoundControl;
   soundPacks(): Promise<PackInfo[]>;
-  soundFile(packId: string, event: string): Promise<{ dataUrl: string }>;
+  soundFile(packId: string, event: string): Promise<SoundFileData>;
   soundCustomList(): Promise<ImportedFile[]>;
-  soundCustomFile(id: string): Promise<{ dataUrl: string }>;
+  soundCustomFile(id: string): Promise<SoundFileData>;
   soundPickFile(): Promise<string | null>;
   soundImportFile(path: string): Promise<ImportedFile>;
   soundCustomRemove(id: string): Promise<void>;
@@ -154,6 +164,14 @@ export interface MockSoundBackend {
 
 const SEED_DISK: Record<string, MockDiskFile> = {
   '/Users/me/Sounds/chime.wav': { name: 'chime.wav', bytes: 96_000, durationMs: 1200 },
+  // A hot file: it peaks at full scale, so the clamp has work to do.
+  '/Users/me/Sounds/airhorn.wav': {
+    name: 'airhorn.wav',
+    bytes: 120_000,
+    durationMs: 1500,
+    norm: 0.9,
+    peak: 1,
+  },
   '/Users/me/Sounds/knock.m4a': { name: 'knock.m4a', bytes: 41_000, durationMs: 800 },
   '/Users/me/Sounds/theme-song.mp3': {
     name: 'theme-song.mp3',
@@ -193,11 +211,11 @@ export function createMockSoundBackend(opts: MockSoundOptions = {}): MockSoundBa
       );
       if (key) {
         const res = await fetch(await audioUrls[key]());
-        return { dataUrl: await blobToDataUrl(await res.blob()) };
+        return { dataUrl: await blobToDataUrl(await res.blob()), norm: 1, peak: 0.75 };
       }
       // Imported packs have no audio in the mock: a tone per event stands in.
       const at = Math.max(0, EVENTS.indexOf(event as SoundEvent));
-      return { dataUrl: toneDataUrl(440 * 2 ** (at / 12)) };
+      return { dataUrl: toneDataUrl(440 * 2 ** (at / 12)), norm: 1, peak: 0.75 };
     },
     async soundCustomList() {
       control.calls.push('sound_custom_list');
@@ -206,7 +224,8 @@ export function createMockSoundBackend(opts: MockSoundOptions = {}): MockSoundBa
     async soundCustomFile(id) {
       control.calls.push(`sound_custom_file:${id}`);
       if (!control.custom.has(id)) throw new Error('No such sound.');
-      return { dataUrl: toneDataUrl(523.25) };
+      const rec = control.custom.get(id)!;
+      return { dataUrl: toneDataUrl(523.25), norm: rec.norm ?? 1, peak: rec.peak ?? 0.5 };
     },
     async soundPickFile() {
       control.calls.push('sound_pick_file');
@@ -233,7 +252,13 @@ export function createMockSoundBackend(opts: MockSoundOptions = {}): MockSoundBa
         );
       }
       const id = `01J${Math.random().toString(36).slice(2, 12).toUpperCase().padEnd(10, '0')}`;
-      const rec = { id, name: f.name.replace(/\.[^.]+$/, ''), durationMs: f.durationMs };
+      const rec = {
+        id,
+        name: f.name.replace(/\.[^.]+$/, ''),
+        durationMs: f.durationMs,
+        norm: f.norm ?? 1,
+        peak: f.peak ?? 0.5,
+      };
       control.custom.set(id, rec);
       return rec;
     },

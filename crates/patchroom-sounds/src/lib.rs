@@ -4,12 +4,14 @@
 //! * [`packs`]: the registry (generated packs, bundled file packs, imported packs) and file
 //!   serving as data URLs.
 //! * [`custom`]: the user's own sound files: import with limits, list, remove, prune.
+//! * [`loudness`]: RMS and peak measurement, and the normalizing gain stored for imports.
 //! * [`claude`]: read-only discovery and import of the user's Claude Code sound profiles.
 //!
 //! Nothing here opens a socket, and nothing writes outside the app data dir.
 
 pub mod claude;
 pub mod custom;
+pub mod loudness;
 pub mod media;
 pub mod packs;
 

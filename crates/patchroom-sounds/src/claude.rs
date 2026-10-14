@@ -21,6 +21,7 @@ use patchroom_prefs::valid_sound_id;
 use serde::Serialize;
 
 use crate::custom::{check_file, make_private_dir, write_private};
+use crate::loudness;
 use crate::media::Kind;
 use crate::packs::IMPORTED_DIR;
 use crate::{Result, SoundError, SOUNDS_DIR};
@@ -187,12 +188,17 @@ pub fn import_profile(config_dir: &Path, home: &Path, data_dir: &Path, id: &str)
     make_private_dir(&staging)?;
     let result = (|| {
         let mut sounds = serde_json::Map::new();
+        let mut norm = serde_json::Map::new();
         let mut skipped = Vec::new();
         for (event, src) in &found {
             match check_file(src) {
                 Ok((kind, bytes, _)) => {
                     let name = format!("{event}.{}", kind.ext());
                     write_private(&staging.join(&name), &bytes)?;
+                    norm.insert(
+                        event.clone(),
+                        serde_json::json!(loudness::norm_for(&bytes, kind.ext())),
+                    );
                     sounds.insert(event.clone(), serde_json::Value::String(name));
                 }
                 Err(e) => skipped.push(format!("{event}: {e}")),
@@ -213,6 +219,7 @@ pub fn import_profile(config_dir: &Path, home: &Path, data_dir: &Path, id: &str)
             "author": "You",
             "source": format!("Imported from your Claude sound profile \"{id}\""),
             "sounds": sounds,
+            "norm": norm,
         });
         let bytes =
             serde_json::to_vec_pretty(&manifest).map_err(|e| SoundError::new(e.to_string()))?;
@@ -372,6 +379,39 @@ mod tests {
         // Importing again replaces the pack without error.
         import_profile(&cfg, &home, &data, "retro").unwrap();
         assert_eq!(list_packs(None, &data).len(), 1);
+    }
+
+    #[test]
+    fn imported_profile_files_are_measured_and_the_original_is_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (home, cfg) = fixture(tmp.path());
+        let loud = crate::loudness::tests::sine_wav(0.9, 300);
+        let quiet = crate::loudness::tests::sine_wav(0.01, 300);
+        std::fs::write(home.join("audio/loud.wav"), &loud).unwrap();
+        std::fs::write(home.join("audio/quiet.wav"), &quiet).unwrap();
+        std::fs::write(
+            cfg.join("sounds/profiles/mixed.sh"),
+            "SOUND_STOP=\"$HOME/audio/loud.wav\"\nSOUND_SESSION=\"$HOME/audio/quiet.wav\"\n\
+             SOUND_TASK=\"$HOME/audio/done.wav\"\n",
+        )
+        .unwrap();
+        let data = tmp.path().join("data");
+        let before = snapshot(&home);
+        import_profile(&cfg, &home, &data, "mixed").unwrap();
+        assert_eq!(snapshot(&home), before, "the source is only read");
+        let p = list_packs(None, &data).remove(0);
+        assert!(p.norm["done"] < 0.3, "{:?}", p.norm);
+        assert!(p.norm["needs"] < 0.3, "{:?}", p.norm);
+        assert!(p.norm["session"] > 1.5, "{:?}", p.norm);
+        assert!(
+            (p.norm["bell"] - 1.0).abs() < f64::EPSILON,
+            "silent fixture"
+        );
+        // The copy is byte-identical to the original.
+        let copy = std::fs::read(data.join("sounds/packs/claude-mixed/session.wav")).unwrap();
+        assert_eq!(copy, quiet);
+        let json = serde_json::to_value(&p).unwrap();
+        assert!(json["norm"]["done"].is_number());
     }
 
     #[test]

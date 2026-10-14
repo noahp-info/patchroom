@@ -59,6 +59,11 @@ pub struct PackInfo {
     pub source: String,
     /// Events the pack has a sound for.
     pub events: BTreeMap<String, bool>,
+    /// Normalizing gain per event for a file pack (multiply the sound by it). Bundled packs
+    /// are already leveled, so their entries are 1; imported packs carry the gain measured at
+    /// import. Absent for generated packs.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub norm: BTreeMap<String, f64>,
     /// Note tables of a generated pack, as in `generated-packs.json`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<Value>,
@@ -130,6 +135,7 @@ fn load_generated(dir: &Path, out: &mut Vec<Loaded>) {
                 author: text(p, "author", "Patchroom"),
                 source: text(p, "source", "Generated in the app"),
                 events,
+                norm: BTreeMap::new(),
                 notes: Some(Value::Object(notes.clone())),
                 id,
             },
@@ -176,12 +182,26 @@ fn load_file_pack(root: &Path, kind: PackKind, expect_id: Option<&str>) -> Optio
             author: text(&m, "author", "unknown"),
             source: text(&m, "source", ""),
             events: files.keys().map(|e| (e.clone(), true)).collect(),
+            norm: files
+                .keys()
+                .map(|e| (e.clone(), manifest_norm(&m, e)))
+                .collect(),
             notes: None,
             id,
         },
         root: root.to_path_buf(),
         files,
     })
+}
+
+/// The `norm` gain a manifest stores for `event`; 1 when absent or out of range.
+fn manifest_norm(m: &Value, event: &str) -> f64 {
+    let (lo, hi) = crate::loudness::NORM_RANGE;
+    m.get("norm")
+        .and_then(|n| n.get(event))
+        .and_then(Value::as_f64)
+        .filter(|g| g.is_finite() && (lo..=hi).contains(g))
+        .unwrap_or(1.0)
 }
 
 fn subdirs(dir: &Path) -> Vec<PathBuf> {
@@ -349,6 +369,37 @@ mod tests {
             }
         }
         assert_eq!(n, 56);
+    }
+
+    /// Checklist item 11: every shipped file is leveled. Decodes all of them.
+    #[test]
+    fn every_shipped_file_is_leveled_peak_at_most_minus_2_5_and_mean_between_32_and_20() {
+        let data = tempfile::tempdir().unwrap();
+        let res = bundled();
+        let mut n = 0;
+        let mut report = Vec::new();
+        for p in list_packs(Some(&res), data.path())
+            .iter()
+            .filter(|p| p.kind == PackKind::Files)
+        {
+            for e in SOUND_EVENTS {
+                let url = sound_file(Some(&res), data.path(), &p.id, e).unwrap();
+                let b64 = url.strip_prefix("data:audio/mp4;base64,").unwrap();
+                let bytes = B64.decode(b64).unwrap();
+                let l = crate::loudness::measure(&bytes, "m4a")
+                    .unwrap_or_else(|| panic!("{}/{e} did not decode", p.id));
+                // The level the user hears: the file times the manifest's own `norm` (1 if none).
+                let g_db = 20.0 * p.norm[e].log10();
+                let (mean, peak) = (l.mean_db + g_db, l.peak_db + g_db);
+                eprintln!("{}/{e}: mean {mean:.1} dBFS, peak {peak:.1} dBFS", p.id);
+                if peak > -2.5 || !(-32.0..=-20.0).contains(&mean) || g_db < -1.0 {
+                    report.push(format!("{}/{e}: mean {mean:.1}, peak {peak:.1}", p.id));
+                }
+                n += 1;
+            }
+        }
+        assert_eq!(n, 56, "every shipped file was measured");
+        assert!(report.is_empty(), "out of range: {report:#?}");
     }
 
     #[test]

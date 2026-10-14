@@ -1,6 +1,8 @@
 import { playSound } from '../../../sound/index.ts';
 import { EVENT_INFO } from '../../../sound/pack.ts';
+import { choiceGain, keepGain, resolveChoice, withGain } from '../../../sound/mix.ts';
 import { ChoiceSelect } from './ChoiceSelect.tsx';
+import { GainSlider } from './GainSlider.tsx';
 import { removeCustom, useFileImport } from './useFileImport.ts';
 import {
   SOUND_EVENTS,
@@ -60,7 +62,7 @@ function DmRow(p: Parameters<typeof DmSounds>[0] & { dm: PrefsDm }) {
 
   async function pickFile(e: SoundEvent) {
     const f = await file.pick();
-    if (f) setMix(e, { custom: f.id });
+    if (f) setMix(e, keepGain({ custom: f.id }, own.mix?.[e] ?? resolveChoice(e, s, dm.id)));
   }
 
   return (
@@ -107,6 +109,7 @@ function DmRow(p: Parameters<typeof DmSounds>[0] & { dm: PrefsDm }) {
             <ul className="plist">
               {SOUND_EVENTS.map((e) => {
                 const own1 = own.mix?.[e];
+                const shown = resolveChoice(e, s, dm.id);
                 const custom =
                   own1 && typeof own1 === 'object' && 'custom' in own1 ? own1.custom : null;
                 return (
@@ -121,8 +124,14 @@ function DmRow(p: Parameters<typeof DmSounds>[0] & { dm: PrefsDm }) {
                         inheritLabel={own.pack ? 'This DM’s pack' : 'Global mix'}
                         label={`${dm.name} ${EVENT_INFO[e].name} source`}
                         disabled={file.busy}
-                        onChange={(c) => setMix(e, c)}
+                        onChange={(c) => setMix(e, c && keepGain(c, own1 ?? shown))}
                         onPickFile={() => void pickFile(e)}
+                      />
+                      <GainSlider
+                        label={`${dm.name} ${EVENT_INFO[e].name} volume`}
+                        value={choiceGain(shown)}
+                        disabled={shown === 'off'}
+                        onChange={(g) => setMix(e, withGain(shown, g))}
                       />
                       <button
                         type="button"

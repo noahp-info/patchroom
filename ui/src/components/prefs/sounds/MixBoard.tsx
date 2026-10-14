@@ -1,7 +1,9 @@
 import { customLabel } from '../../../sound/catalog.ts';
 import { playSound } from '../../../sound/index.ts';
 import { EVENT_INFO } from '../../../sound/pack.ts';
+import { choiceGain, keepGain, withGain } from '../../../sound/mix.ts';
 import { ChoiceSelect } from './ChoiceSelect.tsx';
+import { GainSlider } from './GainSlider.tsx';
 import { removeCustom, useFileImport } from './useFileImport.ts';
 import {
   DEFAULT_PACK,
@@ -37,14 +39,14 @@ function MixRow(p: Parameters<typeof MixBoard>[0] & { event: SoundEvent; choice:
 
   async function pickFile() {
     const f = await file.pick();
-    if (f) p.onChoice(e, { custom: f.id });
+    if (f) p.onChoice(e, keepGain({ custom: f.id }, choice));
   }
 
   async function remove() {
     if (!custom) return;
     await removeCustom(custom);
     // A removed file falls back to the default pack's sound for the event.
-    p.onChoice(e, { pack: DEFAULT_PACK });
+    p.onChoice(e, keepGain({ pack: DEFAULT_PACK }, choice));
   }
 
   return (
@@ -70,8 +72,14 @@ function MixRow(p: Parameters<typeof MixBoard>[0] & { event: SoundEvent; choice:
           value={choice}
           label={`${info.name} source`}
           disabled={file.busy}
-          onChange={(c) => c !== undefined && p.onChoice(e, c)}
+          onChange={(c) => c !== undefined && p.onChoice(e, keepGain(c, choice))}
           onPickFile={() => void pickFile()}
+        />
+        <GainSlider
+          label={`${info.name} volume`}
+          value={choiceGain(choice)}
+          disabled={choice === 'off'}
+          onChange={(g) => p.onChoice(e, withGain(choice, g))}
         />
         <button
           type="button"

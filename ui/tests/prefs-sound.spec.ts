@@ -89,7 +89,7 @@ test('per-event off, master off and zero volume', async ({ page }) => {
   expect(await play(page, 'message')).toEqual({ play: true });
   await page.getByRole('checkbox', { name: 'Error sound' }).uncheck();
   expect(await play(page, 'error')).toEqual({ play: false, reason: 'event-off' });
-  await page.getByLabel('Volume').fill('0');
+  await page.getByLabel('Volume', { exact: true }).fill('0');
   expect(await play(page, 'bell')).toEqual({ play: false, reason: 'volume-zero' });
   await page.getByLabel('Play sounds').uncheck();
   expect(await play(page, 'bell')).toEqual({ play: false, reason: 'disabled' });

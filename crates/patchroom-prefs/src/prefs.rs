@@ -64,15 +64,39 @@ pub enum HookPolicy {
     Both,
 }
 
+/// Largest per-sound gain: 150 percent.
+pub const MAX_GAIN: f64 = 1.5;
+
+fn one() -> f64 {
+    1.0
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_one(g: &f64) -> bool {
+    (*g - 1.0).abs() < 1e-9
+}
+
 /// What one event plays: a pack's sound, one of the user's own files, or nothing.
 ///
-/// JSON: `{"pack": "<id>"}`, `{"custom": "<id>"}` or `"off"`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// JSON: `{"pack": "<id>", "gain"?: 0..1.5}`, `{"custom": "<id>", "gain"?: 0..1.5}` or `"off"`.
+/// `gain` is the user's own volume for that sound (default 1); it multiplies the sound's
+/// normalizing gain and the master volume.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Pick {
     /// The event's sound from this pack.
-    Pack(String),
+    Pack {
+        /// Pack id.
+        id: String,
+        /// Per-sound volume multiplier, 0 to 1.5.
+        gain: f64,
+    },
     /// A custom sound the user added.
-    Custom(String),
+    Custom {
+        /// Custom sound id (ULID).
+        id: String,
+        /// Per-sound volume multiplier, 0 to 1.5.
+        gain: f64,
+    },
     /// No sound for the event.
     Off,
 }
@@ -81,15 +105,29 @@ pub enum Pick {
 #[serde(untagged)]
 enum PickRepr {
     Word(String),
-    Pack { pack: String },
-    Custom { custom: String },
+    Pack {
+        pack: String,
+        #[serde(default = "one", skip_serializing_if = "is_one")]
+        gain: f64,
+    },
+    Custom {
+        custom: String,
+        #[serde(default = "one", skip_serializing_if = "is_one")]
+        gain: f64,
+    },
 }
 
 impl Serialize for Pick {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self {
-            Self::Pack(p) => PickRepr::Pack { pack: p.clone() },
-            Self::Custom(c) => PickRepr::Custom { custom: c.clone() },
+            Self::Pack { id, gain } => PickRepr::Pack {
+                pack: id.clone(),
+                gain: *gain,
+            },
+            Self::Custom { id, gain } => PickRepr::Custom {
+                custom: id.clone(),
+                gain: *gain,
+            },
             Self::Off => PickRepr::Word("off".into()),
         }
         .serialize(s)
@@ -103,23 +141,52 @@ impl<'de> Deserialize<'de> for Pick {
             PickRepr::Word(w) => Err(serde::de::Error::custom(format!(
                 "a sound choice is {{pack}}, {{custom}} or \"off\", not {w:?}"
             ))),
-            PickRepr::Pack { pack } => Ok(Self::Pack(pack)),
-            PickRepr::Custom { custom } => Ok(Self::Custom(custom)),
+            PickRepr::Pack { pack, gain } => Ok(Self::Pack { id: pack, gain }),
+            PickRepr::Custom { custom, gain } => Ok(Self::Custom { id: custom, gain }),
         }
     }
 }
 
 impl Pick {
+    /// A pack sound at the default gain.
+    #[must_use]
+    pub fn pack(id: impl Into<String>) -> Self {
+        Self::Pack {
+            id: id.into(),
+            gain: 1.0,
+        }
+    }
+
+    /// A custom sound at the default gain.
+    #[must_use]
+    pub fn custom(id: impl Into<String>) -> Self {
+        Self::Custom {
+            id: id.into(),
+            gain: 1.0,
+        }
+    }
+
+    /// The per-sound gain (1 for `Off`).
+    #[must_use]
+    pub fn gain(&self) -> f64 {
+        match self {
+            Self::Pack { gain, .. } | Self::Custom { gain, .. } => *gain,
+            Self::Off => 1.0,
+        }
+    }
+
     fn valid(&self) -> bool {
         match self {
-            Self::Pack(id) | Self::Custom(id) => valid_sound_id(id),
+            Self::Pack { id, gain } | Self::Custom { id, gain } => {
+                valid_sound_id(id) && gain.is_finite() && (0.0..=MAX_GAIN).contains(gain)
+            }
             Self::Off => true,
         }
     }
 }
 
 /// A DM's own sound mix: the whole pack, or single events.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DmMix {
     /// Pack that every event of this DM uses, unless `mix` names the event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -132,7 +199,7 @@ pub struct DmMix {
 /// Per-DM sound override.
 ///
 /// JSON: `"default"`, `"mute"`, or `{pack?, mix?}` (P3 stored only the two words).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DmSound {
     /// Follow the global sound settings.
     Default,
@@ -247,7 +314,7 @@ impl Default for Sound {
             per_dm: BTreeMap::new(),
             mix: SOUND_EVENTS
                 .iter()
-                .map(|e| ((*e).to_owned(), Pick::Pack(DEFAULT_PACK.into())))
+                .map(|e| ((*e).to_owned(), Pick::pack(DEFAULT_PACK)))
                 .collect(),
             hook_policy: BTreeMap::new(),
         }
@@ -394,7 +461,7 @@ impl Prefs {
         let mut ids = std::collections::HashSet::new();
         let mut take = |m: &BTreeMap<String, Pick>| {
             for p in m.values() {
-                if let Pick::Custom(id) = p {
+                if let Pick::Custom { id, .. } = p {
                     ids.insert(id.clone());
                 }
             }
@@ -414,8 +481,8 @@ impl Prefs {
         let mut changed = false;
         let mut fix = |m: &mut BTreeMap<String, Pick>| {
             for p in m.values_mut() {
-                if matches!(p, Pick::Custom(c) if c == id) {
-                    *p = Pick::Pack(DEFAULT_PACK.into());
+                if matches!(p, Pick::Custom { id: c, .. } if c == id) {
+                    *p = Pick::pack(DEFAULT_PACK);
                     changed = true;
                 }
             }
@@ -476,7 +543,9 @@ impl Prefs {
                     return Err(PrefsError(format!("unknown sound event {e:?}")));
                 }
                 if !p.valid() {
-                    return Err(PrefsError(format!("bad sound id for {e:?}")));
+                    return Err(PrefsError(format!(
+                        "bad sound id or gain (0 to 1.5) for {e:?}"
+                    )));
                 }
             }
             Ok(())
@@ -646,7 +715,7 @@ mod tests {
         assert_eq!(p.sound.per_event.len(), 8);
         assert!(!p.sound.per_event["done"].on, "stored choices survive");
         for e in SOUND_EVENTS {
-            assert_eq!(p.sound.mix[e], Pick::Pack("patchtones".into()), "{e}");
+            assert_eq!(p.sound.mix[e], Pick::pack("patchtones"), "{e}");
         }
         assert_eq!(p.sound.per_dm["a"], DmSound::Mute);
         assert_eq!(p.sound.per_dm["b"], DmSound::Default);
@@ -664,9 +733,9 @@ mod tests {
               "perDm":{"x":{"pack":"telegraph","mix":{"needs":"off","done":{"pack":"modular"}}},
                        "y":"mute"}}}))
             .unwrap();
-        assert_eq!(p.sound.mix["done"], Pick::Pack("lab-glass".into()));
+        assert_eq!(p.sound.mix["done"], Pick::pack("lab-glass"));
         assert_eq!(p.sound.mix["bell"], Pick::Off);
-        assert_eq!(p.sound.mix["needs"], Pick::Pack("patchtones".into()));
+        assert_eq!(p.sound.mix["needs"], Pick::pack("patchtones"));
         let DmSound::Mix(m) = &p.sound.per_dm["x"] else {
             panic!("override expected");
         };
@@ -676,6 +745,48 @@ mod tests {
         let back = Prefs::from_stored(&serde_json::to_string(&p).unwrap());
         assert_eq!(back, p);
         assert_eq!(p.custom_sound_ids().len(), 1);
+    }
+
+    #[test]
+    fn gain_round_trips_defaults_to_one_and_is_validated() {
+        let id = "01J0000000000000000000000A";
+        let p = Prefs::default()
+            .patched(&json!({"sound":{"mix":{
+                "done":{"pack":"lab-glass","gain":0.5},
+                "bell":{"custom":id,"gain":1.5},
+                "error":{"pack":"cartridge","gain":0}},
+              "perDm":{"x":{"mix":{"needs":{"pack":"modular","gain":1.2},
+                                   "done":{"custom":id,"gain":0.25}}}}}}))
+            .unwrap();
+        assert!((p.sound.mix["done"].gain() - 0.5).abs() < 1e-9);
+        assert!((p.sound.mix["bell"].gain() - 1.5).abs() < 1e-9);
+        assert!(p.sound.mix["error"].gain().abs() < 1e-9);
+        assert!((p.sound.mix["needs"].gain() - 1.0).abs() < 1e-9, "default");
+        let DmSound::Mix(m) = &p.sound.per_dm["x"] else {
+            panic!("override expected");
+        };
+        assert!((m.mix["needs"].gain() - 1.2).abs() < 1e-9);
+        assert!((m.mix["done"].gain() - 0.25).abs() < 1e-9);
+        let v = serde_json::to_value(&p).unwrap();
+        assert_eq!(
+            v["sound"]["mix"]["done"],
+            json!({"pack":"lab-glass","gain":0.5})
+        );
+        assert_eq!(v["sound"]["mix"]["needs"], json!({"pack":"patchtones"}));
+        assert_eq!(v["sound"]["perDm"]["x"]["mix"]["done"]["gain"], json!(0.25));
+        assert_eq!(Prefs::from_stored(&serde_json::to_string(&p).unwrap()), p);
+        for bad in [
+            json!({"sound":{"mix":{"done":{"pack":"lab-glass","gain":1.6}}}}),
+            json!({"sound":{"mix":{"done":{"pack":"lab-glass","gain":-0.1}}}}),
+            json!({"sound":{"mix":{"done":{"custom":id,"gain":"loud"}}}}),
+            json!({"sound":{"perDm":{"x":{"mix":{"done":{"pack":"a","gain":2}}}}}}),
+        ] {
+            assert!(Prefs::default().patched(&bad).is_err(), "{bad}");
+        }
+        // Gain survives a custom sound being dropped only as the default pack sound.
+        let mut p = p;
+        assert!(p.drop_custom_sound(id));
+        assert_eq!(p.sound.mix["bell"], Pick::pack("patchtones"));
     }
 
     #[test]
@@ -717,7 +828,7 @@ mod tests {
               "perDm":{"x":{"mix":{"needs":{"custom":id}}}}}}))
             .unwrap();
         assert!(p.drop_custom_sound(id));
-        assert_eq!(p.sound.mix["done"], Pick::Pack("patchtones".into()));
+        assert_eq!(p.sound.mix["done"], Pick::pack("patchtones"));
         assert!(p.custom_sound_ids().is_empty());
         assert!(!p.drop_custom_sound(id));
     }

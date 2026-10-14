@@ -14,5 +14,6 @@ pub use decision::{decide, log_line, Decision, Event, Facts, Reason};
 pub use dnd::{parse_hhmm, Dnd, Schedule};
 pub use hooks::{detect_sound_hooks, DetectedHook};
 pub use prefs::{
-    valid_sound_id, DmMix, DmSound, HookPolicy, Level, Pick, Prefs, DEFAULT_PACK, SOUND_EVENTS,
+    valid_sound_id, DmMix, DmSound, HookPolicy, Level, Pick, Prefs, DEFAULT_PACK, MAX_GAIN,
+    SOUND_EVENTS,
 };

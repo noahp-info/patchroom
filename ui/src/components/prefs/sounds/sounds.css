@@ -158,3 +158,26 @@
 .credits .plist li {
   padding: 4px 0;
 }
+
+/* Per-event volume: 0 to 150 percent. */
+.gain {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.gain input[type='range'] {
+  width: 120px;
+  accent-color: var(--accent);
+}
+.gain__out {
+  min-width: 4ch;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Keep running text to a readable measure. */
+.sounds-pane .pf-hint {
+  max-width: 60ch;
+}

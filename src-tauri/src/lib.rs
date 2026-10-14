@@ -35,6 +35,9 @@
 //! folder per CC0 file pack). Commands: `sound_packs`, `sound_file {packId, event}`,
 //! `sound_import_file {path}`, `sound_custom_list`, `sound_custom_file {id}`,
 //! `sound_custom_remove {id}`, `sound_claude_profiles`, `sound_import_claude_profile {id}`.
+//! `sound_import_file` and `sound_custom_list` rows carry `norm`, and `sound_packs` rows of file
+//! packs carry `norm` per event: the normalizing gain measured on import (mean -22 dBFS, peak at
+//! most -3 dBFS). `sound.mix` picks carry an optional `gain` (0 to 1.5, default 1).
 //! Custom files live in `<data dir>/sounds/<ULID>.<ext>` (0600) and are pruned at start-up when no
 //! prefs reference them; imported Claude profiles become packs under `<data dir>/sounds/packs/`.
 //! The Claude sound folder is only ever read. See [`manager`] (`sound` module) and

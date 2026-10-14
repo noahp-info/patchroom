@@ -54,13 +54,23 @@ Preview the approved set: https://claude.ai/artifact/2PA7Lwfmyyg1rsUxGN6fpK (the
 ## Contract
 
 - **Commands:**
-  - `sound_packs {} -> [{id, name, description, kind: "generated"|"files"|"imported", license, author, events: {[event]: true}}]`
+  - `sound_packs {} -> [{id, name, description, kind: "generated"|"files"|"imported", license, author, source, events: {[event]: true}, norm?: {[event]: number}, notes?}]`
+    - `norm` is the normalizing gain per event for file and imported packs (absent for generated packs). Bundled packs are leveled, so it is 1 unless the pack manifest corrects an event. Imported packs carry the gain measured at import.
   - `sound_file {packId, event} -> {dataUrl}` (fetched on demand for file packs)
-  - `sound_import_file {path} -> {id, name, durationMs}` (copies after checking the limits)
+  - `sound_import_file {path} -> {id, name, durationMs, norm}` (copies after checking the limits and measures loudness)
+  - `sound_custom_list {} -> [{id, name, durationMs, norm}]` (newest first)
+  - `sound_custom_file {id} -> {dataUrl}`
   - `sound_custom_remove {id}`
   - `sound_claude_profiles {} -> [{id, name, events}]` (read only)
   - `sound_import_claude_profile {id} -> {packId}`
 - **Prefs:** `sound.mix: {[event]: {pack: string, gain?: number} | {custom: string, gain?: number} | "off"}` (gain is a 0 to 1.5 multiplier, default 1), plus `sound.perDm: {[id]: {pack?, mix?}}` (extends today's per-DM mute).
+  - `mix` entries in `perDm` use the same pick shape, so a DM override carries its own per-event `gain`.
+  - A gain outside 0 to 1.5, or not a number, makes `prefs_set` fail. A gain of 1 is not written back.
+- **Loudness:**
+  - `norm` is measured on import (RMS over all samples, sample peak; pure-Rust decode) and brings the mean to -22 dBFS with the peak at most -3 dBFS, clamped to 0.05 to 8. It is 1 when the file cannot be decoded or is silent.
+  - It is stored in the custom sound's sidecar (`<ULID>.json`) or the imported pack's `pack.json` (`norm: {[event]: number}`). The audio file is never changed.
+  - The UI plays a sound at `master volume * norm * pick gain`, clamped so the output never clips.
+  - A bundled pack manifest may carry the same `norm` map; Switchboard uses it for two events.
 
 ## Inspection
 

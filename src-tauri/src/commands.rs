@@ -510,7 +510,7 @@ pub async fn sound_hooks_detect(state: State<'_, SessionManager>) -> CmdResult<V
         .map_err(|e| e.to_string())
 }
 
-/// `sound_packs {} -> [{id, name, description, kind, license, author, events}]` (plus `source`
+/// `sound_packs {} -> [{id, name, description, kind, license, author, events, norm?}]` (plus `source`
 /// and, for generated packs, `notes`).
 #[tauri::command]
 pub async fn sound_packs(state: State<'_, SessionManager>) -> CmdResult<Vec<PackInfo>> {
@@ -531,7 +531,7 @@ pub async fn sound_file(
     blocking(move || m.sound_file(&pack_id, &event)).await
 }
 
-/// `sound_import_file {path} -> {id, name, durationMs}`: copy the user's file into the data
+/// `sound_import_file {path} -> {id, name, durationMs, norm}`: copy the user's file into the data
 /// dir after the type, size and duration checks.
 #[tauri::command]
 pub async fn sound_import_file(
@@ -542,7 +542,7 @@ pub async fn sound_import_file(
     blocking(move || m.sound_import_file(&path)).await
 }
 
-/// `sound_custom_list {} -> [{id, name, durationMs}]`: the user's own sounds, newest first.
+/// `sound_custom_list {} -> [{id, name, durationMs, norm}]`: the user's own sounds, newest first.
 #[tauri::command]
 pub async fn sound_custom_list(state: State<'_, SessionManager>) -> CmdResult<Vec<CustomSound>> {
     let m = state.inner().clone();

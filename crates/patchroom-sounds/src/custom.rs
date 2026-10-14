@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
+use crate::loudness;
 use crate::media::{self, Kind, ACCEPTED, MAX_BYTES, MAX_DURATION_MS};
 use crate::packs::data_url_of;
 use crate::{Result, SoundError, SOUNDS_DIR};
@@ -19,7 +20,7 @@ use crate::{Result, SoundError, SOUNDS_DIR};
 const MAX_NAME_CHARS: usize = 60;
 
 /// One custom sound, as `sound_import_file` and `sound_custom_list` return it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomSound {
     /// ULID; also the file stem.
@@ -28,6 +29,15 @@ pub struct CustomSound {
     pub name: String,
     /// Length, from the file header.
     pub duration_ms: u64,
+    /// Normalizing gain measured on import: multiply by it to reach a mean of -22 dBFS with
+    /// peaks at most -3 dBFS. 1 when the file could not be measured. The stored file is
+    /// unchanged; the UI applies this gain on top of the user's own per-sound gain.
+    #[serde(default = "default_norm")]
+    pub norm: f64,
+}
+
+fn default_norm() -> f64 {
+    1.0
 }
 
 fn sounds_dir(data_dir: &Path) -> PathBuf {
@@ -160,6 +170,7 @@ pub fn import_file(data_dir: &Path, path: &Path) -> Result<CustomSound> {
         id: id.clone(),
         name: display_name(path),
         duration_ms: ms,
+        norm: loudness::norm_for(&bytes, kind.ext()),
     };
     let meta = serde_json::to_vec(&sound).map_err(|e| SoundError::new(e.to_string()))?;
     if let Err(e) = write_private(&dir.join(format!("{id}.json")), &meta) {
@@ -296,6 +307,40 @@ mod tests {
             assert!(url.starts_with("data:audio/"), "{url:.30}");
         }
         assert_eq!(list_custom(data.path()).len(), 5);
+    }
+
+    #[test]
+    fn import_measures_loudness_and_stores_a_norm_without_touching_the_file() {
+        let src = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        let loud = loudness::tests::sine_wav(0.9, 400);
+        let quiet = loudness::tests::sine_wav(0.01, 400);
+        let a = import_file(data.path(), &put(src.path(), "loud.wav", &loud)).unwrap();
+        let b = import_file(data.path(), &put(src.path(), "quiet.wav", &quiet)).unwrap();
+        assert!(a.norm < 0.3 && a.norm > 0.05, "{}", a.norm);
+        assert!(b.norm > 1.5, "{}", b.norm);
+        // A sound that cannot be measured (digital silence) gets 1.
+        let z = import_file(data.path(), &put(src.path(), "z.wav", &fixtures::wav(300))).unwrap();
+        assert!((z.norm - 1.0).abs() < f64::EPSILON);
+        // The stored bytes are the original bytes.
+        let dir = data.path().join("sounds");
+        assert_eq!(
+            std::fs::read(dir.join(format!("{}.wav", a.id))).unwrap(),
+            loud
+        );
+        assert_eq!(
+            std::fs::read(dir.join(format!("{}.wav", b.id))).unwrap(),
+            quiet
+        );
+        // The list carries it (this is what sound_custom_list returns) and the sidecar keeps it.
+        let listed = list_custom(data.path());
+        assert_eq!(listed.iter().find(|s| s.id == a.id).unwrap().norm, a.norm);
+        let json = serde_json::to_value(&listed[0]).unwrap();
+        assert!(json["norm"].is_number() && json["durationMs"].is_number());
+        // A sidecar written before norm existed reads as 1.
+        let old = r#"{"id":"01J0000000000000000000000A","name":"x","durationMs":5}"#;
+        let o: CustomSound = serde_json::from_str(old).unwrap();
+        assert!((o.norm - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]

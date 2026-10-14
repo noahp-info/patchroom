@@ -1,5 +1,6 @@
 import generated from '../../../plugins/sounds/generated-packs.json';
 import { DEFAULT_PACK, type SoundEvent } from '../components/prefs/ipc.ts';
+import { effectiveGain, SYNTH_BASE } from './gain.ts';
 
 export interface Note {
   /** Hz */
@@ -57,7 +58,38 @@ export const PACK: Record<SoundEvent, { name: string; blurb: string; notes: Note
 
 let ctx: AudioContext | null = null;
 
-function context(): AudioContext | null {
+/** One note's amplitude at `t` seconds after the sound starts: 8 ms attack, exponential decay. */
+function envelope(n: Note, t: number): number {
+  const x = t - n.at;
+  if (x < 0 || x > n.len) return 0;
+  if (x <= 0.008) return (n.gain * x) / 0.008;
+  const k = Math.min(1, (x - 0.008) / Math.max(0.001, n.len - 0.008));
+  return n.gain * Math.pow(0.0001 / n.gain, k);
+}
+
+/**
+ * The loudest the notes get at gain 1. Peaks add, which is the worst case for oscillators that
+ * line up, and each note decays on its own envelope.
+ */
+const peaks = new WeakMap<Note[], number>();
+
+export function notesPeak(notes: Note[]): number {
+  const known = peaks.get(notes);
+  if (known !== undefined) return known;
+  const end = Math.max(0, ...notes.map((n) => n.at + n.len));
+  let peak = 0;
+  for (let t = 0; t <= end; t += 0.002) {
+    peak = Math.max(
+      peak,
+      notes.reduce((sum, n) => sum + envelope(n, t), 0),
+    );
+  }
+  peaks.set(notes, peak);
+  return peak;
+}
+
+/** The shared audio context, or null where Web Audio is missing. */
+export function context(): AudioContext | null {
   if (ctx) return ctx;
   const Ctor =
     window.AudioContext ??
@@ -72,17 +104,28 @@ function context(): AudioContext | null {
 }
 
 /**
- * Synthesize one generated-pack sound at `volume` (0 to 1). Resolves false when audio is
- * unavailable or the pack is not generated.
+ * Synthesize one generated-pack sound at the master `volume` (0 to 1) and the event's `gain`
+ * (0 to 1.5). The master gain node carries the product, held below clipping. Returns false when
+ * audio is unavailable or the pack is not generated.
  */
-export function synth(event: SoundEvent, volume: number, packId: string = DEFAULT_PACK): boolean {
+export function synth(
+  event: SoundEvent,
+  volume: number,
+  packId: string = DEFAULT_PACK,
+  gain = 1,
+): boolean {
   const notes = (GENERATED[packId] ?? GENERATED[DEFAULT_PACK]).notes[event];
   const c = context();
   if (!c || !notes) return false;
   if (c.state === 'suspended') void c.resume().catch(() => undefined);
   const t0 = c.currentTime + 0.01;
   const master = c.createGain();
-  master.gain.value = Math.min(1, Math.max(0, volume)) * 0.6;
+  master.gain.value = effectiveGain({
+    master: volume,
+    event: gain,
+    base: SYNTH_BASE,
+    peak: notesPeak(notes),
+  });
   master.connect(c.destination);
   for (const n of notes) {
     const osc = c.createOscillator();

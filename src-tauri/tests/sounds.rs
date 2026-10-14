@@ -443,3 +443,104 @@ fn p3_era_stored_prefs_load_as_patch_tones() {
     assert_eq!(v["sound"]["perEvent"]["session"]["on"], true, "no hook: on");
     drop(home);
 }
+
+/// A 44.1 kHz mono wav of a 440 Hz sine at `amp`.
+fn sine_wav(amp: f64, ms: u32) -> Vec<u8> {
+    let rate = 44_100u32;
+    let n = rate * ms / 1000;
+    let mut v = Vec::new();
+    v.extend(b"RIFF");
+    v.extend((36 + n * 2).to_le_bytes());
+    v.extend(b"WAVEfmt ");
+    v.extend(16u32.to_le_bytes());
+    v.extend(1u16.to_le_bytes());
+    v.extend(1u16.to_le_bytes());
+    v.extend(rate.to_le_bytes());
+    v.extend((rate * 2).to_le_bytes());
+    v.extend(2u16.to_le_bytes());
+    v.extend(16u16.to_le_bytes());
+    v.extend(b"data");
+    v.extend((n * 2).to_le_bytes());
+    for i in 0..n {
+        let x = (f64::from(i) * 2.0 * std::f64::consts::PI * 440.0 / f64::from(rate)).sin();
+        #[allow(clippy::cast_possible_truncation)]
+        v.extend(((x * amp * 32767.0).round() as i16).to_le_bytes());
+    }
+    v
+}
+
+#[test]
+fn imports_carry_a_norm_and_per_sound_gain_persists_through_prefs() {
+    let e = env();
+    let src = e.home.path().join("src");
+    let loud_bytes = sine_wav(0.9, 400);
+    let loud = write(&src, "Loud.wav", &loud_bytes);
+    let quiet = write(&src, "Quiet.wav", &sine_wav(0.01, 400));
+    let a = e.m.sound_import_file(&loud.to_string_lossy()).unwrap();
+    let b = e.m.sound_import_file(&quiet.to_string_lossy()).unwrap();
+    assert!(a.norm < 0.3, "{}", a.norm);
+    assert!(b.norm > 1.5, "{}", b.norm);
+    let listed = serde_json::to_value(e.m.sound_custom_list()).unwrap();
+    for row in listed.as_array().unwrap() {
+        assert!(row["norm"].is_number() && row["durationMs"].is_number());
+    }
+    let stored = e.data.path().join("sounds").join(format!("{}.wav", a.id));
+    assert_eq!(std::fs::read(stored).unwrap(), loud_bytes, "file untouched");
+
+    // Gain on both pick variants and in a per-DM mix survives prefs_set and prefs_get.
+    e.m.prefs_set(&json!({"sound": {
+        "mix": {"done": {"custom": a.id, "gain": 0.4}, "bell": {"pack": "cartridge", "gain": 1.5}},
+        "perDm": {"dm1": {"mix": {"needs": {"pack": "lab-glass", "gain": 0.25}}}}}}))
+        .unwrap();
+    let p = serde_json::to_value(e.m.prefs_get()).unwrap();
+    assert_eq!(p["sound"]["mix"]["done"]["gain"], json!(0.4));
+    assert_eq!(
+        p["sound"]["mix"]["bell"],
+        json!({"pack": "cartridge", "gain": 1.5})
+    );
+    assert_eq!(
+        p["sound"]["perDm"]["dm1"]["mix"]["needs"]["gain"],
+        json!(0.25)
+    );
+    assert!(e
+        .m
+        .prefs_set(&json!({"sound": {"mix": {"done": {"pack": "cartridge", "gain": 2.0}}}}))
+        .is_err());
+    // Bundled packs carry norm per event (1 unless the manifest corrects the level).
+    let packs = serde_json::to_value(e.m.sound_packs()).unwrap();
+    let lab = packs
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == "lab-glass")
+        .unwrap();
+    assert_eq!(lab["norm"]["done"], json!(1.0));
+}
+
+#[test]
+fn imported_claude_profile_packs_carry_measured_norms() {
+    let e = env();
+    let audio = e.home.path().join("audio");
+    write(&audio, "loud.wav", &sine_wav(0.9, 300));
+    write(&audio, "quiet.wav", &sine_wav(0.01, 300));
+    let profiles = e.config.join("sounds").join("profiles");
+    std::fs::create_dir_all(&profiles).unwrap();
+    std::fs::write(
+        profiles.join("mix.sh"),
+        format!(
+            "SOUND_STOP=\"{0}/loud.wav\"\nSOUND_SESSION=\"{0}/quiet.wav\"\n",
+            audio.display()
+        ),
+    )
+    .unwrap();
+    let id = e.m.sound_import_claude_profile("mix").unwrap().pack_id;
+    let packs = serde_json::to_value(e.m.sound_packs()).unwrap();
+    let p = packs
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == id)
+        .unwrap();
+    assert!(p["norm"]["done"].as_f64().unwrap() < 0.3, "{p}");
+    assert!(p["norm"]["session"].as_f64().unwrap() > 1.5, "{p}");
+}

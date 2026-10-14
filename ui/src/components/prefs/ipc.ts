@@ -23,7 +23,19 @@ export type SoundEvent = (typeof SOUND_EVENTS)[number];
 export const DEFAULT_PACK = 'patchtones';
 
 /** What one event plays: a pack's sound, the user's own file (its id), or nothing. */
-export type MixChoice = { pack: string } | { custom: string } | 'off';
+export type MixChoice = { pack: string; gain?: number } | { custom: string; gain?: number } | 'off';
+
+/** The per-event volume range: a 0 to 1.5 multiplier, 1 when absent. */
+export const GAIN_MAX = 1.5;
+
+/** What `sound_file` and `sound_custom_file` return. `norm` levels the file; `peak` is its loudest sample (0 to 1). */
+export interface SoundFileData {
+  dataUrl: string;
+  /** Normalizing gain (the backend's `norm`): 1 for bundled files, which ship leveled. */
+  norm?: number;
+  /** Loudest sample after the normalizing gain, linear. Bundled files peak at 0.75 or lower. */
+  peak?: number;
+}
 
 /** A DM's own sound setup: the global mix, muted, or a pack and/or single events of its own. */
 export type DmSoundPref =
@@ -55,6 +67,10 @@ export interface ImportedFile {
   id: string;
   name: string;
   durationMs: number;
+  /** Normalizing gain (`norm`) that brings the file to the shared level. The file is unchanged. */
+  norm?: number;
+  /** Loudest sample after the normalizing gain, linear (about 0.7 when leveled). */
+  peak?: number;
 }
 
 export type NotifyLevel = 'all' | 'needs' | 'mute';
@@ -138,6 +154,30 @@ export const DEFAULT_PREFS: Prefs = {
   sidebarWidth: 264,
 };
 
+/** A stored gain, clamped to 0 to 1.5. Anything that is not a finite number is dropped. */
+export function cleanGain(g: unknown): number | undefined {
+  return typeof g === 'number' && Number.isFinite(g)
+    ? Math.min(GAIN_MAX, Math.max(0, g))
+    : undefined;
+}
+
+function cleanChoice(c: unknown): MixChoice {
+  if (!isRecord(c)) return c as MixChoice;
+  const { gain, ...rest } = c as { gain?: unknown } & Record<string, unknown>;
+  const g = cleanGain(gain);
+  return (g === undefined ? rest : { ...rest, gain: g }) as MixChoice;
+}
+
+function cleanPerDm(raw: Record<string, unknown>): Prefs['sound']['perDm'] {
+  return Object.fromEntries(
+    Object.entries(raw).map(([id, v]) => {
+      if (!isRecord(v) || !isRecord(v.mix)) return [id, v];
+      const mix = Object.fromEntries(Object.entries(v.mix).map(([e, c]) => [e, cleanChoice(c)]));
+      return [id, { ...v, mix }];
+    }),
+  ) as Prefs['sound']['perDm'];
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -167,9 +207,13 @@ export function normalizePrefs(raw: unknown): Prefs {
       // Prefs from before sound packs have no mix: every event plays Patch Tones.
       mix: {
         ...d.sound.mix,
-        ...(isRecord(sound.mix) ? (sound.mix as Prefs['sound']['mix']) : {}),
+        ...(isRecord(sound.mix)
+          ? (Object.fromEntries(
+              Object.entries(sound.mix).map(([e, c]) => [e, cleanChoice(c)]),
+            ) as Prefs['sound']['mix'])
+          : {}),
       },
-      perDm: isRecord(sound.perDm) ? (sound.perDm as Prefs['sound']['perDm']) : {},
+      perDm: isRecord(sound.perDm) ? cleanPerDm(sound.perDm) : {},
     },
     dnd: { ...d.dnd, ...(dnd as Partial<Prefs['dnd']>) },
     termPerDm: isRecord(r.termPerDm) ? (r.termPerDm as Prefs['termPerDm']) : {},
@@ -185,11 +229,11 @@ export interface PrefsApi {
   /** Sound packs: the commands of docs/gauntlet/SOUND-PACKS-BAR.md. */
   soundPacks(): Promise<PackInfo[]>;
   /** A file or imported pack's audio. */
-  soundFile(packId: string, event: string): Promise<{ dataUrl: string }>;
+  soundFile(packId: string, event: string): Promise<SoundFileData>;
   /** The user's own sounds, newest first. */
   soundCustomList(): Promise<ImportedFile[]>;
   /** One of the user's own sounds. */
-  soundCustomFile(id: string): Promise<{ dataUrl: string }>;
+  soundCustomFile(id: string): Promise<SoundFileData>;
   /** The native file picker. Resolves null when cancelled. */
   soundPickFile(): Promise<string | null>;
   soundImportFile(path: string): Promise<ImportedFile>;
@@ -225,7 +269,7 @@ export function createTauriPrefsApi(): PrefsApi {
     },
     async soundFile(packId, event) {
       const { invoke } = await import('@tauri-apps/api/core');
-      return invoke<{ dataUrl: string }>('sound_file', { packId, event });
+      return invoke<SoundFileData>('sound_file', { packId, event });
     },
     async soundPickFile() {
       const { open } = await import('@tauri-apps/plugin-dialog');
@@ -242,7 +286,7 @@ export function createTauriPrefsApi(): PrefsApi {
     },
     async soundCustomFile(id) {
       const { invoke } = await import('@tauri-apps/api/core');
-      return invoke<{ dataUrl: string }>('sound_custom_file', { id });
+      return invoke<SoundFileData>('sound_custom_file', { id });
     },
     async soundImportFile(path) {
       const { invoke } = await import('@tauri-apps/api/core');
