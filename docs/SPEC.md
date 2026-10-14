@@ -1,6 +1,6 @@
 # Patchroom: spec v0.1 (draft for review)
 
-Status: draft, 2026-10-13. Owner: Noah. License: MIT. Platform: macOS first.
+Status: draft, 2026-10-13. Owner: Noah. License: Apache-2.0 (app); AGPL with a commercial option (future sync server). Platform: macOS first.
 
 Patchroom is a Slack-style desktop app on top of the AI coding CLIs you already use. Every DM is a real terminal session. A chat layer renders on top of it. Patchroom adds no agent, no model access, and no new permissions.
 
@@ -159,13 +159,19 @@ Phases are ordered by dependency. Each phase is a gauntlet loop: parallel builde
 
 Open core. Decided by Noah, 2026-10-14.
 
-- **Individual: free, MIT, forever.** It is the whole app, with no feature crippling. Each user brings their own CLI subscription, so Patchroom never resells model access.
+- **Individual: free, Apache-2.0, forever.** It is the whole app, with no feature crippling. Each user brings their own CLI subscription, so Patchroom never resells model access.
 - **Team: per seat per month.** Hosted sync for channels, decisions and tasks across people. It adds decision routing to named teammates, shared plugins and a private marketplace, a team cost dashboard built from statusLine cost, and session handoff.
 - **Enterprise: annual contract.** SSO and SCIM, policy enforcement at launch (allowed CLIs and models, required hooks, permission rules, plugin allowlist), audit export, self-hosted sync, and support.
 - **Why teams pay instead of using many free copies:** a free copy is one person on one Mac. Every paid feature needs coordination between people, which only the sync layer provides.
 - **Boundaries:**
-  - The MIT client never contains paid features.
+  - The Apache-2.0 client never contains paid features.
   - The sync server lives in its own repository, with its license decided when it is built.
   - The data model stays sync-ready (principle 6).
   - Trademark the name and register the domain before launch.
 - **Timing:** build no paid features until the free app has users.
+- **Licensing (decided 2026-10-14, option A):**
+  - Client: Apache-2.0, for its patent grant.
+  - Sync server: AGPL in its own repository, plus a commercial license for enterprises that will not run AGPL code.
+  - A contributor license agreement is required for outside code, from the first contribution.
+  - Releases up to commit 09fce45 were also published under MIT and stay so.
+  - Licensing does not stop a rebuild. The defense is pricing below rebuild-and-maintain cost, and charging for what is expensive to run: CLI parity upkeep, hosted sync, compliance and the ecosystem.

@@ -2,7 +2,7 @@
   "name": "patchroom-workspace",
   "private": true,
   "version": "0.0.1",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@12.11.2",
   "engines": { "node": ">=22" },
   "scripts": {
