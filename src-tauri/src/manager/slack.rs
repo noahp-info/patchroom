@@ -78,6 +78,9 @@ struct FocusHint {
 pub(super) struct SlackState {
     prefs: Mutex<Prefs>,
     search: Mutex<SearchIndex>,
+    /// Deleted DMs. Checked under the `search` lock, so an index pass still in flight
+    /// cannot re-insert a DM after `search_forget`.
+    forgotten: Mutex<HashSet<String>>,
     focus: Mutex<Option<FocusHint>>,
     notifier: Mutex<Option<Arc<dyn Notifier>>>,
     probe: Mutex<Option<Arc<dyn FocusProbe>>>,
@@ -96,6 +99,7 @@ impl SlackState {
         Self {
             prefs: Mutex::new(stored_prefs.map(Prefs::from_stored).unwrap_or_default()),
             search: Mutex::new(search),
+            forgotten: Mutex::new(HashSet::new()),
             focus: Mutex::new(None),
             notifier: Mutex::new(None),
             probe: Mutex::new(None),
@@ -473,6 +477,9 @@ impl Manager {
             .cloned()
             .collect();
         let mut ix = lock(&self.slack.search);
+        if lock(&self.slack.forgotten).contains(id) {
+            return;
+        }
         let r = if replace_all {
             ix.replace_conversation(id, &own)
         } else {
@@ -605,6 +612,9 @@ impl Manager {
         let stamp = file_stamp(path);
         let items = read_transcript(path);
         let mut ix = lock(&self.slack.search);
+        if lock(&self.slack.forgotten).contains(conv) {
+            return;
+        }
         if ix.replace_conversation(conv, &items).is_ok() {
             if let Some((size, mtime)) = stamp {
                 let _ = ix.set_source_state(conv, &path.to_string_lossy(), size, mtime);
@@ -665,7 +675,9 @@ impl Manager {
 
     /// Drop a deleted DM's documents.
     pub(super) fn search_forget(&self, id: &str) {
-        let _ = lock(&self.slack.search).delete_conversation(id);
+        let mut ix = lock(&self.slack.search);
+        lock(&self.slack.forgotten).insert(id.to_owned());
+        let _ = ix.delete_conversation(id);
     }
 
     // ---- activity ----

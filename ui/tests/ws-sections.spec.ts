@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { backendDms, dragTo, groupRows, openSeeded, watchErrors } from './helpers';
+import { backendDms, chooseNew, dragTo, groupRows, openSeeded, watchErrors } from './helpers';
 
 const DMS = [
   { id: 'a', name: 'alpha' },
@@ -28,7 +28,7 @@ test.describe('workspace: sections (checklist 1, 2)', () => {
     await openSeeded(page, DMS.slice(0, 2), { sections: [{ id: 'sec-1', name: 'Work' }] });
     await page.evaluate(() => window.__PR_MOCK__!.sessions()); // keep the page alive
     // Create through the sidebar form.
-    await page.getByRole('button', { name: 'New section' }).click();
+    await chooseNew(page, 'New section');
     await page.getByLabel('Section name').fill('Reviews');
     await page.getByRole('button', { name: 'Add', exact: true }).click();
     await expect(page.locator('.side [data-kind="section"]')).toHaveCount(2);

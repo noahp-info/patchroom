@@ -19,12 +19,27 @@
 //!   Returns the epoch ms when its prompt was sent; the session ends on its own
 //!   (`e2e_outside_done` says when);
 //! - `e2e_decision_log`: the notification decision log (`notify-decisions.log` in the data
-//!   dir): event, DM id, decision and reason per line, never a message body.
+//!   dir): event, DM id, decision and reason per line, never a message body;
+//! - `e2e_window_state -> {nativeFocused, webviewFocused, visible, minimized, forced, active}`:
+//!   what the focus probe sees right now. `active` is what focus suppression uses;
+//! - `e2e_force_active {active: bool | null}`: pin the focus probe (`true` looks focused,
+//!   `false` looks blurred, `null` goes back to the real window and webview state). Use
+//!   `false` to make an unfocused needs-you step deterministic, and always release it;
+//! - `e2e_focus_window`: show, unminimize and focus the main window, as a click on it would.
+//!   Whether it becomes the key window depends on the machine (a locked screen refuses);
+//! - `e2e_outside_stop`: stop every helper `e2e_outside_session` started (driver and its
+//!   claude child), TERM then KILL. Resolves when none is left. The app also does this on exit,
+//!   so a failed scenario leaves nothing behind;
+//!
+//! The 250 ms heartbeat also reports `document.hasFocus()` to the focus probe, so a window
+//! driven by a script (often not the key window) still counts as focused while the page has
+//! focus. Focus is native key window OR a fresh webview report, and the window must be visible.
 //!
 //! There is no network listener: everything goes over Tauri's own IPC.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager as _};
@@ -121,7 +136,11 @@ pub fn inject(webview: &tauri::Webview) {
     }
 }
 
-/// Evaluate a no-op in the main webview every 250 ms for the life of the app.
+/// The heartbeat script: report the page's own focus to the native focus probe.
+const HEARTBEAT_JS: &str = "try{window.__TAURI_INTERNALS__.invoke('e2e_webview_focus',\
+{focused:document.hasFocus()}).catch(function(){});}catch(e){}";
+
+/// Evaluate a small script in the main webview every 250 ms for the life of the app.
 ///
 /// With the screen locked the window is occluded, and WebKit suspends the web content process
 /// shortly after load: page timers, `requestAnimationFrame` and pending IPC replies all stop.
@@ -133,7 +152,7 @@ pub fn start_heartbeat(app: AppHandle) {
         .spawn(move || loop {
             std::thread::sleep(Duration::from_millis(250));
             if let Some(w) = app.get_webview_window("main") {
-                let _ = w.eval("void 0");
+                let _ = w.eval(HEARTBEAT_JS);
             }
         });
     if let Err(e) = spawned {
@@ -182,8 +201,9 @@ pub async fn e2e_report(app: AppHandle, name: String, body: String) -> Result<St
 /// second app instance or a test run on the same machine never counts.
 fn pgrep(pattern: &str, scope: Option<&str>) -> Vec<u32> {
     let me = std::process::id();
+    // `--` first: BSD pgrep reads a pattern that starts with `-` (`--resume <id>`) as an option.
     let out = Command::new("/usr/bin/pgrep")
-        .args(["-f", pattern])
+        .args(["-f", "--", pattern])
         .output();
     let Ok(out) = out else {
         return Vec::new();
@@ -303,15 +323,104 @@ fn is_scenario_dir(dir: &str, allowed: &[PathBuf]) -> bool {
         && allowed.iter().any(|a| p.starts_with(a))
 }
 
-/// Outside sessions started by `e2e_outside_session` that have not exited yet.
-static OUTSIDE_RUNNING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// Pids of outside-session drivers started by `e2e_outside_session` that have not exited yet.
+static OUTSIDE_PIDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+fn outside_pids() -> Vec<u32> {
+    OUTSIDE_PIDS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+fn signal(sig: &str, pid: u32) {
+    let _ = Command::new("/bin/kill")
+        .args([sig, &pid.to_string()])
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+/// Stop every outside driver: TERM (the driver kills its claude child), then KILL after 15 s.
+/// Blocks until none is left or 20 s passed. Safe to call when nothing runs.
+pub fn stop_outside() {
+    let start = std::time::Instant::now();
+    while start.elapsed() < Duration::from_secs(20) {
+        let pids = outside_pids();
+        if pids.is_empty() {
+            return;
+        }
+        let sig = if start.elapsed() < Duration::from_secs(15) {
+            "-TERM"
+        } else {
+            "-KILL"
+        };
+        for p in pids {
+            signal(sig, p);
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
+/// `e2e_outside_stop`: stop the outside-session helpers and their claude children.
+#[tauri::command]
+pub async fn e2e_outside_stop(app: AppHandle) -> Result<(), String> {
+    state(&app)?;
+    tauri::async_runtime::spawn_blocking(stop_outside)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// `e2e_focus_window`: show, unminimize and focus the main window.
+#[tauri::command]
+pub async fn e2e_focus_window(app: AppHandle) -> Result<(), String> {
+    state(&app)?;
+    let w = app.get_webview_window("main").ok_or("no main window")?;
+    let _ = w.show();
+    let _ = w.unminimize();
+    w.set_focus().map_err(|e| e.to_string())
+}
+
+/// `e2e_webview_focus {focused}`: the heartbeat's report of `document.hasFocus()`.
+#[tauri::command]
+pub async fn e2e_webview_focus(app: AppHandle, focused: bool) -> Result<(), String> {
+    state(&app)?;
+    crate::notifier::hints().report_webview(focused);
+    Ok(())
+}
+
+/// `e2e_force_active {active}`: pin the focus probe, or release it with null.
+#[tauri::command]
+pub async fn e2e_force_active(app: AppHandle, active: Option<bool>) -> Result<(), String> {
+    state(&app)?;
+    crate::notifier::hints().force(active);
+    Ok(())
+}
+
+/// `e2e_window_state`: the probe's inputs and verdict, for reports and assertions.
+#[tauri::command]
+pub async fn e2e_window_state(app: AppHandle) -> Result<serde_json::Value, String> {
+    state(&app)?;
+    let w = app.get_webview_window("main").ok_or("no main window")?;
+    let native = w.is_focused().unwrap_or(false);
+    let visible = w.is_visible().unwrap_or(false);
+    let minimized = w.is_minimized().unwrap_or(false);
+    let probe = crate::notifier::WindowProbe(app.clone());
+    Ok(serde_json::json!({
+        "nativeFocused": native,
+        "visible": visible,
+        "minimized": minimized,
+        "webviewFocused": crate::notifier::hints().webview_focused(),
+        "forced": crate::notifier::hints().forced_state(),
+        "active": crate::notifier::FocusProbe::window_active(&probe),
+    }))
+}
 
 /// `e2e_outside_done -> bool`: true once every outside session has exited, so a scenario can
 /// wait for its helper before it quits (nothing may outlive the app).
 #[tauri::command]
 pub async fn e2e_outside_done(app: AppHandle) -> Result<bool, String> {
     state(&app)?;
-    Ok(OUTSIDE_RUNNING.load(std::sync::atomic::Ordering::SeqCst) == 0)
+    Ok(outside_pids().is_empty())
 }
 
 /// `e2e_outside_session {dir} -> epoch ms`: run `scripts/e2e-outside-session.py` (named by
@@ -348,10 +457,17 @@ pub async fn e2e_outside_session(app: AppHandle, dir: String) -> Result<i64, Str
             }
         }
         // The driver keeps running until the reply lands; reap it in the background.
-        OUTSIDE_RUNNING.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let pid = child.id();
+        OUTSIDE_PIDS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(pid);
         std::thread::spawn(move || {
             let _ = child.wait();
-            OUTSIDE_RUNNING.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            OUTSIDE_PIDS
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .retain(|p| *p != pid);
         });
         sent.ok_or_else(|| "the outside session never sent its prompt".to_owned())
     })
@@ -445,6 +561,26 @@ mod tests {
     #[test]
     fn pgrep_finds_nothing_for_an_unlikely_pattern() {
         assert!(pgrep("patchroom-no-such-process-zz9", None).is_empty());
+    }
+
+    #[test]
+    fn pgrep_matches_a_pattern_that_starts_with_dashes() {
+        let mut a = Command::new("/bin/sh")
+            .args(["-c", "sleep 37.5; :", "--resume", "pr-dash-test-9f3"])
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let found = pgrep("--resume pr-dash-test-9f3", None);
+        let _ = a.kill();
+        let _ = a.wait();
+        assert!(found.contains(&a.id()), "{found:?}");
+    }
+
+    #[test]
+    fn stop_outside_with_nothing_running_returns_at_once() {
+        let t = std::time::Instant::now();
+        stop_outside();
+        assert!(t.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

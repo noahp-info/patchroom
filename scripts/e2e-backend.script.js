@@ -114,6 +114,34 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
       if (!/Older than 30 days \(1\)/.test(btn.textContent || ''))
         throw new Error(`toggle says "${btn.textContent}"`);
     });
+    await t.step('restart: the starred and archived flags survived', async () => {
+      const rows = await invoke('session_list', {});
+      const beta = rows.find((r) => r.name === NAME_B);
+      if (!beta || !beta.starred) throw new Error('beta lost its star');
+      const sec = snap().sections.find((s) => s.folder && s.folder.endsWith('/fold'));
+      const arch = rows.filter((r) => r.archived);
+      if (arch.length !== 1) throw new Error(`${arch.length} archived DMs, expected 1`);
+      if (arch[0].sectionId !== sec.id && arch[0].section_id !== sec.id)
+        throw new Error('the archived DM left the folder section');
+      if (rows.some((r) => r.starred && r.name !== NAME_B)) throw new Error('an extra DM is starred');
+      await t.waitFor('store shows the flags', () => {
+        const s = snap().sessions;
+        return s.find((x) => x.name === NAME_B)?.starred && s.some((x) => x.archived);
+      });
+      return `${NAME_B} starred, ${arch[0].name} archived`;
+    });
+    await t.step('restart: preferences survived', async () => {
+      const prefs = await invoke('prefs_get', {});
+      if (prefs.mode !== 'dark') throw new Error(`mode is ${prefs.mode}`);
+      await t.waitFor('store has the prefs', () => snap().prefs?.mode === 'dark');
+      return 'mode dark';
+    });
+    await t.step('restart: the window probe works after a relaunch', async () => {
+      const st = await invoke('e2e_window_state', {});
+      if (st.forced !== null) throw new Error('a probe pin survived the restart');
+      t.fact('windowStateAfterRestart', st);
+      return `active=${st.active} native=${st.nativeFocused} webview=${st.webviewFocused}`;
+    });
     await t.step('restart: earlier notification decisions are still on record', async () => {
       const log = await decisions();
       if (!log.some((l) => l.includes('event=needs') && l.includes('decision=fire')))
@@ -181,13 +209,95 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     return covered ? 'decision=suppress reason=hook_keep, no notify:fire' : 'fired (no audio hook)';
   });
 
-  // ---- 3. needs-you for an unfocused DM ------------------------------------------------------------
+  // ---- 3. needs-you: focused DM stays silent, unfocused DM notifies ----------------------------------
   // Alpha runs with --permission-mode default (from --open-dm), so a Bash command asks.
-  await t.step('notifications: an unfocused needs-you prompt fires notify:fire', async () => {
+  const needsLines = async (dm) =>
+    (await decisions()).filter((l) => l.includes('event=needs ') && l.includes(`dm=${dm} `));
+  const needsFires = (dm) => fires.filter((f) => f.id === dm && f.event === 'needs').length;
+  // Ask alpha for a Bash command, wait for the next needs-you decision about it, return that line.
+  async function askNeeds(file, beforeLines) {
+    await t.sendFromComposer(
+      `Use the Bash tool to run exactly this command and nothing else: touch ${A}/${file}`,
+    );
+    await t.waitFor('user message', () => t.userTexts().some((x) => x.includes(file)), 15_000);
+    const alpha = t.dm(NAME_A).id;
+    return t.waitFor(
+      `a new needs-you decision for alpha (${file})`,
+      async () => {
+        const lines = await needsLines(alpha);
+        return lines.length > beforeLines ? lines[lines.length - 1] : null;
+      },
+      TURN_MS,
+    );
+  }
+  async function allowFromChat() {
     t.selectDm(NAME_A);
     await t.waitFor('on alpha', () => t.badge(NAME_A).active, 5000);
     t.activeName = NAME_A;
     await t.showView('Chat');
+    const w = await t.awaitWidget('permission', TURN_MS);
+    t.clickButton(w, 'Allow');
+    await turnIdle(NAME_A);
+  }
+  const showAlpha = async () => {
+    t.selectDm(NAME_A);
+    await t.waitFor('on alpha', () => t.badge(NAME_A).active, 5000);
+    t.activeName = NAME_A;
+    await t.showView('Chat');
+  };
+
+  await t.step('notifications: needs-you on the on-screen DM is suppressed as focused', async () => {
+    await showAlpha();
+    const alpha = t.dm(NAME_A).id;
+    // Attempt 0 relies on the real window and webview focus. A locked or occluded screen gives
+    // the window no stable focus, so attempt 1 pins the probe active (focus hint plus probe are
+    // still exercised) and the detail says which one proved it.
+    for (const pinned of [false, true]) {
+      await invoke('e2e_focus_window', {}).catch(() => undefined);
+      if (pinned) await invoke('e2e_force_active', { active: true });
+      else {
+        // The probe must stay active for 2 s in a row before the prompt is sent.
+        let since = 0;
+        const stable = await t
+          .waitFor(
+            'probe stays active',
+            async () => {
+              const on = (await invoke('e2e_window_state', {})).active;
+              since = on ? since || Date.now() : 0;
+              return on && Date.now() - since > 2000;
+            },
+            8000,
+          )
+          .then(() => true, () => false);
+        if (!stable) continue;
+      }
+      const state = await invoke('e2e_window_state', {});
+      t.fact('windowStateFocused', { ...state, hasFocus: document.hasFocus(), pinned });
+      const beforeLines = (await needsLines(alpha)).length;
+      const beforeFires = needsFires(alpha);
+      const line = await askNeeds(pinned ? 'needs-focused-pinned.txt' : 'needs-focused.txt', beforeLines);
+      await invoke('e2e_force_active', { active: null });
+      if (line.includes('decision=suppress') && line.includes('reason=focused')) {
+        await t.sleep(1500);
+        if (needsFires(alpha) !== beforeFires)
+          throw new Error('notify:fire reached the UI for the focused DM');
+        if (t.badge(NAME_A).needs < 1) throw new Error('alpha shows no needs-you badge');
+        await allowFromChat();
+        return `${pinned ? 'probe pinned active (window not stably focused)' : 'real focus'}: native=${state.nativeFocused} webview=${state.webviewFocused}; ${line.split(' ').slice(2).join(' ')}; no notify:fire`;
+      }
+      if (pinned) throw new Error(`expected decision=suppress reason=focused, got: ${line}`);
+      // The window lost focus while the turn ran: answer the prompt and retry pinned.
+      await allowFromChat();
+      await showAlpha();
+    }
+    throw new Error('unreachable');
+  });
+
+  await t.step('notifications: an unfocused needs-you prompt fires notify:fire', async () => {
+    await showAlpha();
+    const alpha = t.dm(NAME_A).id;
+    const beforeLines = (await needsLines(alpha)).length;
+    const beforeFires = needsFires(alpha);
     await t.sendFromComposer(
       `Use the Bash tool to run exactly this command and nothing else: touch ${A}/needs.txt`,
     );
@@ -196,24 +306,44 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     t.selectDm(NAME_B);
     await t.waitFor('on beta', () => t.badge(NAME_B).active, 5000);
     t.activeName = NAME_B;
-    const alpha = t.dm(NAME_A).id;
-    await t.waitFor(
-      'needs-you notify:fire for alpha',
-      () => fires.some((f) => f.id === alpha && f.event === 'needs'),
+    const line = await t.waitFor(
+      'a new needs-you decision for alpha',
+      async () => {
+        const lines = await needsLines(alpha);
+        return lines.length > beforeLines ? lines[lines.length - 1] : null;
+      },
       TURN_MS,
     );
-    if (!(await hasDecision(alpha, 'needs', 'fire', 'ok')))
-      throw new Error('no "event=needs decision=fire reason=ok" line in the decision log');
+    if (!line.includes('decision=fire') || !line.includes('reason=ok'))
+      throw new Error(`expected decision=fire reason=ok, got: ${line}`);
+    await t.waitFor('notify:fire reached the UI', () => needsFires(alpha) > beforeFires, 10_000);
     if (t.badge(NAME_A).needs < 1) throw new Error('alpha shows no needs-you badge');
-    const fire = fires.find((f) => f.id === alpha && f.event === 'needs');
+    const fire = fires.filter((f) => f.id === alpha && f.event === 'needs').pop();
     t.fact('needsFire', { title: fire.title, event: fire.event });
-    // Answer it from chat so the turn can end.
-    t.selectDm(NAME_A);
-    t.activeName = NAME_A;
-    const w = await t.awaitWidget('permission', TURN_MS);
-    t.clickButton(w, 'Allow');
-    await turnIdle(NAME_A);
-    return `notify:fire needs for "${fire.title}"`;
+    await allowFromChat();
+    return `notify:fire needs for "${fire.title}" (${line.split(' ').slice(2).join(' ')})`;
+  });
+
+  await t.step('notifications: a blurred window fires even for the DM on screen', async () => {
+    await showAlpha();
+    const alpha = t.dm(NAME_A).id;
+    await invoke('e2e_force_active', { active: false });
+    try {
+      const st = await invoke('e2e_window_state', {});
+      if (st.active) throw new Error('the probe still says active while pinned inactive');
+      const beforeLines = (await needsLines(alpha)).length;
+      const beforeFires = needsFires(alpha);
+      const line = await askNeeds('needs-blurred.txt', beforeLines);
+      if (!line.includes('decision=fire') || !line.includes('reason=ok'))
+        throw new Error(`expected decision=fire reason=ok, got: ${line}`);
+      await t.waitFor('notify:fire reached the UI', () => needsFires(alpha) > beforeFires, 10_000);
+    } finally {
+      await invoke('e2e_force_active', { active: null });
+    }
+    await allowFromChat();
+    const st = await invoke('e2e_window_state', {});
+    if (st.forced !== null) throw new Error('the probe pin was not released');
+    return 'blurred window: decision=fire reason=ok, then the pin was released';
   });
 
   // ---- 4. folder section over a git repo --------------------------------------------------------------
@@ -347,6 +477,23 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
   });
 
   // ---- 5. restart in the middle -------------------------------------------------------------------------
+  await t.step('before the restart: star a DM, archive another, change a preference', async () => {
+    const beta = t.dm(NAME_B).id;
+    const inFold = snap().sessions.find((x) => x.sectionId === sec && x.name !== NAME_A);
+    if (!inFold) throw new Error('no DM in the folder section to archive');
+    await store().setFlags(beta, { starred: true });
+    await store().setFlags(inFold.id, { archived: true });
+    await invoke('prefs_set', { patch: { mode: 'dark' } });
+    const rows = await invoke('session_list', {});
+    const b = rows.find((r) => r.id === beta);
+    const f = rows.find((r) => r.id === inFold.id);
+    if (!b || !b.starred) throw new Error('beta is not starred in the backend');
+    if (!f || !f.archived) throw new Error('the folder DM is not archived in the backend');
+    if ((await invoke('prefs_get', {})).mode !== 'dark') throw new Error('mode was not saved');
+    t.fact('archivedFolderDm', inFold.name);
+    return `starred ${NAME_B}, archived ${inFold.name}, mode dark`;
+  });
+
   await t.step('quit path', async () => {
     t.fact('hooksBeforeQuit', (await t.pgrep('patchroom-hook')).length);
   });

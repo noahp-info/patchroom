@@ -26,6 +26,8 @@ export interface ThemeRuntime {
 export interface PrefsPaneProps {
   onClose(): void;
   dms?: { id: string; name: string }[];
+  /** Section to open first. */
+  initialTab?: 'terminal';
 }
 
 interface PrefsApi {

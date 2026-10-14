@@ -34,6 +34,11 @@ export interface OpenThread {
 }
 
 /** The overlay views over the conversation. */
+export interface PrefsTarget {
+  tab: 'terminal';
+  dmId?: string;
+}
+
 export type Panel = null | 'activity' | 'saved' | 'search' | 'switcher' | 'prefs';
 
 /** Where a dragged DM lands. */
@@ -71,6 +76,8 @@ export interface AppState {
   activity: ActivityRow[];
   prefs: Prefs | null;
   panel: Panel;
+  /** Where Preferences opens: a tab, and a DM whose terminal look to show. */
+  prefsTarget: PrefsTarget | null;
   /** Search scope when the search panel opens: the active DM or every DM. */
   searchScope: 'dm' | 'all';
   /** DM ids, most recently opened first. */
@@ -140,6 +147,7 @@ export class AppStore {
     activity: [],
     prefs: null,
     panel: null,
+    prefsTarget: null,
     searchScope: 'all',
     recent: readRecent(),
     folders: {},
@@ -718,11 +726,16 @@ export class AppStore {
   }
 
   setPanel(panel: Panel, searchScope?: 'dm' | 'all'): void {
-    this.set({ panel, ...(searchScope ? { searchScope } : {}) });
+    this.set({ panel, prefsTarget: null, ...(searchScope ? { searchScope } : {}) });
   }
 
   closePanel(): void {
-    if (this.state.panel) this.set({ panel: null });
+    if (this.state.panel) this.set({ panel: null, prefsTarget: null });
+  }
+
+  /** Open Preferences, optionally on the Terminal tab at one DM's row. */
+  openPrefs(target: PrefsTarget | null = null): void {
+    this.set({ panel: 'prefs', prefsTarget: target });
   }
 
   /** Open a DM, on its chat, optionally scrolled to an item or a pending prompt. */

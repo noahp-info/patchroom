@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openWithDm } from './helpers';
+import { chooseNew, openWithDm } from './helpers';
 
 // 880 is the window minimum (src-tauri/tauri.conf.json).
 const WIDTHS = [1400, 1250, 1100, 1000, 950, 900, 880];
@@ -114,12 +114,12 @@ test.describe('layout', () => {
         await page.setViewportSize({ width, height: 800 });
         await page.emulateMedia({ colorScheme: scheme });
         await page.goto('/?mock');
-        await page.getByRole('button', { name: 'New section' }).click();
+        await chooseNew(page, 'New section');
         await page
           .getByPlaceholder('Section name')
           .fill('Client engagements and other extremely long section names 2026');
         await page.getByPlaceholder('Section name').press('Enter');
-        await page.getByRole('button', { name: 'New DM' }).first().click();
+        await chooseNew(page, 'New DM');
         const dlg = page.getByRole('dialog', { name: 'New DM' });
         await dlg
           .getByLabel('Folder')
@@ -214,7 +214,7 @@ test.describe('layout', () => {
   test('header boxes only grow as the window widens', async ({ page }) => {
     await page.setViewportSize({ width: 880, height: 800 });
     await page.goto('/?mock');
-    await page.getByRole('button', { name: 'New DM' }).first().click();
+    await chooseNew(page, 'New DM');
     const dlg = page.getByRole('dialog', { name: 'New DM' });
     await dlg
       .getByLabel('Folder')
@@ -244,7 +244,7 @@ test.describe('layout', () => {
   test('long cwd keeps the folder name and offers a tooltip', async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 800 });
     await page.goto('/?mock');
-    await page.getByRole('button', { name: 'New DM' }).first().click();
+    await chooseNew(page, 'New DM');
     const dlg = page.getByRole('dialog', { name: 'New DM' });
     await dlg.getByLabel('Folder').fill('/Users/NDP/code/some/deeply/nested/projects/patchroom');
     await dlg.getByRole('button', { name: 'Start DM' }).click();
@@ -257,7 +257,7 @@ test.describe('layout', () => {
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto('/?mock');
-      await page.getByRole('button', { name: 'New DM' }).first().click();
+      await chooseNew(page, 'New DM');
       const dlg = page.getByRole('dialog', { name: 'New DM' });
       const input = (await dlg.getByLabel('Folder').boundingBox())!;
       const btn = (await dlg.getByRole('button', { name: 'Browse' }).boundingBox())!;

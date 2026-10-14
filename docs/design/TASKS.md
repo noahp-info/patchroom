@@ -22,19 +22,26 @@ Status: design draft, 2026-10-14. Requested by the owner. Planned as phase P3c, 
 - **Agenda:** today, then this week, then later. A Today block also tops the Activity view.
 - **Per project:** each section header gets a Tasks tab. Channels (P5) reuse it as their board.
 
-## Asana
+## Task connectors (local first, cloud when you want it)
 
-The owner chooses one of two options:
+Decided by Noah, 2026-10-14: build for both. Native local tasks are the default. Connectors link Patchroom to a tracker a person or team already uses, for maximum adoption.
 
-- **A. Move off Asana (recommended).**
-  - A one-time import brings in open tasks from the chosen Asana projects. Each Asana project maps to a section, and due dates come across.
-  - After that, Patchroom is the source of truth.
-  - The import uses the owner's existing `$ASANA_TOKEN` from the environment at import time. Patchroom never stores the token.
-- **B. Bridge for a while.**
-  - Two-way sync for chosen projects: due date, title, done and notes.
-  - This keeps outside writers working: iTerm sessions, scheduled jobs and the asana-today skill still write to Asana.
-  - Cost: a background outbound sync and conflict rules. It is a new network surface, so it ships default-off as a plugin (spec 3.9 importers).
+- **Connector = a plugin** (spec 3.9 contribution point "task provider"). First-party connectors ship in this order: Asana, Linear, Notion, Monday, Jira, GitHub Issues. Each implements one small interface: `listProjects`, `pull(since)`, `push(changes)`, `mapFields`.
+- **Three modes, chosen per project:**
+  1. **Local:** Patchroom is the source of truth. This is the default.
+  2. **Import once:** pull open tasks with their due dates. The project then becomes local. This is Noah's own path off Asana.
+  3. **Linked:** two-way sync of title, due date, done, assignee, notes and a backlink to the Patchroom DM. The tracker stays the source of truth on conflict. Agents still use the same `task_*` tools; the connector does the syncing.
+- **Field mapping:** project to project, section or board; due date to due date; assignee to member (Team tier). Unmapped fields stay in the tracker untouched.
+- **Agents never see connectors.** They call `task_create` and friends. The required project and due date apply in every mode.
+- **Default off.** No connector runs until the user adds it. Syncs run outbound only, on an interval while the app is open, with a manual "Sync now".
+
+## Credentials
+
+Decided by Noah, 2026-10-14: Keychain OK.
+
+
+Connectors need a token, and spec section 4 says Patchroom never stores secrets. Proposal: tokens go in the macOS Keychain, scoped to the Patchroom app, and never in SQLite, logs or exports. OAuth is used where the tracker offers it, and a pasted personal token otherwise. A connector can also read a token from an environment variable (for example `$ASANA_TOKEN`), which stores nothing. Section 4 gets one line: "Connector tokens live only in the macOS Keychain."
 
 ## Data and security
 
-Local SQLite only. No listener. Asana calls are outbound only, happen on demand (A) or on an interval (B), and log no task content.
+Local SQLite only. No listener. Connector calls are outbound only and log no task content. Keychain is the only credential store.

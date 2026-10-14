@@ -13,6 +13,7 @@ import { ITERM_THEME } from './lib/sessionTerminal';
 import { cwdParts } from './lib/cwd';
 import { launchFolders } from './lib/folder';
 import { shellQuotePath } from './lib/keys';
+import { termbarStyle } from './lib/termbar';
 import { getStore } from './state/runtime';
 import { useAppState } from './state/store';
 import type { Needs, SessionStatus } from './ipc';
@@ -267,6 +268,9 @@ export function App() {
             <div
               className={`termbar${view === 'chat' ? ' termbar--off' : ''}`}
               data-testid="term-title"
+              style={termbarStyle(
+                (state.activeId && state.termBg[state.activeId]) || ITERM_THEME.background,
+              )}
             >
               <span className="termbar__title" title={active.title || undefined}>
                 {active.title}

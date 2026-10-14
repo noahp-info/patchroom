@@ -191,13 +191,13 @@ test('cable path starts and ends at the plugs', () => {
 });
 
 const SRC = join(import.meta.dirname, '..', '..', 'src');
-// Absolute paths of every .css under src except the theme dir (scanned above) and the
-// workspace-owned styles.css, so any new P3 stylesheet is covered automatically.
+// Absolute paths of every .css under src except the theme dir (scanned above), styles.css
+// included, so any new stylesheet is covered automatically.
 function p3Stylesheets(dir = SRC): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const full = join(dir, e.name);
     if (e.isDirectory()) return full === THEME_CSS ? [] : p3Stylesheets(full);
-    return e.name.endsWith('.css') && full !== join(SRC, 'styles.css') ? [full] : [];
+    return e.name.endsWith('.css') ? [full] : [];
   });
 }
 
@@ -254,16 +254,27 @@ test('every var(--x) in the CSS is a token or a documented base variable', () =>
   const files = [
     'base.css',
     ...readdirSync(join(THEME_CSS, 'bases')).map((f) => `bases/${f}`),
-    // Every P3 stylesheet outside the theme dir, so new CSS cannot hard-code a color.
+    // Every stylesheet outside the theme dir, so new CSS cannot hard-code a color.
     ...p3Stylesheets(),
   ];
-  for (const f of files) {
-    const css = readFileSync(f.startsWith('/') ? f : join(THEME_CSS, f), 'utf8').replace(
+  const read = (f: string) =>
+    readFileSync(f.startsWith('/') ? f : join(THEME_CSS, f), 'utf8').replace(
       /\/\*[\s\S]*?\*\//g,
       '',
     );
+  // A stylesheet may derive its own variables from tokens (`--c-link: color-mix(...)`).
+  const declared = new Set<string>(
+    files.flatMap((f) => [...read(f).matchAll(/(?:^|[;{\s])--([a-z0-9-]+)\s*:/g)].map((m) => m[1])),
+  );
+  // Variables the UI sets inline from runtime data, with a CSS fallback where one is needed.
+  const inlineVars = new Set(['pct', 'term-bg', 'termbar-bg', 'termbar-line', 'termbar-fg']);
+  for (const f of files) {
+    const css = read(f);
     for (const m of css.matchAll(/var\(--([a-z0-9-]+)/g)) {
-      assert.ok(tokens.has(m[1]) || baseVars.has(m[1]), `${f} uses undefined --${m[1]}`);
+      assert.ok(
+        tokens.has(m[1]) || baseVars.has(m[1]) || declared.has(m[1]) || inlineVars.has(m[1]),
+        `${f} uses undefined --${m[1]}`,
+      );
     }
   }
 });

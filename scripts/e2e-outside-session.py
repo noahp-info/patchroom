@@ -21,7 +21,24 @@ import time
 PROMPT = "Reply with exactly the single word OUTSIDE and nothing else."
 
 
+CHILD = 0
+
+
+def stop_child(*_args) -> None:
+    """On TERM (the app stopping its helper) end the claude child, then exit."""
+    if CHILD:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.kill(CHILD, sig)
+            except OSError:
+                break
+            if reaped(CHILD, 3):
+                break
+    os._exit(0)
+
+
 def main() -> int:
+    global CHILD
     folder = sys.argv[1]
     shell = os.environ.get("SHELL") or "/bin/zsh"
     pid, fd = pty.fork()
@@ -32,6 +49,9 @@ def main() -> int:
             if k.startswith("CLAUDE") or k == "ANTHROPIC_MODEL":
                 env.pop(k)
         os.execvpe(shell, [shell, "-l", "-c", "exec claude --model haiku"], env)
+    CHILD = pid
+    signal.signal(signal.SIGTERM, stop_child)
+    signal.signal(signal.SIGHUP, stop_child)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
     buf = ""
     sent = False

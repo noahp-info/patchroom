@@ -289,6 +289,8 @@ export class Runner {
   /** Write the final report, then quit through the normal quit path. */
   async finish(quit = true): Promise<void> {
     await this.writeReport(true);
+    // Nothing a scenario started may outlive it, whether it passed or failed.
+    await invoke('e2e_outside_stop').catch(() => undefined);
     if (quit) await invoke('e2e_quit');
   }
 
@@ -461,11 +463,27 @@ export class Runner {
     click(row);
   }
 
+  /** Press the sidebar + button and pick one of its menu items, as a user does. */
+  async chooseNew(label: string): Promise<void> {
+    const btn = document.querySelector<HTMLButtonElement>(
+      'aside.side button[aria-label="Create new"]',
+    );
+    if (!btn) throw new Error('no + button');
+    click(btn);
+    const item = await this.waitFor(
+      `+ menu item ${label}`,
+      () =>
+        [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] [role="menuitem"]')].find(
+          (b) => textOf(b) === label,
+        ),
+      5000,
+    );
+    click(item);
+  }
+
   /** Open the New DM dialog and start a DM in `cwd`, through the real form. */
   async newDm(cwd: string, name: string): Promise<void> {
-    const btn = document.querySelector<HTMLButtonElement>('aside.side button[aria-label="New DM"]');
-    if (!btn) throw new Error('no New DM button');
-    click(btn);
+    await this.chooseNew('New DM');
     const dlg = await this.waitFor(
       'New DM dialog',
       () => document.querySelector<HTMLDialogElement>('dialog.newdm[open]'),

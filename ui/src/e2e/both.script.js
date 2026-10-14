@@ -480,7 +480,7 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
 
   await t.step('P3: a new section holds a DM and keeps it after a re-read', async () => {
     await t.showView('Chat');
-    t.clickSel('button[aria-label="New section"]');
+    await t.chooseNew('New section');
     const input = await t.waitFor('section name field', () =>
       document.querySelector('input[aria-label="Section name"]'),
     );
@@ -512,6 +512,45 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     if (!sec || !sec.querySelector(`[data-dm="${t.dm(NAME_B).id}"]`)) {
       throw new Error('the backend did not keep the DM in its section');
     }
+  });
+
+  await t.step(
+    'P3: the + menu offers New DM, New section and New section from folder',
+    async () => {
+      const plus = document.querySelector('aside.side button[aria-label="Create new"]');
+      plus.click();
+      const items = await t.waitFor('+ menu items', () => {
+        const list = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')];
+        return list.length === 3 ? list.map((b) => (b.textContent || '').trim()) : null;
+      });
+      const want = ['New DM', 'New section', 'New section from folder...'];
+      if (items.join('|') !== want.join('|')) throw new Error(`menu items: ${items.join(' | ')}`);
+      await t.waitFor('focus in the menu', () => document.activeElement?.closest('[role="menu"]'));
+      t.chord('ArrowDown');
+      t.chord('Escape');
+      await t.waitFor('menu closed', () => !document.querySelector('[role="menu"]'));
+      if (document.activeElement !== plus) throw new Error('focus did not return to the + button');
+    },
+  );
+
+  await t.step('P3: Terminal look... opens Preferences > Terminal at the DM row', async () => {
+    t.contextMenuOn(sel(NAME_A));
+    const item = await t.waitFor('Terminal look item', () =>
+      [...document.querySelectorAll('[role="menuitem"]')].find(
+        (b) => (b.textContent || '') === 'Terminal look...',
+      ),
+    );
+    item.click();
+    const row = await t.waitFor('the DM terminal row', () =>
+      document.querySelector(
+        `.prefs [data-testid="term-row-${t.dm(NAME_A).id}"][data-target="true"]`,
+      ),
+    );
+    if (!document.querySelector('.prefs [data-testid="prefs-terminal"]'))
+      throw new Error('Preferences did not open on the Terminal tab');
+    if (!row.contains(document.activeElement)) throw new Error('focus is not on the DM row');
+    window.__PR_STORE__.closePanel();
+    await t.waitFor('prefs closed', () => !document.querySelector('.prefs'));
   });
 
   await t.step('P3: Cmd+K opens a DM by name', async () => {

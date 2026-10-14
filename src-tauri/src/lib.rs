@@ -163,6 +163,11 @@ macro_rules! app_handler {
             e2e::e2e_decision_log,
             e2e::e2e_outside_session,
             e2e::e2e_outside_done,
+            e2e::e2e_outside_stop,
+            e2e::e2e_webview_focus,
+            e2e::e2e_focus_window,
+            e2e::e2e_force_active,
+            e2e::e2e_window_state,
         ]
     };
 }
@@ -269,6 +274,8 @@ pub fn run() {
     app.run(|handle, event| {
         // Quit path: kill every child and hook before the process ends.
         if let RunEvent::Exit = event {
+            #[cfg(debug_assertions)]
+            e2e::stop_outside();
             if let Some(m) = handle.try_state::<Arc<Manager>>() {
                 m.shutdown();
             }

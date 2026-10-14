@@ -48,7 +48,8 @@ function readCollapsed(): Record<string, boolean> {
 
 type MenuState =
   | { anchor: Anchor; kind: 'dm' | 'section'; id: string }
-  | { anchor: Anchor; kind: 'folder-session'; id: string; sectionId: string };
+  | { anchor: Anchor; kind: 'folder-session'; id: string; sectionId: string }
+  | { anchor: Anchor; kind: 'new' };
 
 interface DropAt {
   groupId: string;
@@ -92,6 +93,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
   }, []);
   const groups = buildGroups(state.sections, state.sessions);
   const root = useRef<HTMLElement>(null);
+  const plusBtn = useRef<HTMLButtonElement>(null);
 
   // Needs-you holds until the prompt is answered, whichever DM is open. Unread clears on view.
   // Archived DMs never badge.
@@ -106,10 +108,50 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
       setTip(null);
       return;
     }
-    const set = () => setTip({ id: info.sessionId, info, rect });
-    if (immediate) set();
+    const set = () => {
+      // Read the row again: it may have scrolled or been dragged away during the delay. A card
+      // only shows for the row the pointer is on, or the one holding keyboard focus.
+      const el = rowEl(info.sessionId);
+      if (!el || !(el.matches(':hover') || el.matches(':focus-visible'))) return;
+      setTip({ id: info.sessionId, info, rect: el.getBoundingClientRect() });
+    };
+    if (immediate) setTip({ id: info.sessionId, info, rect });
     else tipTimer.current = window.setTimeout(set, 140);
   }
+
+  const rowEl = (sessionId: string) =>
+    root.current?.querySelector<HTMLElement>(`[data-fs-session="${CSS.escape(sessionId)}"]`) ??
+    null;
+  const openTipId = tip?.id ?? null;
+  // The hover card follows the pointer, never the layout. Scrolling, a press, a drag or a pointer
+  // that has left the row all dismiss it, so it cannot sit beside a different row.
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const drop = () => {
+      window.clearTimeout(tipTimer.current);
+      setTip(null);
+    };
+    // A scroll only hides the card. A pending show stays: it re-checks :hover when it fires.
+    const hide = () => setTip(null);
+    el.addEventListener('scroll', hide, true);
+    el.addEventListener('wheel', hide, { passive: true });
+    window.addEventListener('pointerdown', drop, true);
+    const move = (e: globalThis.PointerEvent) => {
+      if (!openTipId) return;
+      const row = rowEl(openTipId);
+      if (!row) return drop();
+      if (!row.contains(e.target as Node) && !row.matches(':focus-visible')) drop();
+    };
+    window.addEventListener('pointermove', move, true);
+    return () => {
+      window.clearTimeout(tipTimer.current);
+      el.removeEventListener('scroll', hide, true);
+      el.removeEventListener('wheel', hide);
+      window.removeEventListener('pointerdown', drop, true);
+      window.removeEventListener('pointermove', move, true);
+    };
+  }, [openTipId]);
 
   function activateLazy(section: SectionInfo, info: FolderSession) {
     setTip(null);
@@ -148,6 +190,13 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     }
   }
 
+  function closeMenu() {
+    const was = menu?.kind;
+    setMenu(null);
+    // Hand focus back to the + button; a chosen action then moves it on (dialog, name field).
+    if (was === 'new') plusBtn.current?.focus();
+  }
+
   // ---- drag and drop ----------------------------------------------------------------------
 
   const destOf = (g: Group): DropDest =>
@@ -176,7 +225,11 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
 
   function dragDm(e: PointerEvent, s: SessionInfo) {
     beginDrag(e, {
-      onStart: () => setDrag({ kind: 'dm', id: s.id, label: s.name }),
+      onStart: () => {
+        window.clearTimeout(tipTimer.current);
+        setTip(null);
+        setDrag({ kind: 'dm', id: s.id, label: s.name });
+      },
       onMove: (x, y, under) => {
         setGhost({ x, y });
         setDrop(resolveDrop(y, under, s.id));
@@ -205,7 +258,11 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
   function dragSection(e: PointerEvent, g: Group) {
     if (!g.section || renaming === g.id) return;
     beginDrag(e, {
-      onStart: () => setDrag({ kind: 'section', id: g.id, label: g.title }),
+      onStart: () => {
+        window.clearTimeout(tipTimer.current);
+        setTip(null);
+        setDrag({ kind: 'section', id: g.id, label: g.title });
+      },
       onMove: (x, y, under) => {
         setGhost({ x, y });
         setSecDrop(resolveSection(y, under, g.id));
@@ -226,6 +283,13 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
   // ---- context menus ----------------------------------------------------------------------
 
   function menuItems(m: MenuState): MenuItem[] {
+    if (m.kind === 'new') {
+      return [
+        { label: 'New DM', onSelect: () => onNewDm() },
+        { label: 'New section', onSelect: () => setAdding(true) },
+        { label: 'New section from folder...', onSelect: () => void fromFolder() },
+      ];
+    }
     if (m.kind === 'folder-session') {
       const section = state.sections.find((x) => x.id === m.sectionId);
       const info = state.folders[m.sectionId]?.sessions.find((x) => x.sessionId === m.id);
@@ -294,6 +358,11 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     if (unreadOf(s) > 0) {
       items.push({ label: 'Mark as read', separator: true, onSelect: () => store.markRead(s.id) });
     }
+    items.push({
+      label: 'Terminal look...',
+      separator: true,
+      onSelect: () => store.openPrefs({ tab: 'terminal', dmId: s.id }),
+    });
     return items;
   }
 
@@ -508,14 +577,26 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
         </div>
         <button
           type="button"
-          onClick={() => setAdding((v) => !v)}
-          aria-label="New section"
-          title="New section"
-          aria-expanded={adding}
+          ref={plusBtn}
+          className="ws-new"
+          aria-label="Create new"
+          title="New DM or section"
+          aria-haspopup="menu"
+          aria-expanded={menu?.kind === 'new'}
+          data-testid="new-menu"
+          onClick={(e) =>
+            setMenu(
+              menu?.kind === 'new'
+                ? null
+                : { anchor: e.currentTarget.getBoundingClientRect(), kind: 'new' },
+            )
+          }
+          onKeyDown={(e) => {
+            if (e.key !== 'ArrowDown') return;
+            e.preventDefault();
+            setMenu({ anchor: e.currentTarget.getBoundingClientRect(), kind: 'new' });
+          }}
         >
-          <Icon name="section" />
-        </button>
-        <button type="button" onClick={() => onNewDm()} aria-label="New DM" title="New DM">
           <Icon name="plus" />
         </button>
         <button
@@ -540,16 +621,6 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
           />
           <button type="submit" className="btn sec" disabled={sectionName.trim() === ''}>
             Add
-          </button>
-          <button
-            type="button"
-            className="btn sec"
-            aria-label="New section from folder..."
-            title="New section from folder..."
-            onClick={() => void fromFolder()}
-          >
-            <Icon name="folder" />
-            From folder...
           </button>
         </form>
       )}
@@ -710,10 +781,12 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
               ? 'DM actions'
               : menu.kind === 'section'
                 ? 'Section actions'
-                : 'Session actions'
+                : menu.kind === 'new'
+                  ? 'Create new'
+                  : 'Session actions'
           }
           items={menuItems(menu)}
-          onClose={() => setMenu(null)}
+          onClose={closeMenu}
         />
       )}
       {daysEdit && (

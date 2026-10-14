@@ -220,7 +220,7 @@ body {
   font: inherit;
 }
 .newdm::backdrop {
-  background: rgb(10 14 13 / 0.45); /* fixed dark scrim: a --fg mix lightens it in dark mode */
+  background: rgb(0 0 0 / 0.45); /* neutral scrim: a --fg mix would lighten it in dark mode */
 }
 .newdm h2 {
   margin: 0 0 2px;
@@ -361,12 +361,14 @@ body {
   font-weight: 700;
 }
 
-/* Terminal chrome: fixed iTerm-style colors that sit on the terminal's own black, the same
-   in every theme. Defined once here, used by the title strip. */
+/* Terminal chrome for claude's ANSI status line, which is drawn in the iTerm palette (bright
+   colors made for black). Neutral black and white alpha, so it needs no theme token. The title
+   strip above the live terminal does not use these: it follows the terminal's own palette
+   (--termbar-*, set inline from the DM's real background). */
 .pr-app {
-  --term-chrome: #1b1d1e;
-  --term-chrome-line: #2a2d2e;
-  --term-chrome-fg: #b9c0bd;
+  --term-chrome: rgb(0 0 0 / 0.9);
+  --term-chrome-line: rgb(255 255 255 / 0.12);
+  --term-chrome-fg: rgb(255 255 255 / 0.75);
 }
 /* claude's live title strip, attached to the top of the terminal */
 .termbar {
@@ -376,15 +378,15 @@ body {
   align-items: center;
   justify-content: center;
   padding: 0 var(--gutter);
-  background: var(--term-chrome);
-  border-bottom: 1px solid var(--term-chrome-line);
+  background: var(--termbar-bg, var(--code-bg));
+  border-bottom: 1px solid var(--termbar-line, var(--line));
 }
 .termbar__title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--term-chrome-fg);
+  color: var(--termbar-fg, var(--muted));
 }
 /* exited/resume state: app chrome under the header, never text in the terminal buffer */
 .exitbar {
@@ -2559,4 +2561,11 @@ body.dragging * {
 .field select:focus-visible {
   outline: 2px solid var(--link);
   outline-offset: 0;
+}
+
+/* Preferences opened from a DM's "Terminal look..." item: the DM's row wears a ring. */
+.prefs [data-target='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r);
 }

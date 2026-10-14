@@ -104,7 +104,9 @@ ours() {
       "$BASE"/*|"/private$BASE"/*) echo "$pid"; continue ;;
     esac
     case "$cmd" in *"$BASE"/s*/data/*|*"/private$BASE"/s*/data/*) echo "$pid" ;; esac
-  done < <(ps -axww -o pid=,command= | grep -E '(^|[ /])claude( |$)|patchroom-hook' | grep -v grep)
+    # The outside-session helper (python driver) carries the folder it works in.
+    case "$cmd" in *e2e-outside-session*"$BASE"/s*|*e2e-outside-session*"/private$BASE"/s*) echo "$pid" ;; esac
+  done < <(ps -axww -o pid=,command= | grep -E '(^|[ /])claude( |$)|patchroom-hook|e2e-outside-session' | grep -v grep)
 }
 
 # ---- run ----------------------------------------------------------------------------------------------------

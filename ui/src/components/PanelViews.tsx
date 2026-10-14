@@ -114,11 +114,28 @@ export function SavedView({ state, store }: { state: AppState; store: AppStore }
 
 /** Preferences, from the prefs piece. A placeholder stands in until that piece is built. */
 export function PrefsView({ state, store }: { state: AppState; store: AppStore }) {
+  const target = state.prefsTarget;
+  // Opened from a DM's menu: bring that DM's terminal row into view and put focus on its palette.
+  useEffect(() => {
+    if (!target?.dmId) return;
+    const id = target.dmId;
+    const raf = requestAnimationFrame(() => {
+      const row = [
+        ...document.querySelectorAll<HTMLElement>('.prefs [data-testid^="term-row-"]'),
+      ].find((r) => r.dataset.testid === `term-row-${id}`);
+      if (!row) return;
+      row.setAttribute('data-target', 'true');
+      row.scrollIntoView({ block: 'center' });
+      row.querySelector<HTMLElement>('select')?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [target]);
   if (PrefsPane) {
     return (
       <PrefsPane
         onClose={() => store.closePanel()}
         dms={state.sessions.map((s) => ({ id: s.id, name: s.name }))}
+        initialTab={target?.tab}
       />
     );
   }

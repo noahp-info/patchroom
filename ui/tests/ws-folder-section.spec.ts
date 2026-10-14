@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { HOME, folderNames, openFolder, openSeeded, watchErrors } from './helpers';
+import { HOME, chooseNew, folderNames, openFolder, openSeeded, watchErrors } from './helpers';
 
 const rows = (page: import('@playwright/test').Page) =>
   page.locator('.side [data-folder-body="atlas"] .fs-row');
@@ -11,26 +11,24 @@ test.describe('workspace: folder sections, creation and discovery (checklist 16)
     const errs = watchErrors(page);
     await openSeeded(page, []);
     await page.evaluate((home) => (window.__PR_MOCK__!.pickResult = home), HOME);
-    await page.getByRole('button', { name: 'New section', exact: true }).click();
-    await page.getByRole('button', { name: 'New section from folder...' }).click();
+    await chooseNew(page, 'New section from folder...');
     const sec = page.locator('.side [data-kind="section"]', { hasText: 'atlas' });
     await expect(sec).toBeVisible();
     await expect(sec.locator('.sec-h')).toHaveAttribute('title', HOME);
     await expect(sec.locator('.fs-row').first()).toBeVisible();
     const made = await page.evaluate(() => window.__PR_MOCK__!.folderCreates);
     expect(made).toEqual([{ path: HOME, name: undefined }]);
-    // The form closes once the section exists.
+    // No name form: the folder names the section.
     await expect(page.getByLabel('Section name')).toHaveCount(0);
     expect(errs).toEqual([]);
   });
 
   test('a cancelled picker adds nothing', async ({ page }) => {
     await openSeeded(page, []);
-    await page.getByRole('button', { name: 'New section', exact: true }).click();
-    await page.getByRole('button', { name: 'New section from folder...' }).click();
+    await chooseNew(page, 'New section from folder...');
     await expect(page.locator('.side [data-kind="section"]')).toHaveCount(0);
     expect(await page.evaluate(() => window.__PR_MOCK__!.folderCreates)).toEqual([]);
-    await expect(page.getByLabel('Section name')).toBeVisible();
+    await expect(page.getByLabel('Section name')).toHaveCount(0);
   });
 
   test('a plain section keeps working beside a folder section', async ({ page }) => {
@@ -204,7 +202,7 @@ test.describe('workspace: folder sections, creation and discovery (checklist 16)
 
   test('the header New DM button is unchanged: no section, last folder', async ({ page }) => {
     await openFolder(page);
-    await page.locator('aside.side').getByRole('button', { name: 'New DM', exact: true }).click();
+    await chooseNew(page, 'New DM');
     const dlg = page.getByRole('dialog', { name: 'New DM' });
     await expect(dlg.getByLabel('Worktree')).toHaveCount(0);
     await dlg.getByLabel('Folder').fill('/tmp/elsewhere');
