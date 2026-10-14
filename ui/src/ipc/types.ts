@@ -26,6 +26,8 @@ export interface SessionInfo {
   archived?: boolean;
   /** P3: an unsent composer draft is stored for this DM. */
   hasDraft?: boolean;
+  /** P3 folder sections: set when the DM's cwd is outside its section's folder (e.g. "knowfirst"). */
+  folderChip?: string | null;
 }
 
 /** Reason a `waiting` session needs the user. */
@@ -37,6 +39,10 @@ export interface SectionInfo {
   name: string;
   position: number;
   collapsed: boolean;
+  /** P3: the home folder of a folder section; null for a plain section. */
+  folder?: string | null;
+  /** P3: folder sections fold sessions idle this many days into "Older than X days". */
+  archiveDays?: number;
 }
 
 export interface SessionCreateArgs {
@@ -80,6 +86,7 @@ export interface IpcEvents {
   'notify:open': { id: string };
   'prefs:changed': PrefsChangedEvent;
   'activity:changed': Record<string, never>;
+  'folder:changed': FolderChangedEvent;
 }
 
 export type Unlisten = () => void;
@@ -149,6 +156,14 @@ export interface Ipc {
   notifyTest(): Promise<void>;
   /** The DM the user is looking at (null: none), so it does not notify while focused. */
   sessionFocus(id: string | null): Promise<void>;
+  /** P3 folder sections. */
+  sectionCreateFromFolder(path: string, name?: string): Promise<{ id: string }>;
+  sectionSetArchiveDays(id: string, days: number): Promise<void>;
+  folderSessions(sectionId: string): Promise<FolderSessions>;
+  /** Creates the DM row and spawns `claude --resume` from the session's launch folder. */
+  folderSessionOpen(sectionId: string, sessionId: string): Promise<SessionInfo>;
+  /** Hides or unhides a row in the list only; the transcript is never touched. */
+  folderSessionHide(sectionId: string, sessionId: string, hidden: boolean): Promise<void>;
   on<K extends keyof IpcEvents>(
     event: K,
     handler: (payload: IpcEvents[K]) => void,
@@ -412,4 +427,43 @@ export interface NotifyFireEvent {
 }
 export interface PrefsChangedEvent {
   prefs: Prefs;
+}
+
+// ---------------------------------------------------------------------------------------------
+// P3 folder sections (docs/gauntlet/P3-FOLDER-SECTIONS.md). camelCase JSON.
+// ---------------------------------------------------------------------------------------------
+
+/** Where a session's name came from, first match wins in this order. */
+export type NameSource = 'user' | 'registry' | 'custom-title' | 'ai-title' | 'prompt';
+
+/** One resumable Claude Code session found under a folder section's home folder. */
+export interface FolderSession {
+  sessionId: string;
+  name: string;
+  nameSource: NameSource | (string & {});
+  /** The folder the session was launched from (where its transcript is filed). */
+  launchCwd: string;
+  /** Path of `launchCwd` inside the home folder; empty for the home folder itself. */
+  relPath: string;
+  branch?: string | null;
+  /** Newest transcript timestamp. */
+  lastActivity: Timestamp;
+  firstPrompt: string;
+  lastPrompt: string;
+  userTurns: number;
+  /** `claude agents --json` shows it running in another terminal. */
+  liveElsewhere: boolean;
+  /** Noise (no real user prompt, sidechain) or hidden by the user. */
+  hidden: boolean;
+  /** The Patchroom DM this session was opened as, once opened. */
+  dmId?: string | null;
+}
+
+export interface FolderSessions {
+  sessions: FolderSession[];
+  hiddenCount: number;
+}
+
+export interface FolderChangedEvent {
+  sectionId: string;
 }

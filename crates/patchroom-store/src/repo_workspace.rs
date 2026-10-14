@@ -9,8 +9,8 @@ use crate::types::{
 };
 
 const WS_COLS: &str = "id, author, created_at, updated_at, name";
-const SEC_COLS: &str =
-    "id, author, created_at, updated_at, workspace_id, name, position, collapsed";
+const SEC_COLS: &str = "id, author, created_at, updated_at, workspace_id, name, position, \
+                        collapsed, folder, archive_days";
 const CONV_COLS: &str = "id, author, created_at, updated_at, workspace_id, section_id, position, \
                          kind, name, provider, cwd, worktree, session_id, adapter_state, \
                          assign_mode, lead_id, starred, archived";
@@ -36,6 +36,8 @@ fn sec_row(r: &Row<'_>) -> rusqlite::Result<Section> {
         name: r.get(5)?,
         position: r.get(6)?,
         collapsed: r.get(7)?,
+        folder: r.get(8)?,
+        archive_days: r.get(9)?,
     })
 }
 
@@ -158,6 +160,99 @@ impl Store {
             ],
         )?;
         self.section(id)
+    }
+
+    /// Append a folder section: a section with a home folder, placed last.
+    pub fn create_folder_section(
+        &self,
+        author: &Author,
+        workspace_id: Id,
+        name: &str,
+        folder: &str,
+    ) -> Result<Section> {
+        require_nonempty("folder", folder)?;
+        let section = self.create_section(author, workspace_id, name)?;
+        self.conn.execute(
+            "UPDATE section SET folder = ?2 WHERE id = ?1",
+            params![section.id.to_string(), folder],
+        )?;
+        self.section(section.id)
+    }
+
+    /// Set the "Older than X days" threshold of a section (1 to 3650 days).
+    pub fn set_section_archive_days(&self, id: Id, days: i64) -> Result<Section> {
+        if !(1..=3650).contains(&days) {
+            return Err(Error::invalid("archive days must be between 1 and 3650"));
+        }
+        let n = self.conn.execute(
+            "UPDATE section SET archive_days = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id.to_string(), days, now()],
+        )?;
+        if n == 0 {
+            return Err(Error::not_found("section", id));
+        }
+        self.section(id)
+    }
+
+    /// Session ids the user hid from a folder section.
+    pub fn folder_hidden(&self, section_id: Id) -> Result<std::collections::HashSet<String>> {
+        let mut st = self
+            .conn
+            .prepare("SELECT session_id FROM folder_hidden WHERE section_id = ?1")?;
+        let rows = st.query_map([section_id.to_string()], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Hide or unhide a session in a folder section's list. Idempotent.
+    pub fn set_folder_hidden(
+        &self,
+        author: &Author,
+        section_id: Id,
+        session_id: &str,
+        hidden: bool,
+    ) -> Result<()> {
+        self.section(section_id)?;
+        if hidden {
+            let t = now();
+            self.conn.execute(
+                "INSERT OR IGNORE INTO folder_hidden
+                     (id, author, created_at, updated_at, section_id, session_id)
+                 VALUES (?1, ?2, ?3, ?3, ?4, ?5)",
+                params![
+                    new_id().to_string(),
+                    author.to_string(),
+                    t,
+                    section_id.to_string(),
+                    session_id
+                ],
+            )?;
+        } else {
+            self.conn.execute(
+                "DELETE FROM folder_hidden WHERE section_id = ?1 AND session_id = ?2",
+                params![section_id.to_string(), session_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// The DM conversation that runs a Claude session id, if one exists.
+    pub fn conversation_by_session(
+        &self,
+        workspace_id: Id,
+        session_id: &str,
+    ) -> Result<Option<Conversation>> {
+        Ok(self
+            .conn
+            .query_row(
+                &format!(
+                    "SELECT {CONV_COLS} FROM conversation
+                     WHERE workspace_id = ?1 AND kind = 'dm' AND session_id = ?2
+                     ORDER BY rowid LIMIT 1"
+                ),
+                params![workspace_id.to_string(), session_id],
+                conv_row,
+            )
+            .optional()?)
     }
 
     /// Fetch a section.

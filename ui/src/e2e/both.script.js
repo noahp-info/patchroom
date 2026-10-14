@@ -10,6 +10,17 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
   const NAME_A = A.split('/').pop();
   const NAME_B = 'beta';
   const TURN_MS = 120_000;
+  // Wait for a widget; if haiku did not raise it in time, nudge once with a follow-up prompt.
+  const widgetOrNudge = async (kind, nudge) => {
+    try {
+      return await t.awaitWidget(kind, 75_000);
+    } catch {
+      t.fact(`nudged_${kind}`, true);
+      await turnIdle(NAME_A).catch(() => undefined);
+      await t.sendFromComposer(nudge);
+      return t.awaitWidget(kind, TURN_MS);
+    }
+  };
   // An 8x8 solid PNG.
   const PNG_B64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC';
@@ -101,6 +112,56 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
   }
 
   t.startLogTrace();
+
+  // ---- phase 2: after the mid-script restart ---------------------------------------------------
+  // The app relaunched on the same data dir. Only what must survive a restart is checked here.
+  if ((await t.param('phase')) === 'persist') {
+    const store = () => window.__PR_STORE__;
+    const snap = () => store().getSnapshot();
+    await t.step('restart: DMs are back, ended until resumed', async () => {
+      await t.waitFor('store ready', () => snap().ready && snap().sessions.length >= 3, 30_000);
+      return `${snap().sessions.length} DMs`;
+    });
+    await t.step('restart: the section and its DM filing survive', async () => {
+      const sec = snap().sections.find((x) => x.name === 'Live checks');
+      if (!sec) throw new Error('section "Live checks" is gone');
+      const b = snap().sessions.find((x) => x.name === NAME_B);
+      if (!b) throw new Error('DM beta is gone');
+      // Beta was dragged into the folder section last, so that is where it must be.
+      const folder = snap().sections.find((x) => x.folder === A);
+      if (!folder) throw new Error('the folder section is gone');
+      if (b.sectionId !== folder.id) throw new Error(`beta is filed in ${b.sectionId}`);
+    });
+    await t.step(
+      'restart: the folder section keeps its folder and re-lists its sessions',
+      async () => {
+        const folder = snap().sections.find((x) => x.folder === A);
+        await t.waitFor(
+          'folder listing',
+          () => (snap().folders[folder.id]?.sessions.length ?? 0) >= 2,
+          20_000,
+        );
+        const linked = snap().folders[folder.id].sessions.filter((x) => x.dmId);
+        if (linked.length < 1) throw new Error('no listed session is linked to its DM');
+        t.fact('folderSessionsAfterRestart', snap().folders[folder.id].sessions.length);
+      },
+    );
+    await t.step('restart: the folder chip survives on the dragged DM', async () => {
+      const b = snap().sessions.find((x) => x.name === NAME_B);
+      await t.waitFor('chip', () =>
+        document.querySelector(`.side .row[data-dm="${b.id}"] [data-testid="folder-chip"]`),
+      );
+    });
+    await t.step('restart: the unsent draft and the pin survive', async () => {
+      const a = snap().sessions.find((x) => x.name === NAME_A);
+      await t.waitFor('draft pencil', () =>
+        document.querySelector(`.side .row[data-dm="${a.id}"] [data-testid="draft-mark"]`),
+      );
+      await t.waitFor('pin stored', () => snap().marks.some((m) => m.kind === 'pin'));
+    });
+    await t.finish(true);
+    return;
+  }
 
   // ---- 0. the DM from --open-dm ---------------------------------------------------------------
   await t.step('first DM opens as chat', async () => {
@@ -325,7 +386,10 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     await t.sendFromComposer(
       `Plan only: write a two step plan to create a file ${A}/plan-out.txt that contains the word hi, then present it for approval.`,
     );
-    const w = await t.awaitWidget('plan', TURN_MS);
+    const w = await widgetOrNudge(
+      'plan',
+      'Present the plan now by calling the ExitPlanMode tool so I can approve it.',
+    );
     const before = countDone('plan');
     t.clickButton(w, 'Approve plan');
     await t.waitFor('widget resolved', () => countDone('plan') > before, 30_000);
@@ -340,7 +404,7 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     await t.sendFromComposer(
       `Use the Bash tool to run exactly this command and nothing else: touch ${A}/persist.txt`,
     );
-    await t.awaitWidget('permission', TURN_MS);
+    await widgetOrNudge('permission', `Run the Bash command now: touch ${A}/persist.txt`);
     t.selectDm(NAME_B);
     await t.waitFor('on beta', () => t.badge(NAME_B).active, 5000);
     await t.sleep(1500);
@@ -498,6 +562,18 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
   await t.step(
     'P3: pin a message; a reaction reaches the label list and never the PTY',
     async () => {
+      // A fresh short turn in beta (alpha holds the unsent draft), so the newest message is
+      // on screen and not scrolled out of the virtualized log.
+      t.selectDm(NAME_B);
+      t.activeName = NAME_B;
+      await t.waitFor('on beta', () => t.badge(NAME_B).active, 5000);
+      await t.sendFromComposer('Reply with exactly the single word PINME and nothing else.');
+      await t.waitFor(
+        'assistant PINME',
+        () => t.assistantTexts().some((x) => /PINME/.test(x)),
+        TURN_MS,
+      );
+      await turnIdle(NAME_B);
       const msg = await t.waitFor('an assistant message', () =>
         [
           ...document.querySelectorAll(
@@ -525,9 +601,87 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     },
   );
 
+  // ---- 10c. folder sections ----------------------------------------------------------------------------------------------
+  // The folder picker is a native dialog, so the section is made through the store with the path
+  // the picker would return. Everything after that is the real sidebar.
+  let folderSection = '';
+  await t.step(
+    'folder: a forgotten session lists as a row and resumes with its history',
+    async () => {
+      await t.newDm(A, 'forgotten');
+      t.activeName = 'forgotten';
+      await ready('forgotten');
+      await t.sendFromComposer('Reply with exactly the single word LANTERN and nothing else.');
+      await t.waitFor(
+        'assistant LANTERN',
+        () => t.assistantTexts().some((x) => /LANTERN/.test(x)),
+        TURN_MS,
+      );
+      await turnIdle('forgotten');
+      // Forget the DM: the process ends, the transcript stays.
+      await window.__PR_STORE__.deleteSession(t.dm('forgotten').id);
+      t.selectDm(NAME_A);
+      t.activeName = NAME_A;
+      folderSection = await window.__PR_STORE__.createFolderSection(A);
+      if (!folderSection) throw new Error('the folder section was not created');
+      const found = await t.waitFor(
+        'the forgotten session in the listing',
+        () =>
+          window.__PR_STORE__
+            .getSnapshot()
+            .folders[folderSection]?.sessions.find((x) => /LANTERN/.test(x.firstPrompt) && !x.dmId),
+        30_000,
+      );
+      t.clickSel(
+        `.side [data-folder-body="${folderSection}"] [data-fs-session="${found.sessionId}"]`,
+      );
+      const dm = await t.waitFor('resumed DM in the section', () =>
+        window.__PR_STORE__.getSnapshot().sessions.find((x) => x.sectionId === folderSection),
+      );
+      t.activeName = dm.name;
+      await t.waitFor(
+        'history in chat',
+        () => t.userTexts().some((x) => /LANTERN/.test(x)),
+        60_000,
+      );
+      await t.waitFor(
+        'row gone from the list',
+        () => !document.querySelector(`[data-fs-session="${found.sessionId}"]`),
+      );
+      await ready(dm.name);
+      t.selectDm(NAME_A);
+      t.activeName = NAME_A;
+    },
+  );
+
+  await t.step('folder: a DM from another folder keeps its process and wears a chip', async () => {
+    const before = await t.pgrep('--settings');
+    const b = t.dm(NAME_B).id;
+    const inSection = window.__PR_STORE__
+      .getSnapshot()
+      .sessions.filter((x) => x.sectionId === folderSection)
+      .map((x) => x.id);
+    await window.__PR_STORE__.dropSession(b, { kind: 'section', sectionId: folderSection }, [
+      ...inSection,
+      b,
+    ]);
+    const chip = await t.waitFor('folder chip', () =>
+      document.querySelector(`.side .row[data-dm="${b}"] [data-testid="folder-chip"]`),
+    );
+    if (chip.textContent.trim() !== B.split('/').pop()) {
+      throw new Error(`chip says "${chip.textContent}"`);
+    }
+    await t.sleep(1500);
+    const after = await t.pgrep('--settings');
+    const gone = before.filter((p) => !after.includes(p));
+    if (gone.length) throw new Error(`processes ended by the drop: ${gone}`);
+    if (t.dm(NAME_B).status === 'exited') throw new Error('beta ended');
+  });
+
   // ---- 11. quit ----------------------------------------------------------------------------------------------------------------------
   await t.step('quit path', async () => {
     t.fact('hooksBeforeQuit', await hooks());
   });
-  await t.finish(true);
+  // Restart on the same data dir: phase 2 (above) checks what survived.
+  await t.restart('persist');
 };

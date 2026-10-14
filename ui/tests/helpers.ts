@@ -290,3 +290,54 @@ export async function backendDms(page: Page) {
     })),
   );
 }
+
+// ---- P3 folder-section helpers ---------------------------------------------------------------
+
+export const HOME = '/Users/me/code/atlas';
+
+/**
+ * Open the mock app with one folder section over the 68-session synthetic fixture. The section
+ * is id `atlas`. Pass `home` for a folder that gets the small 4-session listing instead.
+ */
+export async function openFolder(
+  page: Page,
+  opts: { home?: string; query?: string; dms?: DmSeed[]; archiveDays?: number } = {},
+): Promise<void> {
+  await openSeeded(page, opts.dms ?? [], { query: opts.query });
+  await page.evaluate(
+    async ({ home, days }) => {
+      window.__PR_MOCK__!.addSection({
+        id: 'atlas',
+        name: 'atlas',
+        folder: home,
+        archiveDays: days,
+        position: 0,
+      });
+      await window.__PR_STORE__!.refresh();
+    },
+    { home: opts.home ?? HOME, days: opts.archiveDays ?? 14 },
+  );
+  await page.locator('.side [data-folder-body="atlas"] .fs-row').first().waitFor();
+}
+
+/** Names of the lazy session rows in the folder section's main list (Older excluded). */
+export async function folderNames(page: Page): Promise<string[]> {
+  return page
+    .locator('.side [data-folder-body="atlas"] > .fs-item .fs-row [data-testid="fs-name"]')
+    .allTextContents();
+}
+
+/** Switch theme and mode through the real prefs store, as the picker does. */
+export async function setTheme(page: Page, themeId: string, mode: 'light' | 'dark'): Promise<void> {
+  await page.evaluate(
+    ([id, m]) => window.__PR_STORE__!.setPrefs({ themeId: id, mode: m as 'light' | 'dark' }),
+    [themeId, mode],
+  );
+  await page.waitForFunction(
+    ([id, m]) => {
+      const el = document.querySelector('.pr-app');
+      return el?.getAttribute('data-theme') === id && el?.getAttribute('data-mode') === m;
+    },
+    [themeId, mode],
+  );
+}

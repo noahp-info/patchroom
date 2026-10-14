@@ -126,9 +126,9 @@ export function CustomEditor({
             </select>
           </label>
         )}
-        <fieldset className="seg" aria-label="Mode being edited">
+        <fieldset className="pf-seg" aria-label="Mode being edited">
           {(['light', 'dark'] as const).map((m) => (
-            <label key={m} className="seg__opt">
+            <label key={m} className="pf-seg__opt">
               <input
                 type="radio"
                 name={`${uid}-mode`}

@@ -120,6 +120,11 @@ pub enum UiEvent {
     },
     /// `activity:changed {}`: re-read `activity_list`.
     ActivityChanged,
+    /// `folder:changed {sectionId}`: re-read `folder_sessions` for that folder section.
+    FolderChanged {
+        /// The folder section.
+        section_id: String,
+    },
     /// `statusline:update {id, text, chips}`.
     Statusline {
         /// Session id.
@@ -148,6 +153,7 @@ impl UiEvent {
             UiEvent::NotifyOpen { .. } => "notify:open",
             UiEvent::PrefsChanged { .. } => "prefs:changed",
             UiEvent::ActivityChanged => "activity:changed",
+            UiEvent::FolderChanged { .. } => "folder:changed",
             UiEvent::Statusline { .. } => "statusline:update",
         }
     }
@@ -182,6 +188,7 @@ impl UiEvent {
             UiEvent::NotifyOpen { id } => json!({ "id": id }),
             UiEvent::PrefsChanged { prefs } => json!({ "prefs": prefs }),
             UiEvent::ActivityChanged => json!({}),
+            UiEvent::FolderChanged { section_id } => json!({ "sectionId": section_id }),
             UiEvent::Statusline { id, text, chips } => {
                 json!({ "id": id, "text": text, "chips": chips })
             }
@@ -273,6 +280,13 @@ mod tests {
         );
         let e = UiEvent::ActivityChanged;
         assert_eq!((e.name(), e.payload()), ("activity:changed", json!({})));
+        let e = UiEvent::FolderChanged {
+            section_id: "s".into(),
+        };
+        assert_eq!(
+            (e.name(), e.payload()),
+            ("folder:changed", json!({"sectionId":"s"}))
+        );
         let e = UiEvent::NotifyOpen { id: "a".into() };
         assert_eq!((e.name(), e.payload()), ("notify:open", json!({"id":"a"})));
     }

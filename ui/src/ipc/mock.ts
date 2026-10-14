@@ -1,10 +1,12 @@
 import { base64ToBytes, utf8ToBase64 } from '../lib/base64';
 import { toMillis } from '../lib/time';
+import { FIXTURE_HOME, makeFolderFixture, makeSmallFixture } from './folderFixture';
 import { syntheticChat, syntheticThread, bigChat } from './synthetic';
 import type {
   ActivityRow,
   ChatItem,
   DetectedHook,
+  FolderSession,
   Ipc,
   MarkInfo,
   NotifyFireEvent,
@@ -112,6 +114,33 @@ export interface MockControl {
   activityChanged(): void;
   /** Emit `notify:open`, as a click on a native notification does. */
   emitNotifyOpen(id: string): void;
+
+  // ---- P3 folder sections -----------------------------------------------------------------
+  /** Every `folder_sessions` call, by section id. */
+  folderCalls: string[];
+  /** Every `folder_session_open`, with the launch folder it would resume from. */
+  folderOpens: { sectionId: string; sessionId: string; cwd: string }[];
+  /** Every `folder_session_hide`. */
+  folderHides: { sectionId: string; sessionId: string; hidden: boolean }[];
+  /** Every `section_set_archive_days`. */
+  archiveCalls: { id: string; days: number }[];
+  /** Every `section_create_from_folder`. */
+  folderCreates: { path: string; name?: string }[];
+  /** Listing rows of one folder section, as a transcript scan would find them. */
+  folderRows(sectionId: string): FolderSession[];
+  /** Replace a folder section's listing wholesale and emit `folder:changed`. */
+  setFolderRows(sectionId: string, rows: FolderSession[]): void;
+  /** Add a session found outside Patchroom (an iTerm start) and emit `folder:changed`. */
+  addFolderSession(
+    sectionId: string,
+    row: Partial<FolderSession> & { name: string },
+  ): FolderSession;
+  /** Change a listed session (live marker, name, activity) and emit `folder:changed`. */
+  patchFolderSession(sectionId: string, sessionId: string, patch: Partial<FolderSession>): void;
+  /** Emit `folder:changed`, as the filesystem watch does. */
+  folderChanged(sectionId: string): void;
+  /** Make the next `folder_sessions` call fail once. */
+  failNextFolderRead: boolean;
 }
 
 declare global {
@@ -195,6 +224,9 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
   const promptPayloads = new Map<string, PromptPendingEvent>();
   const promptAt = new Map<string, number>();
   const drafts = new Map<string, string>();
+  /** Folder section id to its listing rows, and the user's hide/unhide overrides by row. */
+  const folderRows = new Map<string, FolderSession[]>();
+  const hideOverride = new Map<string, boolean>();
   let marks: MarkInfo[] = [];
   let prefs: Prefs = structuredClone(DEFAULT_PREFS);
   let counter = 0;
@@ -214,6 +246,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
           drafts: [...drafts.entries()],
           marks,
           prefs,
+          folderRows: [...folderRows.entries()],
+          hideOverride: [...hideOverride.entries()],
         }),
       );
     } catch {
@@ -233,6 +267,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
           drafts: [string, string][];
           marks: MarkInfo[];
           prefs: Prefs;
+          folderRows?: [string, FolderSession[]][];
+          hideOverride?: [string, boolean][];
         };
         counter = d.counter;
         // A restarted backend lists its DMs as ended until they are resumed.
@@ -244,6 +280,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
         for (const [k, v] of d.drafts) drafts.set(k, v);
         marks = d.marks;
         prefs = d.prefs;
+        for (const [k, v] of d.folderRows ?? []) folderRows.set(k, v);
+        for (const [k, v] of d.hideOverride ?? []) hideOverride.set(k, v);
       }
     } catch {
       // A corrupt snapshot starts empty.
@@ -287,6 +325,21 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     return rows.sort((a, b) => toMillis(a.ts) - toMillis(b.ts));
   };
 
+  const inFolder = (cwd: string, folder: string) => cwd === folder || cwd.startsWith(`${folder}/`);
+  /** The chip a DM wears when its cwd is outside its section's folder. */
+  const chipOf = (s: SessionInfo): string | null => {
+    const folder = s.sectionId ? sections.get(s.sectionId)?.folder : null;
+    if (!folder || inFolder(s.cwd, folder)) return null;
+    return s.cwd.split('/').filter(Boolean).pop() ?? null;
+  };
+  const rowKey = (sectionId: string, sessionId: string) => `${sectionId}:${sessionId}`;
+  /** A row as `folder_sessions` returns it: hide overrides applied, DM link dropped if gone. */
+  const viewRow = (sectionId: string, r: FolderSession): FolderSession => ({
+    ...r,
+    hidden: hideOverride.get(rowKey(sectionId, r.sessionId)) ?? r.hidden,
+    dmId: r.dmId && sessions.has(r.dmId) ? r.dmId : null,
+  });
+
   const emit = <K extends keyof IpcEvents>(event: K, payload: IpcEvents[K]) => {
     for (const h of handlers.get(event) ?? []) h(payload as never);
   };
@@ -329,6 +382,52 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     fireNotify: (e) => emit('notify:fire', e),
     activityChanged: () => emit('activity:changed', {}),
     emitNotifyOpen: (id) => emit('notify:open', { id }),
+    folderCalls: [],
+    folderOpens: [],
+    folderHides: [],
+    archiveCalls: [],
+    folderCreates: [],
+    failNextFolderRead: false,
+    folderRows: (sectionId) => (folderRows.get(sectionId) ?? []).map((r) => viewRow(sectionId, r)),
+    setFolderRows(sectionId, rows) {
+      folderRows.set(sectionId, rows);
+      save();
+      emit('folder:changed', { sectionId });
+    },
+    addFolderSession(sectionId, row) {
+      counter += 1;
+      const home = sections.get(sectionId)?.folder ?? '/tmp';
+      const r: FolderSession = {
+        sessionId: `ext-${counter}`,
+        nameSource: 'prompt',
+        launchCwd: home,
+        relPath: '',
+        branch: null,
+        lastActivity: Date.now(),
+        firstPrompt: row.name,
+        lastPrompt: row.name,
+        userTurns: 1,
+        liveElsewhere: false,
+        hidden: false,
+        dmId: null,
+        ...row,
+      };
+      folderRows.set(sectionId, [...(folderRows.get(sectionId) ?? []), r]);
+      save();
+      emit('folder:changed', { sectionId });
+      return viewRow(sectionId, r);
+    },
+    patchFolderSession(sectionId, sessionId, patch) {
+      folderRows.set(
+        sectionId,
+        (folderRows.get(sectionId) ?? []).map((r) =>
+          r.sessionId === sessionId ? { ...r, ...patch } : r,
+        ),
+      );
+      save();
+      emit('folder:changed', { sectionId });
+    },
+    folderChanged: (sectionId) => emit('folder:changed', { sectionId }),
     seedChat(id, items) {
       chats.set(id, [...items]);
     },
@@ -438,8 +537,18 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
         name: info.name,
         position: info.position ?? sections.size,
         collapsed: info.collapsed ?? false,
+        folder: info.folder ?? null,
+        archiveDays: info.archiveDays ?? 14,
       };
       sections.set(sec.id, sec);
+      if (sec.folder && !folderRows.has(sec.id)) {
+        folderRows.set(
+          sec.id,
+          sec.folder === FIXTURE_HOME
+            ? makeFolderFixture(sec.folder)
+            : makeSmallFixture(sec.folder),
+        );
+      }
       save();
       return sec;
     },
@@ -488,7 +597,9 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       control.exit(id, 0);
     },
     async sessionList() {
-      return control.sessions().map((s) => ({ ...s, hasDraft: drafts.has(s.id) }));
+      return control
+        .sessions()
+        .map((s) => ({ ...s, hasDraft: drafts.has(s.id), folderChip: chipOf(s) }));
     },
     async sessionResume(id, cols, rows) {
       control.resumes.push({ id, cols, rows });
@@ -575,6 +686,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     },
     async sectionDelete(id) {
       sections.delete(id);
+      folderRows.delete(id);
       for (const s of sessions.values()) if (s.sectionId === id) s.sectionId = null;
       save();
     },
@@ -720,6 +832,67 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     },
     async sessionFocus(id) {
       control.focusCalls.push(id);
+    },
+    async sectionCreateFromFolder(path, name) {
+      control.folderCreates.push({ path, name });
+      const trimmed = path.replace(/\/+$/, '');
+      const sec = control.addSection({
+        name: name?.trim() || trimmed.split('/').filter(Boolean).pop() || 'Folder',
+        folder: trimmed,
+      });
+      return { id: sec.id };
+    },
+    async sectionSetArchiveDays(id, days) {
+      control.archiveCalls.push({ id, days });
+      const sec = sections.get(id);
+      if (!sec) throw new Error(`no such section: ${id}`);
+      sec.archiveDays = days;
+      save();
+    },
+    async folderSessions(sectionId) {
+      control.folderCalls.push(sectionId);
+      if (control.failNextFolderRead) {
+        control.failNextFolderRead = false;
+        throw new Error('could not read the project folders');
+      }
+      if (!sections.get(sectionId)?.folder) throw new Error(`not a folder section: ${sectionId}`);
+      const rows = control.folderRows(sectionId);
+      return { sessions: rows, hiddenCount: rows.filter((r) => r.hidden).length };
+    },
+    async folderSessionOpen(sectionId, sessionId) {
+      const row = (folderRows.get(sectionId) ?? []).find((r) => r.sessionId === sessionId);
+      if (!row) throw new Error(`no such session: ${sessionId}`);
+      control.folderOpens.push({ sectionId, sessionId, cwd: row.launchCwd });
+      const have = row.dmId ? sessions.get(row.dmId) : undefined;
+      if (have) return { ...have, folderChip: chipOf(have) };
+      const s = control.addSession({
+        cwd: row.launchCwd,
+        name: row.name,
+        sectionId,
+        status: 'busy',
+      });
+      row.dmId = s.id;
+      // The resumed session replays its history into the chat.
+      const t = Date.now();
+      chats.set(s.id, [
+        { key: `${s.id}-u1`, ts: t - 60_000, kind: 'user', text: row.firstPrompt, images: [] },
+        {
+          key: `${s.id}-a1`,
+          ts: t - 30_000,
+          kind: 'assistant',
+          text: `Picking up where we left off: ${row.lastPrompt}`,
+        },
+      ]);
+      if (opts.banner) control.emitText(s.id, `\x1b[1mResumed ${row.name}\x1b[0m\r\n`);
+      save();
+      emit('folder:changed', { sectionId });
+      return { ...s, folderChip: chipOf(s) };
+    },
+    async folderSessionHide(sectionId, sessionId, hidden) {
+      control.folderHides.push({ sectionId, sessionId, hidden });
+      hideOverride.set(rowKey(sectionId, sessionId), hidden);
+      save();
+      emit('folder:changed', { sectionId });
     },
     async on(event, handler) {
       let set = handlers.get(event);

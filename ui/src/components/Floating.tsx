@@ -107,7 +107,11 @@ export function ContextMenu({
 }) {
   const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    // The surface stays hidden until it is placed, and a hidden button cannot take focus.
+    const raf = requestAnimationFrame(() =>
+      list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(),
+    );
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {

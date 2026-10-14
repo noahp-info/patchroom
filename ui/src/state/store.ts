@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type {
   ActivityRow,
+  FolderSession,
   Ipc,
   MarkInfo,
   MarkKind,
@@ -42,6 +43,16 @@ export type DropDest =
   | { kind: 'default' }
   | { kind: 'section'; sectionId: string };
 
+/** What `folder_sessions` last returned for one folder section. */
+export interface FolderListing {
+  sessions: FolderSession[];
+  hiddenCount: number;
+  /** True until the first answer arrives. */
+  loading: boolean;
+  /** Set when the last read failed; the previous rows stay. */
+  error: string | null;
+}
+
 export interface AppState {
   ready: boolean;
   sessions: SessionInfo[];
@@ -64,6 +75,8 @@ export interface AppState {
   searchScope: 'dm' | 'all';
   /** DM ids, most recently opened first. */
   recent: string[];
+  /** Folder section id to the sessions found under its home folder. */
+  folders: Record<string, FolderListing>;
   /** Terminal background per DM from its palette, for the stage behind the terminal. */
   termBg: Record<string, string>;
 }
@@ -129,6 +142,7 @@ export class AppStore {
     panel: null,
     searchScope: 'all',
     recent: readRecent(),
+    folders: {},
     termBg: {},
   };
   private readonly listeners = new Set<() => void>();
@@ -320,6 +334,7 @@ export class AppStore {
       // The user clicked a native notification: show that DM.
       this.ipc.on('notify:open', (e) => this.openDm(e.id)),
       this.ipc.on('activity:changed', () => this.scheduleActivity()),
+      this.ipc.on('folder:changed', (e) => this.scheduleFolder(e.sectionId)),
     ]);
     window.addEventListener('pagehide', this.flushAllDrafts);
     document.addEventListener('visibilitychange', this.onVisibility);
@@ -337,6 +352,7 @@ export class AppStore {
         ready: true,
       });
       if (activeId) this.touchRecent(activeId);
+      this.syncFolders();
       void this.loadP3();
     } catch (err) {
       this.set({ ready: true, error: `Could not load DMs: ${String(err)}` });
@@ -354,6 +370,8 @@ export class AppStore {
   }
 
   stop(): void {
+    for (const t of this.folderTimers.values()) window.clearTimeout(t);
+    this.folderTimers.clear();
     this.flushAllDrafts();
     window.removeEventListener('pagehide', this.flushAllDrafts);
     document.removeEventListener('visibilitychange', this.onVisibility);
@@ -378,9 +396,10 @@ export class AppStore {
     if (this.viewOf(id) === 'terminal') this.hintView(id, 'terminal');
   }
 
-  async create(cwd: string, name?: string): Promise<void> {
+  async create(cwd: string, name?: string, sectionId?: string | null): Promise<void> {
     try {
       const { id } = await this.ipc.sessionCreate({ cwd, name: name || folderName(cwd) });
+      if (sectionId) await this.ipc.sessionSetSection(id, sectionId);
       writeLastCwd(cwd);
       const known = this.state.sessions.find((s) => s.id === id);
       const sessions = known
@@ -393,7 +412,7 @@ export class AppStore {
               cwd,
               title: 'Starting',
               status: 'busy' as SessionStatus,
-              sectionId: null,
+              sectionId: sectionId ?? null,
             },
           ];
       this.set({ sessions, activeId: id, lastCwd: cwd, error: null });
@@ -432,6 +451,7 @@ export class AppStore {
       sessions: mergeSessions(fresh, this.state.sessions),
       sections: sortSections(sections),
     });
+    this.syncFolders();
   }
 
   async createSection(name: string): Promise<void> {
@@ -458,9 +478,15 @@ export class AppStore {
   /** Move a DM to a stored section, or to the default group with null. */
   async moveSession(id: string, sectionId: string | null): Promise<void> {
     const prev = this.state.sessions;
-    this.patchSession(id, { sectionId });
+    const from = prev.find((s) => s.id === id)?.sectionId ?? null;
+    // The folder chip belongs to a folder section; the backend re-derives it after the move.
+    this.patchSession(
+      id,
+      this.isFolderSection(sectionId) ? { sectionId } : { sectionId, folderChip: null },
+    );
     try {
       await this.ipc.sessionSetSection(id, sectionId);
+      if (this.isFolderSection(sectionId) || this.isFolderSection(from)) await this.refresh();
     } catch (err) {
       this.set({ sessions: prev, error: `Could not move the DM: ${String(err)}` });
     }
@@ -541,7 +567,9 @@ export class AppStore {
     if (ordered) {
       const moved = ids.flatMap((x) => {
         const s = next.find((y) => y.id === x);
-        return s ? [{ ...s, sectionId }] : [];
+        return s
+          ? [{ ...s, sectionId, ...(this.isFolderSection(sectionId) ? {} : { folderChip: null }) }]
+          : [];
       });
       next = [...next.filter((s) => !ids.includes(s.id)), ...moved];
     }
@@ -553,8 +581,131 @@ export class AppStore {
       );
       if (changed.length > 0) await this.ipc.sessionSetFlags(id, Object.fromEntries(changed));
       if (ordered) await this.ipc.sessionReorder(sectionId, ids);
+      // The backend owns the folder chip: re-read after a DM lands in a folder section.
+      const was = prev.find((s) => s.id === id)?.sectionId ?? null;
+      if (this.isFolderSection(sectionId) || this.isFolderSection(was)) await this.refresh();
     } catch (err) {
       this.set({ sessions: prev, error: `Could not move the DM: ${String(err)}` });
+    }
+  }
+
+  // ---- P3: folder sections -------------------------------------------------------------
+
+  isFolderSection(id: string | null): boolean {
+    return id !== null && !!this.state.sections.find((s) => s.id === id)?.folder;
+  }
+
+  /** Read the listing of every folder section that has none yet, and drop stale ones. */
+  private syncFolders(): void {
+    const ids = new Set(this.state.sections.filter((s) => s.folder).map((s) => s.id));
+    const have = this.state.folders;
+    if (Object.keys(have).some((k) => !ids.has(k))) {
+      this.set({ folders: Object.fromEntries(Object.entries(have).filter(([k]) => ids.has(k))) });
+    }
+    for (const id of ids) if (!have[id]) void this.loadFolder(id);
+  }
+
+  private readonly folderTimers = new Map<string, number>();
+  /** `folder:changed` can fire in bursts while a session writes: one read per 60 ms window. */
+  private scheduleFolder(sectionId: string): void {
+    if (this.folderTimers.has(sectionId)) return;
+    this.folderTimers.set(
+      sectionId,
+      window.setTimeout(() => {
+        this.folderTimers.delete(sectionId);
+        void this.loadFolder(sectionId);
+      }, 60),
+    );
+  }
+
+  async loadFolder(sectionId: string): Promise<void> {
+    const cur = this.state.folders[sectionId];
+    if (!cur) {
+      this.set({
+        folders: {
+          ...this.state.folders,
+          [sectionId]: { sessions: [], hiddenCount: 0, loading: true, error: null },
+        },
+      });
+    }
+    try {
+      const r = await this.ipc.folderSessions(sectionId);
+      this.set({
+        folders: {
+          ...this.state.folders,
+          [sectionId]: {
+            sessions: r.sessions,
+            hiddenCount: r.hiddenCount,
+            loading: false,
+            error: null,
+          },
+        },
+      });
+    } catch (err) {
+      const prev = this.state.folders[sectionId];
+      this.set({
+        folders: {
+          ...this.state.folders,
+          [sectionId]: {
+            sessions: prev?.sessions ?? [],
+            hiddenCount: prev?.hiddenCount ?? 0,
+            loading: false,
+            error: String(err),
+          },
+        },
+      });
+    }
+  }
+
+  /** Pick a folder and make a section from it. Resolves the new section id (null: cancelled). */
+  async createFolderSection(path?: string): Promise<string | null> {
+    try {
+      const picked = path ?? (await this.ipc.pickFolder(this.state.lastCwd || undefined));
+      if (!picked) return null;
+      const { id } = await this.ipc.sectionCreateFromFolder(picked);
+      await this.refresh();
+      return id;
+    } catch (err) {
+      this.set({ error: `Could not add the folder section: ${String(err)}` });
+      return null;
+    }
+  }
+
+  async setArchiveDays(id: string, days: number): Promise<void> {
+    const n = Math.max(1, Math.min(3650, Math.round(days)));
+    const prev = this.state.sections;
+    this.set({ sections: prev.map((s) => (s.id === id ? { ...s, archiveDays: n } : s)) });
+    try {
+      await this.ipc.sectionSetArchiveDays(id, n);
+    } catch (err) {
+      this.set({ sections: prev, error: `Could not save the setting: ${String(err)}` });
+    }
+  }
+
+  async hideFolderSession(sectionId: string, sessionId: string, hidden: boolean): Promise<void> {
+    try {
+      await this.ipc.folderSessionHide(sectionId, sessionId, hidden);
+      await this.loadFolder(sectionId);
+    } catch (err) {
+      this.set({ error: `Could not ${hidden ? 'hide' : 'unhide'} the session: ${String(err)}` });
+    }
+  }
+
+  /** Turn a listed session into a normal DM in its section (spawns `claude --resume`). */
+  async openFolderSession(sectionId: string, sessionId: string): Promise<void> {
+    try {
+      const info = await this.ipc.folderSessionOpen(sectionId, sessionId);
+      const known = this.state.sessions.some((s) => s.id === info.id);
+      this.set({
+        sessions: known
+          ? this.state.sessions.map((s) => (s.id === info.id ? { ...s, ...info } : s))
+          : [...this.state.sessions, info],
+        error: null,
+      });
+      this.openDm(info.id);
+      await Promise.all([this.refresh(), this.loadFolder(sectionId)]);
+    } catch (err) {
+      this.set({ error: `Could not open the session: ${String(err)}` });
     }
   }
 

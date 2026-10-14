@@ -1,10 +1,20 @@
-import { useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
-import type { SessionInfo, SessionStatus } from '../ipc';
+import type { FolderSession, SectionInfo, SessionInfo, SessionStatus } from '../ipc';
 import { beginDrag } from '../lib/dnd';
+import { DEFAULT_ARCHIVE_DAYS, layoutFolder, type FolderEntry } from '../lib/folder';
 import { ARCHIVED_GROUP, STARRED_GROUP, buildGroups, type Group } from '../lib/groups';
 import type { AppState, AppStore, DropDest } from '../state/store';
-import { ContextMenu, appRoot, type Anchor, type MenuItem } from './Floating';
+import { ContextMenu, Floating, appRoot, type Anchor, type MenuItem } from './Floating';
+import { ArchiveDaysForm, FolderRow, FolderTip } from './FolderRows';
 import { ClaudeGlyph, Icon } from './Icon';
 
 /** Presence class from the theme: busy filled, idle hollow, needs ringed. */
@@ -36,7 +46,9 @@ function readCollapsed(): Record<string, boolean> {
   return { [ARCHIVED_GROUP]: true };
 }
 
-type MenuState = { anchor: Anchor; kind: 'dm' | 'section'; id: string };
+type MenuState =
+  | { anchor: Anchor; kind: 'dm' | 'section'; id: string }
+  | { anchor: Anchor; kind: 'folder-session'; id: string; sectionId: string };
 
 interface DropAt {
   groupId: string;
@@ -46,7 +58,8 @@ interface DropAt {
 export interface SidebarProps {
   state: AppState;
   store: AppStore;
-  onNewDm(): void;
+  /** Open the New DM dialog; a folder section id starts it in that section's folder. */
+  onNewDm(sectionId?: string): void;
 }
 
 const isMenuKey = (e: KeyboardEvent) => e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
@@ -63,6 +76,20 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
   const [ghost, setGhost] = useState({ x: 0, y: 0 });
   const [drop, setDrop] = useState<DropAt | null>(null);
   const [secDrop, setSecDrop] = useState<{ groupId: string; after: boolean } | null>(null);
+  // Folder sections: the "Show N hidden" toggle, the Older dropdown, a pending live-session
+  // confirm, the hover card and the "Older than X days" editor.
+  const [showHidden, setShowHidden] = useState<Record<string, boolean>>({});
+  const [olderOpen, setOlderOpen] = useState<Record<string, boolean>>({});
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [tip, setTip] = useState<{ id: string; info: FolderSession; rect: DOMRect } | null>(null);
+  const [daysEdit, setDaysEdit] = useState<{ id: string; anchor: Anchor } | null>(null);
+  const tipTimer = useRef(0);
+  // Relative times re-read the clock twice a minute.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
   const groups = buildGroups(state.sections, state.sessions);
   const root = useRef<HTMLElement>(null);
 
@@ -72,6 +99,24 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     s.archived ? 0 : Math.max(state.badges[s.id]?.needsYou ?? 0, s.status === 'waiting' ? 1 : 0);
   const unreadOf = (s: SessionInfo) =>
     s.archived || s.id === state.activeId ? 0 : (state.badges[s.id]?.unread ?? 0);
+
+  function showTip(info: FolderSession, rect: DOMRect | null, immediate: boolean) {
+    window.clearTimeout(tipTimer.current);
+    if (!rect) {
+      setTip(null);
+      return;
+    }
+    const set = () => setTip({ id: info.sessionId, info, rect });
+    if (immediate) set();
+    else tipTimer.current = window.setTimeout(set, 140);
+  }
+
+  function activateLazy(section: SectionInfo, info: FolderSession) {
+    setTip(null);
+    // Two processes on one session corrupt it: a live row asks first, inside the sidebar.
+    if (info.liveElsewhere) setConfirmId(info.sessionId);
+    else void store.openFolderSession(section.id, info.sessionId);
+  }
 
   const isClosed = (g: Group) => (g.section ? g.section.collapsed : !!collapsedVirtual[g.id]);
   function toggleGroup(g: Group) {
@@ -93,6 +138,14 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     await store.createSection(sectionName);
     setSectionName('');
     setAdding(false);
+  }
+
+  async function fromFolder() {
+    const id = await store.createFolderSection();
+    if (id) {
+      setSectionName('');
+      setAdding(false);
+    }
   }
 
   // ---- drag and drop ----------------------------------------------------------------------
@@ -173,11 +226,41 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
   // ---- context menus ----------------------------------------------------------------------
 
   function menuItems(m: MenuState): MenuItem[] {
-    if (m.kind === 'section') {
+    if (m.kind === 'folder-session') {
+      const section = state.sections.find((x) => x.id === m.sectionId);
+      const info = state.folders[m.sectionId]?.sessions.find((x) => x.sessionId === m.id);
+      if (!section || !info) return [];
       return [
-        { label: 'Rename section', onSelect: () => setRenaming(m.id) },
-        { label: 'Delete section', danger: true, onSelect: () => void store.deleteSection(m.id) },
+        { label: 'Open', onSelect: () => activateLazy(section, info) },
+        info.hidden
+          ? {
+              label: 'Unhide',
+              onSelect: () => void store.hideFolderSession(section.id, info.sessionId, false),
+            }
+          : {
+              label: 'Hide',
+              onSelect: () => void store.hideFolderSession(section.id, info.sessionId, true),
+            },
       ];
+    }
+    if (m.kind === 'section') {
+      const sec = state.sections.find((x) => x.id === m.id);
+      const items: MenuItem[] = [];
+      if (sec?.folder) {
+        const days = sec.archiveDays ?? DEFAULT_ARCHIVE_DAYS;
+        items.push(
+          { label: 'New DM here', onSelect: () => onNewDm(sec.id) },
+          {
+            label: `Older than ${days} days...`,
+            onSelect: () => setDaysEdit({ id: sec.id, anchor: menu?.anchor ?? { x: 0, y: 0 } }),
+          },
+        );
+      }
+      items.push(
+        { label: 'Rename section', separator: items.length > 0, onSelect: () => setRenaming(m.id) },
+        { label: 'Delete section', danger: true, onSelect: () => void store.deleteSection(m.id) },
+      );
+      return items;
     }
     const s = state.sessions.find((x) => x.id === m.id);
     if (!s) return [];
@@ -214,6 +297,202 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
     return items;
   }
 
+  /** The body of a folder section: open DMs and lazy session rows, hidden toggle, Older dropdown. */
+  function folderBody(
+    section: SectionInfo,
+    dms: SessionInfo[],
+    renderDm: (s: SessionInfo, info: FolderSession | null) => ReactNode,
+  ) {
+    const listing = state.folders[section.id];
+    const days = section.archiveDays ?? DEFAULT_ARCHIVE_DAYS;
+    const shown = !!showHidden[section.id];
+    const layout = layoutFolder({
+      dms,
+      openIds: new Set(state.sessions.map((x) => x.id)),
+      sessions: listing?.sessions ?? [],
+      needs: (x) => needsOf(x) > 0,
+      archiveDays: days,
+      showHidden: shown,
+      now,
+    });
+    const lazy = (e: Extract<FolderEntry, { kind: 'lazy' }>) => (
+      <FolderRow
+        key={e.info.sessionId}
+        info={e.info}
+        now={now}
+        confirming={confirmId === e.info.sessionId}
+        tipOpen={tip?.id === e.info.sessionId}
+        onActivate={() => activateLazy(section, e.info)}
+        onMenu={(anchor) =>
+          setMenu({ anchor, kind: 'folder-session', id: e.info.sessionId, sectionId: section.id })
+        }
+        onTip={(rect, immediate) => showTip(e.info, rect, immediate)}
+        onConfirm={() => {
+          setConfirmId(null);
+          void store.openFolderSession(section.id, e.info.sessionId);
+        }}
+        onCancel={() => setConfirmId(null)}
+      />
+    );
+    const row = (e: FolderEntry) => (e.kind === 'dm' ? renderDm(e.session, e.info) : lazy(e));
+    const hidden = listing?.hiddenCount ?? 0;
+    const empty =
+      listing &&
+      !listing.loading &&
+      !listing.error &&
+      layout.main.length === 0 &&
+      layout.older.length === 0 &&
+      hidden === 0;
+    const olderOpened = !!olderOpen[section.id];
+    return (
+      <div className="fs-body" data-folder-body={section.id}>
+        {(!listing || listing.loading) && (
+          <p className="sec-hint" role="status">
+            Looking for sessions...
+          </p>
+        )}
+        {listing?.error && (
+          <p className="sec-hint fs-error" role="alert">
+            Could not read the sessions.{' '}
+            <button
+              type="button"
+              className="fs-link"
+              onClick={() => void store.loadFolder(section.id)}
+            >
+              Try again
+            </button>
+          </p>
+        )}
+        {empty && (
+          <p className="sec-hint" data-testid="fs-empty">
+            No resumable sessions in this folder yet.
+          </p>
+        )}
+        {layout.main.map(row)}
+        {hidden > 0 && (
+          <button
+            type="button"
+            className="fs-toggle"
+            aria-pressed={shown}
+            onClick={() => setShowHidden({ ...showHidden, [section.id]: !shown })}
+          >
+            {shown ? `Hide ${hidden} hidden` : `Show ${hidden} hidden`}
+          </button>
+        )}
+        {layout.older.length > 0 && (
+          <>
+            <button
+              type="button"
+              className="fs-toggle fs-older"
+              aria-expanded={olderOpened}
+              aria-controls={`fs-older-${section.id}`}
+              onClick={() => setOlderOpen({ ...olderOpen, [section.id]: !olderOpened })}
+            >
+              <Icon name={olderOpened ? 'down' : 'right'} />
+              {`Older than ${days} days (${layout.older.length})`}
+            </button>
+            {olderOpened && (
+              <div id={`fs-older-${section.id}`} className="fs-older-list">
+                {layout.older.map((e) => (e.kind === 'lazy' ? lazy(e) : null))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ---- rows ------------------------------------------------------------------------------
+
+  /** One open DM row. `info` is its folder-session entry when the section is a folder section. */
+  function dmRow(s: SessionInfo, g: Group, info: FolderSession | null = null) {
+    const needs = needsOf(s);
+    const unread = unreadOf(s);
+    const sub = PLAIN_TITLES.has(s.title) ? '' : s.title;
+    const chips = (info?.relPath ? 1 : 0) + (s.folderChip ? 1 : 0) > 0;
+    const before = drop?.beforeId === s.id && drop.groupId === g.id;
+    return (
+      <button
+        type="button"
+        key={s.id}
+        className={`row${s.id === state.activeId ? ' active' : ''}${
+          needs > 0 || unread > 0 ? ' unread' : ''
+        }${s.status === 'exited' ? ' ended' : ''}${drag?.id === s.id ? ' dragging' : ''}${before ? ' drop-before' : ''}`}
+        aria-current={s.id === state.activeId ? 'true' : undefined}
+        onClick={() => store.openDm(s.id)}
+        onPointerDown={(e) => dragDm(e, s)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenu({ anchor: { x: e.clientX, y: e.clientY }, kind: 'dm', id: s.id });
+        }}
+        onKeyDown={(e) => {
+          if (!isMenuKey(e)) return;
+          e.preventDefault();
+          setMenu({
+            anchor: e.currentTarget.getBoundingClientRect(),
+            kind: 'dm',
+            id: s.id,
+          });
+        }}
+        title={`${s.name}: ${PRESENCE_LABEL[s.status]}${sub ? `. ${sub}` : ''}`}
+        data-dm={s.id}
+        data-status={s.status}
+        data-unread={unread}
+        data-needs={needs}
+        data-starred={s.starred ? 'true' : undefined}
+        data-archived={s.archived ? 'true' : undefined}
+      >
+        <span
+          className={`dot ${presence(s.status)}`}
+          role="img"
+          aria-label={PRESENCE_LABEL[s.status]}
+        />
+        <ClaudeGlyph />
+        <span className="nm">{s.name}</span>
+        {chips && (
+          <span className="fs-chips">
+            {info?.relPath && (
+              <span className="fs-chip" data-chip="path" title={info.launchCwd}>
+                <Icon name="folder" />
+                <span>{info.relPath}</span>
+              </span>
+            )}
+            {s.folderChip && (
+              <span
+                className="fs-chip fs-chip--away"
+                data-testid="folder-chip"
+                title={`Runs in ${s.cwd}, outside this section's folder`}
+              >
+                <Icon name="folder" />
+                <span>{s.folderChip}</span>
+              </span>
+            )}
+          </span>
+        )}
+        {sub && (
+          <span className="sub" data-testid="row-subtitle">
+            {sub}
+          </span>
+        )}
+        {s.hasDraft && (
+          <span className="draft" role="img" aria-label="Draft" data-testid="draft-mark">
+            <Icon name="pencil" />
+          </span>
+        )}
+        {unread > 0 && (
+          <span className="bdg unr" aria-label={`${unread} unread`}>
+            {unread}
+          </span>
+        )}
+        {needs > 0 && (
+          <span className="bdg needs" aria-label="Needs you">
+            {needs}
+          </span>
+        )}
+      </button>
+    );
+  }
+
   const activityCount = state.activity.length;
   const savedCount = state.marks.filter((m) => m.kind === 'saved').length;
 
@@ -236,7 +515,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
         >
           <Icon name="section" />
         </button>
-        <button type="button" onClick={onNewDm} aria-label="New DM" title="New DM">
+        <button type="button" onClick={() => onNewDm()} aria-label="New DM" title="New DM">
           <Icon name="plus" />
         </button>
         <button
@@ -261,6 +540,16 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
           />
           <button type="submit" className="btn sec" disabled={sectionName.trim() === ''}>
             Add
+          </button>
+          <button
+            type="button"
+            className="btn sec"
+            aria-label="New section from folder..."
+            title="New section from folder..."
+            onClick={() => void fromFolder()}
+          >
+            <Icon name="folder" />
+            From folder...
           </button>
         </form>
       )}
@@ -349,6 +638,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
                   type="button"
                   className="sec-h sec-toggle"
                   aria-expanded={!closed}
+                  title={g.section?.folder ?? undefined}
                   onClick={() => toggleGroup(g)}
                   onPointerDown={(e) => dragSection(e, g)}
                   onDoubleClick={() => g.section && setRenaming(g.id)}
@@ -371,6 +661,7 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
                   <Icon name={closed ? 'right' : 'down'} />
                   {g.kind === 'starred' && <Icon name="star" />}
                   {g.kind === 'archived' && <Icon name="archive" />}
+                  {g.section?.folder && <Icon name="folder" />}
                   <span className="sec-name">{g.title}</span>
                   {closed && unreadTotal > 0 && (
                     <span className="bdg unr" aria-label={`${unreadTotal} unread`}>
@@ -388,77 +679,9 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
                 <p className="sec-hint">Star a DM from its right-click menu to keep it here.</p>
               )}
               {!closed &&
-                g.items.map((s) => {
-                  const needs = needsOf(s);
-                  const unread = unreadOf(s);
-                  const sub = PLAIN_TITLES.has(s.title) ? '' : s.title;
-                  const before = drop?.beforeId === s.id && drop.groupId === g.id;
-                  return (
-                    <button
-                      type="button"
-                      key={s.id}
-                      className={`row${s.id === state.activeId ? ' active' : ''}${
-                        needs > 0 || unread > 0 ? ' unread' : ''
-                      }${s.status === 'exited' ? ' ended' : ''}${drag?.id === s.id ? ' dragging' : ''}${before ? ' drop-before' : ''}`}
-                      aria-current={s.id === state.activeId ? 'true' : undefined}
-                      onClick={() => store.openDm(s.id)}
-                      onPointerDown={(e) => dragDm(e, s)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setMenu({ anchor: { x: e.clientX, y: e.clientY }, kind: 'dm', id: s.id });
-                      }}
-                      onKeyDown={(e) => {
-                        if (!isMenuKey(e)) return;
-                        e.preventDefault();
-                        setMenu({
-                          anchor: e.currentTarget.getBoundingClientRect(),
-                          kind: 'dm',
-                          id: s.id,
-                        });
-                      }}
-                      title={`${s.name}: ${PRESENCE_LABEL[s.status]}${sub ? `. ${sub}` : ''}`}
-                      data-dm={s.id}
-                      data-status={s.status}
-                      data-unread={unread}
-                      data-needs={needs}
-                      data-starred={s.starred ? 'true' : undefined}
-                      data-archived={s.archived ? 'true' : undefined}
-                    >
-                      <span
-                        className={`dot ${presence(s.status)}`}
-                        role="img"
-                        aria-label={PRESENCE_LABEL[s.status]}
-                      />
-                      <ClaudeGlyph />
-                      <span className="nm">{s.name}</span>
-                      {sub && (
-                        <span className="sub" data-testid="row-subtitle">
-                          {sub}
-                        </span>
-                      )}
-                      {s.hasDraft && (
-                        <span
-                          className="draft"
-                          role="img"
-                          aria-label="Draft"
-                          data-testid="draft-mark"
-                        >
-                          <Icon name="pencil" />
-                        </span>
-                      )}
-                      {unread > 0 && (
-                        <span className="bdg unr" aria-label={`${unread} unread`}>
-                          {unread}
-                        </span>
-                      )}
-                      {needs > 0 && (
-                        <span className="bdg needs" aria-label="Needs you">
-                          {needs}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+                g.section?.folder &&
+                folderBody(g.section, g.items, (s, info) => dmRow(s, g, info))}
+              {!closed && !g.section?.folder && g.items.map((s) => dmRow(s, g))}
               {!closed && target && drop?.beforeId === null && drag?.kind === 'dm' && (
                 <div className="drop-end" aria-hidden="true" />
               )}
@@ -482,11 +705,36 @@ export function Sidebar({ state, store, onNewDm }: SidebarProps) {
       {menu && (
         <ContextMenu
           anchor={menu.anchor}
-          label={menu.kind === 'dm' ? 'DM actions' : 'Section actions'}
+          label={
+            menu.kind === 'dm'
+              ? 'DM actions'
+              : menu.kind === 'section'
+                ? 'Section actions'
+                : 'Session actions'
+          }
           items={menuItems(menu)}
           onClose={() => setMenu(null)}
         />
       )}
+      {daysEdit && (
+        <Floating
+          anchor={daysEdit.anchor}
+          onClose={() => setDaysEdit(null)}
+          label="Older than days"
+          className="fs-pop"
+        >
+          <ArchiveDaysForm
+            value={
+              state.sections.find((x) => x.id === daysEdit.id)?.archiveDays ?? DEFAULT_ARCHIVE_DAYS
+            }
+            onSave={(n) => {
+              void store.setArchiveDays(daysEdit.id, n);
+              setDaysEdit(null);
+            }}
+          />
+        </Floating>
+      )}
+      {tip && <FolderTip info={tip.info} rect={tip.rect} id={`fs-tip-${tip.id}`} />}
       {drag &&
         createPortal(
           <div className="drag-ghost" style={{ left: ghost.x + 12, top: ghost.y + 8 }}>

@@ -11,6 +11,7 @@ import { Terminal } from './components/Terminal';
 import { playNotifySound, useThemeRuntime } from './lib/prefsModule';
 import { ITERM_THEME } from './lib/sessionTerminal';
 import { cwdParts } from './lib/cwd';
+import { launchFolders } from './lib/folder';
 import { shellQuotePath } from './lib/keys';
 import { getStore } from './state/runtime';
 import { useAppState } from './state/store';
@@ -34,6 +35,9 @@ export function App() {
   const state = useAppState(store);
   const { base, theme, mode, style: themeStyle } = useThemeRuntime();
   const [newDmOpen, setNewDmOpen] = useState(false);
+  // A folder section id when the dialog was opened from that section.
+  const [newDmSection, setNewDmSection] = useState<string | null>(null);
+  const dmSection = state.sections.find((x) => x.id === newDmSection && x.folder) ?? null;
 
   useEffect(() => {
     void store.start();
@@ -143,7 +147,14 @@ export function App() {
         </button>
       </div>
 
-      <Sidebar state={state} store={store} onNewDm={() => setNewDmOpen(true)} />
+      <Sidebar
+        state={state}
+        store={store}
+        onNewDm={(sectionId) => {
+          setNewDmSection(sectionId ?? null);
+          setNewDmOpen(true);
+        }}
+      />
 
       <main className="conv">
         {active ? (
@@ -313,9 +324,15 @@ export function App() {
 
       <NewDmDialog
         open={newDmOpen}
-        defaultCwd={state.lastCwd}
+        defaultCwd={dmSection?.folder ?? state.lastCwd}
+        section={dmSection ? { id: dmSection.id, name: dmSection.name } : null}
+        folders={
+          dmSection?.folder
+            ? launchFolders(dmSection.folder, state.folders[dmSection.id]?.sessions ?? [])
+            : []
+        }
         onClose={() => setNewDmOpen(false)}
-        onCreate={(cwd, name) => store.create(cwd, name)}
+        onCreate={(cwd, name) => store.create(cwd, name, dmSection?.id ?? null)}
         onPick={(p) => store.pickFolder(p)}
       />
     </div>

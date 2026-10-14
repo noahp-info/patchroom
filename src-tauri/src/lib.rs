@@ -30,6 +30,13 @@
 //! `setting` table; the search index is `search.db` and the notification decision log is
 //! `notify-decisions.log`, both in the data dir. See [`manager`] (`slack` module).
 //!
+//! # Folder sections (P3 addendum)
+//! Commands: `section_create_from_folder`, `section_set_archive_days`, `folder_sessions`,
+//! `folder_session_open`, `folder_session_hide`. Event: `folder:changed {sectionId}`.
+//! `SectionInfo` gains `folder` and `archiveDays`; `SessionInfo` gains `folderChip`. A folder
+//! section lists the resumable Claude sessions found read only under its folder; opening one
+//! creates its DM and runs `claude --resume`. See [`manager`] (`folder` module).
+//!
 //! Per launch, claude gets `--settings <file>`: a Patchroom-owned file in the data dir
 //! (`bridge.sock.d/<id>.json`) that registers the hooks and the `patchroom-statusline`
 //! wrapper. User settings files are never written. The file keeps claude's own command
@@ -142,6 +149,11 @@ macro_rules! app_handler {
             commands::sound_hooks_detect,
             commands::notify_test,
             commands::session_focus,
+            commands::section_create_from_folder,
+            commands::section_set_archive_days,
+            commands::folder_sessions,
+            commands::folder_session_open,
+            commands::folder_session_hide,
             e2e::e2e_report,
             e2e::e2e_pgrep,
             e2e::e2e_sleep,
@@ -149,6 +161,8 @@ macro_rules! app_handler {
             e2e::e2e_quit,
             e2e::e2e_restart,
             e2e::e2e_decision_log,
+            e2e::e2e_outside_session,
+            e2e::e2e_outside_done,
         ]
     };
 }
@@ -198,6 +212,11 @@ macro_rules! app_handler {
             commands::sound_hooks_detect,
             commands::notify_test,
             commands::session_focus,
+            commands::section_create_from_folder,
+            commands::section_set_archive_days,
+            commands::folder_sessions,
+            commands::folder_session_open,
+            commands::folder_session_hide,
         ]
     };
 }
@@ -221,6 +240,11 @@ pub fn run() {
         .setup(|app| {
             let mut cfg = ManagerConfig::new(data_dir(app)?, hook_path::resolve_hook_binary());
             cfg.reconcile = true;
+            if cfg!(debug_assertions) {
+                if let Some(extra) = std::env::var_os("PATCHROOM_E2E_EXTRA_PROJECTS") {
+                    cfg.extra_projects_dirs = std::env::split_paths(&extra).collect();
+                }
+            }
             let sink: Arc<dyn EventSink> = Arc::new(TauriSink(app.handle().clone()));
             let manager = Manager::new(cfg, Arc::clone(&sink))?;
             manager.set_notifier(TauriNotifier::new(app.handle().clone(), sink));
@@ -265,7 +289,7 @@ mod tests {
     #[test]
     fn p3_commands_are_registered_in_both_handler_lists() {
         const SRC: &str = include_str!("lib.rs");
-        const P3: [&str; 20] = [
+        const P3: [&str; 25] = [
             "section_rename",
             "section_delete",
             "section_reorder",
@@ -286,6 +310,11 @@ mod tests {
             "notify_test",
             "session_focus",
             "session_view",
+            "section_create_from_folder",
+            "section_set_archive_days",
+            "folder_sessions",
+            "folder_session_open",
+            "folder_session_hide",
         ];
         let bodies: Vec<&str> = SRC
             .split("generate_handler![\n")

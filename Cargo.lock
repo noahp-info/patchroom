@@ -2616,6 +2616,7 @@ dependencies = [
  "patchroom-bridge",
  "patchroom-claude",
  "patchroom-core",
+ "patchroom-folders",
  "patchroom-prefs",
  "patchroom-pty",
  "patchroom-search",
@@ -2655,6 +2656,16 @@ dependencies = [
 [[package]]
 name = "patchroom-core"
 version = "0.0.1"
+
+[[package]]
+name = "patchroom-folders"
+version = "0.0.1"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
 
 [[package]]
 name = "patchroom-hook"

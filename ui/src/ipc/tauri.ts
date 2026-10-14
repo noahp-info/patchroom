@@ -5,6 +5,8 @@ import type {
   Ipc,
   MarkInfo,
   SearchHit,
+  FolderSession,
+  FolderSessions,
   SearchResult,
   SectionInfo,
   SessionInfo,
@@ -15,6 +17,7 @@ interface WireSession extends Omit<SessionInfo, 'sectionId'> {
   section_id?: string | null;
   needs_you?: number | boolean;
   has_draft?: boolean;
+  folder_chip?: string | null;
 }
 
 /** Backend rows may spell fields camelCase (the contract) or snake_case (serde default). */
@@ -31,6 +34,33 @@ function mark(r: Loose): MarkInfo {
     emoji: (r.emoji as string | null | undefined) ?? null,
     snapshot: String(r.snapshot ?? ''),
     createdAt: pick(r, 'createdAt', 'created_at'),
+  };
+}
+function section(r: Loose): SectionInfo {
+  return {
+    id: String(r.id),
+    name: String(r.name ?? ''),
+    position: Number(r.position ?? 0),
+    collapsed: Boolean(r.collapsed),
+    folder: (r.folder as string | null | undefined) ?? null,
+    archiveDays: Number(pick(r, 'archiveDays', 'archive_days') ?? 14),
+  };
+}
+function folderSession(r: Loose): FolderSession {
+  return {
+    sessionId: String(pick(r, 'sessionId', 'session_id') ?? ''),
+    name: String(r.name ?? ''),
+    nameSource: String(pick(r, 'nameSource', 'name_source') ?? 'prompt'),
+    launchCwd: String(pick(r, 'launchCwd', 'launch_cwd') ?? ''),
+    relPath: String(pick(r, 'relPath', 'rel_path') ?? ''),
+    branch: (r.branch as string | null | undefined) ?? null,
+    lastActivity: pick(r, 'lastActivity', 'last_activity') as FolderSession['lastActivity'],
+    firstPrompt: String(pick(r, 'firstPrompt', 'first_prompt') ?? ''),
+    lastPrompt: String(pick(r, 'lastPrompt', 'last_prompt') ?? ''),
+    userTurns: Number(pick(r, 'userTurns', 'user_turns') ?? 0),
+    liveElsewhere: Boolean(pick(r, 'liveElsewhere', 'live_elsewhere')),
+    hidden: Boolean(r.hidden),
+    dmId: pick<string | null>(r, 'dmId', 'dm_id') ?? null,
   };
 }
 function hit(r: Loose): SearchHit {
@@ -70,18 +100,19 @@ export function createTauriIpc(): Ipc {
     sessionKill: (id) => invoke('session_kill', { id }),
     async sessionList() {
       const rows = await invoke<WireSession[]>('session_list');
-      return rows.map(({ section_id, needs_you, has_draft, ...rest }) => ({
+      return rows.map(({ section_id, needs_you, has_draft, folder_chip, ...rest }) => ({
         ...rest,
         sectionId: section_id ?? null,
         needsYou: rest.needsYou ?? needs_you,
         hasDraft: rest.hasDraft ?? has_draft,
+        folderChip: rest.folderChip ?? folder_chip ?? null,
       }));
     },
     sessionResume: (id, cols, rows) => invoke('session_resume', { id, cols, rows }),
     sessionRename: (id, name) => invoke('session_rename', { id, name }),
     sessionDelete: (id) => invoke('session_delete', { id }),
     sessionSetSection: (id, sectionId) => invoke('session_set_section', { id, sectionId }),
-    sectionList: () => invoke<SectionInfo[]>('section_list'),
+    sectionList: async () => (await invoke<Loose[]>('section_list')).map(section),
     sectionCreate: (name) => invoke('section_create', { name }),
     sectionSetCollapsed: (id, collapsed) => invoke('section_set_collapsed', { id, collapsed }),
     pickFolder: (defaultPath) => invoke<string | null>('pick_folder', { defaultPath }),
@@ -126,6 +157,29 @@ export function createTauriIpc(): Ipc {
     soundHooksDetect: () => invoke('sound_hooks_detect', {}),
     notifyTest: () => invoke('notify_test', {}),
     sessionFocus: (id) => invoke('session_focus', { id }),
+    sectionCreateFromFolder: (path, name) =>
+      invoke<{ id: string }>('section_create_from_folder', { path, name }),
+    sectionSetArchiveDays: (id, days) => invoke('section_set_archive_days', { id, days }),
+    folderSessions: async (sectionId) => {
+      const r = await invoke<Loose>('folder_sessions', { sectionId });
+      return {
+        sessions: ((r.sessions as Loose[] | undefined) ?? []).map(folderSession),
+        hiddenCount: Number(pick(r, 'hiddenCount', 'hidden_count') ?? 0),
+      } satisfies FolderSessions;
+    },
+    folderSessionOpen: async (sectionId, sessionId) => {
+      const r = await invoke<WireSession>('folder_session_open', { sectionId, sessionId });
+      const { section_id, needs_you, has_draft, folder_chip, ...rest } = r;
+      return {
+        ...rest,
+        sectionId: section_id ?? null,
+        needsYou: rest.needsYou ?? needs_you,
+        hasDraft: rest.hasDraft ?? has_draft,
+        folderChip: rest.folderChip ?? folder_chip ?? null,
+      };
+    },
+    folderSessionHide: (sectionId, sessionId, hidden) =>
+      invoke('folder_session_hide', { sectionId, sessionId, hidden }),
     on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
   };
 }

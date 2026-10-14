@@ -17,7 +17,7 @@
   grid-template-rows: auto minmax(0, 1fr);
 }
 .prefs::backdrop {
-  background: rgb(10 14 13 / 0.45); /* fixed dark scrim: a token mix would lighten in dark mode */
+  background: rgb(0 0 0 / 0.45); /* neutral scrim: a token mix would lighten in dark mode */
 }
 .prefs__head {
   display: flex;
@@ -206,7 +206,7 @@
 }
 
 /* segmented radio group */
-.seg {
+.pf-seg {
   display: inline-flex;
   margin: 0;
   padding: 2px;
@@ -214,18 +214,18 @@
   border-radius: var(--r-sm);
   background: var(--hover);
 }
-.seg__opt {
+.pf-seg__opt {
   position: relative;
   display: inline-flex;
 }
-.seg__opt input {
+.pf-seg__opt input {
   position: absolute;
   inset: 0;
   margin: 0;
   opacity: 0;
   cursor: pointer;
 }
-.seg__opt span {
+.pf-seg__opt span {
   display: inline-flex;
   align-items: center;
   height: 26px;
@@ -234,12 +234,12 @@
   font-size: 13px;
   white-space: nowrap;
 }
-.seg__opt input:checked + span {
+.pf-seg__opt input:checked + span {
   background: var(--accent);
   color: var(--accent-fg);
   font-weight: 700;
 }
-.seg__opt input:focus-visible + span {
+.pf-seg__opt input:focus-visible + span {
   outline: 2px solid var(--link);
   outline-offset: 1px;
 }

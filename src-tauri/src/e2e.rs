@@ -14,6 +14,10 @@
 //! - `e2e_restart {phase}`: quit the same way and ask `scripts/e2e-live.sh` to start the app
 //!   again on the same data dir with `PATCHROOM_E2E_PHASE=<phase>` (the scenario reads it with
 //!   `e2e_param("phase")`), so one run can check what survives a restart;
+//! - `e2e_outside_session {dir}`: start an interactive `claude --model haiku` in a pty, as a
+//!   terminal outside Patchroom would, in a folder named by a `PATCHROOM_E2E_DIR_*` variable.
+//!   Returns the epoch ms when its prompt was sent; the session ends on its own
+//!   (`e2e_outside_done` says when);
 //! - `e2e_decision_log`: the notification decision log (`notify-decisions.log` in the data
 //!   dir): event, DM id, decision and reason per line, never a message body.
 //!
@@ -81,9 +85,23 @@ fn boot_js(script: &str) -> String {
         "{script}\n;(function boot(n){{var r=window.__PR_E2E__;\
 if(!r){{if(n>600){{console.error('e2e: runner missing');return;}}\
 setTimeout(function(){{boot(n+1);}},100);return;}}\
-r.start(window.__PR_E2E_SCENARIO__);}})(0);"
+r.start(function(t){{{PIN_WIDGETS}return window.__PR_E2E_SCENARIO__(t);}});}})(0);"
     )
 }
+
+/// Presses "Needs you below" for the scenario, as a user would. With the window unfocused or
+/// occluded WebKit throttles rendering, the log loses its pin to the bottom after a view
+/// switch or a new row, and the virtualized log does not render rows below the viewport. A
+/// scenario that polls for a pending widget (a `settle` loop that clicks Allow) or for the
+/// newest message would then wait for something that is not in the DOM while the TUI waits
+/// for the answer. The wrapper jumps to the latest before each poll of `waitFor` and each
+/// `widget()` miss. It changes what the page shows, never what the scenario checks.
+const PIN_WIDGETS: &str = "try{var jump=function(){var j=document.querySelector(\
+'[data-testid=\"chat\"]:not(.chat--hidden) [data-testid=\"jump-latest\"]');if(j)j.click();};\
+var w0=t.widget.bind(t);t.widget=function(k,s){var w=w0(k,s);\
+if(!w&&(!s||s==='pending'))jump();return w;};\
+var f0=t.waitFor.bind(t);t.waitFor=function(a,fn,ms){return f0(a,function(){jump();return fn();},ms);};}\
+catch(e){}";
 
 /// Inject the scenario into the webview. Called once per page load.
 pub fn inject(webview: &tauri::Webview) {
@@ -267,6 +285,80 @@ pub async fn e2e_restart(app: AppHandle, phase: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Environment variables whose value names a folder the scenario may use.
+fn e2e_dirs() -> Vec<PathBuf> {
+    std::env::vars()
+        .filter(|(k, v)| k.starts_with("PATCHROOM_E2E_DIR_") && Path::new(v).is_absolute())
+        .map(|(_, v)| PathBuf::from(v))
+        .collect()
+}
+
+/// Is `dir` one of the scenario's folders (or inside one)? Never a path outside them.
+fn is_scenario_dir(dir: &str, allowed: &[PathBuf]) -> bool {
+    let p = Path::new(dir);
+    p.is_absolute()
+        && !p
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        && allowed.iter().any(|a| p.starts_with(a))
+}
+
+/// Outside sessions started by `e2e_outside_session` that have not exited yet.
+static OUTSIDE_RUNNING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// `e2e_outside_done -> bool`: true once every outside session has exited, so a scenario can
+/// wait for its helper before it quits (nothing may outlive the app).
+#[tauri::command]
+pub async fn e2e_outside_done(app: AppHandle) -> Result<bool, String> {
+    state(&app)?;
+    Ok(OUTSIDE_RUNNING.load(std::sync::atomic::Ordering::SeqCst) == 0)
+}
+
+/// `e2e_outside_session {dir} -> epoch ms`: run `scripts/e2e-outside-session.py` (named by
+/// `PATCHROOM_E2E_OUTSIDE_DRIVER`) in `dir`, which must be one of the scenario's folders. It
+/// starts an interactive `claude --model haiku` in a pty, as a terminal outside Patchroom
+/// would. Returns the time its prompt was sent; the session finishes and exits by itself.
+#[tauri::command]
+pub async fn e2e_outside_session(app: AppHandle, dir: String) -> Result<i64, String> {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+    state(&app)?;
+    if !is_scenario_dir(&dir, &e2e_dirs()) {
+        return Err(format!("not a scenario folder: {dir}"));
+    }
+    let driver = std::env::var("PATCHROOM_E2E_OUTSIDE_DRIVER")
+        .map_err(|_| "PATCHROOM_E2E_OUTSIDE_DRIVER is not set".to_owned())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut child = Command::new("/usr/bin/python3")
+            .args(["-I", &driver, &dir])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        let stdout = child.stdout.take().ok_or("no stdout")?;
+        let mut sent = None;
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if let Some(ms) = line.strip_prefix("SENT ") {
+                sent = ms.trim().parse::<i64>().ok();
+                break;
+            }
+            if line.starts_with("NOT_SENT") {
+                break;
+            }
+        }
+        // The driver keeps running until the reply lands; reap it in the background.
+        OUTSIDE_RUNNING.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        std::thread::spawn(move || {
+            let _ = child.wait();
+            OUTSIDE_RUNNING.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        sent.ok_or_else(|| "the outside session never sent its prompt".to_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// `e2e_decision_log -> string`: the notification decision log of this run's data dir.
 #[tauri::command]
 pub async fn e2e_decision_log(app: AppHandle) -> Result<String, String> {
@@ -321,10 +413,33 @@ mod tests {
     }
 
     #[test]
+    fn outside_sessions_only_run_in_scenario_folders() {
+        let allowed = vec![
+            PathBuf::from("/tmp/pr-e2e-1/alpha"),
+            PathBuf::from("/tmp/pr-e2e-1/fold"),
+        ];
+        assert!(is_scenario_dir("/tmp/pr-e2e-1/alpha", &allowed));
+        assert!(is_scenario_dir("/tmp/pr-e2e-1/fold/sub", &allowed));
+        for bad in [
+            "/tmp/pr-e2e-1",
+            "/tmp/pr-e2e-1/alphabet",
+            "/tmp/pr-e2e-1/alpha/../../etc",
+            "relative",
+            "/Users/someone",
+        ] {
+            assert!(!is_scenario_dir(bad, &allowed), "{bad}");
+        }
+    }
+
+    #[test]
     fn boot_runs_the_script_then_starts_the_runner() {
         let js = boot_js("window.__PR_E2E_SCENARIO__ = async (t) => {};");
         assert!(js.starts_with("window.__PR_E2E_SCENARIO__"));
-        assert!(js.contains("r.start(window.__PR_E2E_SCENARIO__)"));
+        assert!(js.contains("window.__PR_E2E_SCENARIO__(t)"));
+        assert!(
+            js.contains("jump-latest"),
+            "the widget poll presses Needs you below"
+        );
     }
 
     #[test]

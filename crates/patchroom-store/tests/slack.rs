@@ -78,7 +78,7 @@ fn migration_3_applies_to_a_v2_database_and_keeps_rows() {
         .unwrap();
     }
     let store = Store::open(dir.path()).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 3);
+    assert_eq!(store.schema_version().unwrap(), migrate::LATEST_VERSION);
     let ws = store.list_workspaces().unwrap().remove(0);
     let c = store.list_conversations(ws.id).unwrap().remove(0);
     assert_eq!(c.name, "old");

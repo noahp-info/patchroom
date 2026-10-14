@@ -39,6 +39,7 @@ use patchroom_store::{
 use serde::{Deserialize, Serialize};
 
 mod chat;
+mod folder;
 mod paste;
 mod slack;
 
@@ -128,6 +129,10 @@ pub struct ManagerConfig {
     pub claude_config_dir: Option<PathBuf>,
     /// How long BEL / OSC 9 / OSC 777 waits for a hook-driven notification of the same moment.
     pub terminal_hold: Duration,
+    /// Extra transcript roots that folder sections also read (`<root>/<encoded cwd>/<id>.jsonl`).
+    /// Empty in the app; debug runs fill it from `PATCHROOM_E2E_EXTRA_PROJECTS` so a live
+    /// check can show a fixture session without writing under `~/.claude`.
+    pub extra_projects_dirs: Vec<PathBuf>,
 }
 
 impl ManagerConfig {
@@ -143,6 +148,7 @@ impl ManagerConfig {
             statusline_bin: None,
             claude_config_dir: None,
             terminal_hold: TERMINAL_HOLD,
+            extra_projects_dirs: Vec::new(),
         }
         .with_default_claude_paths()
     }
@@ -212,6 +218,10 @@ pub struct SessionInfo {
     pub archived: bool,
     /// An unsent composer draft is stored.
     pub has_draft: bool,
+    /// Set when the DM's folder is outside its section's home folder (a DM dragged in from
+    /// another project): the folder's name, so it is clear the DM does not run there.
+    #[serde(rename = "folderChip")]
+    pub folder_chip: Option<String>,
 }
 
 /// One section of the sidebar.
@@ -225,6 +235,11 @@ pub struct SectionInfo {
     pub position: i64,
     /// Collapsed in the sidebar.
     pub collapsed: bool,
+    /// Home folder of a folder section; `None` for a plain section.
+    pub folder: Option<String>,
+    /// Folder sections fold sessions idle this many days into "Older than X days".
+    #[serde(rename = "archiveDays")]
+    pub archive_days: i64,
 }
 
 /// What `--open-dm` asks for.
@@ -304,6 +319,7 @@ pub struct Manager {
     reconciler: Option<Arc<Reconciler>>,
     chats: Mutex<HashMap<String, Arc<chat::Chat>>>,
     slack: slack::SlackState,
+    folders: folder::FolderState,
     /// DMs the user killed or deleted, so their exit is not reported as a failure.
     killed: Mutex<HashSet<String>>,
 }
@@ -370,6 +386,7 @@ impl Manager {
             reconciler,
             chats: Mutex::new(HashMap::new()),
             slack,
+            folders: folder::FolderState::new(),
             killed: Mutex::new(HashSet::new()),
         });
         // The app always has a chat client, so blocking hooks are answered through it.
@@ -377,6 +394,7 @@ impl Manager {
         paste::prune_old(&manager.cfg.data_dir, paste::MAX_AGE);
         manager.spawn_bridge_thread(events)?;
         manager.spawn_search_sync(false);
+        manager.start_folder_watch_if_any();
         Ok(manager)
     }
 
@@ -529,12 +547,18 @@ impl Manager {
     /// Store failures.
     pub fn list(self: &Arc<Self>) -> Result<Vec<SessionInfo>> {
         self.start_queued_open_dm();
-        let (convs, badges, drafts) = {
+        let (convs, badges, drafts, folders) = {
             let store = lock(&self.store);
+            let folders: HashMap<Id, String> = store
+                .list_sections(self.workspace)?
+                .into_iter()
+                .filter_map(|s| s.folder.map(|f| (s.id, f)))
+                .collect();
             (
                 store.list_conversations(self.workspace)?,
                 store.list_badges()?,
                 store.draft_conversation_ids()?,
+                folders,
             )
         };
         let badges: HashMap<String, patchroom_store::Badges> = badges
@@ -560,6 +584,12 @@ impl Manager {
                     .map_or((0, false), |b| (b.unread, b.needs_you));
                 // An archived DM never badges; its needs-you flag stays true.
                 let unread = if c.archived { 0 } else { unread };
+                let folder_chip = Self::folder_chip(
+                    c.section_id
+                        .and_then(|s| folders.get(&s))
+                        .map(String::as_str),
+                    c.cwd.as_deref().unwrap_or_default(),
+                );
                 SessionInfo {
                     id,
                     name: c.name,
@@ -574,6 +604,7 @@ impl Manager {
                     starred: c.starred,
                     archived: c.archived,
                     has_draft: drafts.contains(&c.id),
+                    folder_chip,
                 }
             })
             .collect())
@@ -628,6 +659,8 @@ impl Manager {
                 name: s.name,
                 position: s.position,
                 collapsed: s.collapsed,
+                folder: s.folder,
+                archive_days: s.archive_days,
             })
             .collect())
     }

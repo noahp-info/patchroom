@@ -32,6 +32,12 @@ const PREFIXES: [&str; 8] = [
     "nohup", "sudo", "exec", "command", "time", "nice", "env", "setsid",
 ];
 
+/// Largest wrapper script that is scanned, in bytes.
+const MAX_SCRIPT_BYTES: u64 = 256 * 1024;
+
+/// How deep wrapper scripts and `sh -c` strings nest before the scan stops.
+const MAX_DEPTH: u8 = 3;
+
 /// Longest command text reported.
 const MAX_COMMAND_CHARS: usize = 300;
 
@@ -55,7 +61,9 @@ pub fn plays_audio(command: &str) -> bool {
 }
 
 fn plays_audio_depth(command: &str, depth: u8) -> bool {
+    // `${HOME}` would be cut apart at the braces below.
     command
+        .replace("${HOME}", "$HOME")
         .split([';', '&', '|', '\n', '(', ')', '{', '}', '`'])
         .any(|segment| segment_plays_audio(segment, depth))
 }
@@ -84,18 +92,67 @@ fn segment_plays_audio(segment: &str, depth: u8) -> bool {
         return true;
     }
     let rest: Vec<&str> = words.collect();
+    if depth < MAX_DEPTH && script_plays_audio(first, depth) {
+        return true;
+    }
     match program {
         "osascript" => rest.iter().any(|w| {
             let w = w.to_lowercase();
             w.contains("beep") || w.contains("sound")
         }),
         "terminal-notifier" => rest.iter().any(|w| w.eq_ignore_ascii_case("-sound")),
-        "sh" | "bash" | "zsh" | "dash" if depth < 3 => rest
-            .iter()
-            .position(|w| *w == "-c")
-            .is_some_and(|i| plays_audio_depth(&rest[i + 1..].join(" "), depth + 1)),
+        "sh" | "bash" | "zsh" | "dash" if depth < MAX_DEPTH => {
+            if let Some(i) = rest.iter().position(|w| *w == "-c") {
+                plays_audio_depth(&rest[i + 1..].join(" "), depth + 1)
+            } else {
+                // `bash /path/script.sh args`: the first non-flag word is the script.
+                rest.iter()
+                    .find(|w| !w.starts_with('-'))
+                    .is_some_and(|w| script_plays_audio(w, depth))
+            }
+        }
         _ => false,
     }
+}
+
+/// Expand a leading `~`, `$HOME` or `${HOME}` using the process environment.
+fn expand_home(word: &str) -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    for prefix in ["~/", "$HOME/"] {
+        if let Some(rest) = word.strip_prefix(prefix) {
+            return home.map(|h| h.join(rest));
+        }
+    }
+    if word.starts_with('/') {
+        return Some(PathBuf::from(word));
+    }
+    None
+}
+
+/// Is `word` a readable script file whose text plays audio? The file is read only. Wrapper
+/// scripts such as `play.sh stop` that call `afplay` inside are the common case.
+fn script_plays_audio(word: &str, depth: u8) -> bool {
+    if !word.contains('/') {
+        return false;
+    }
+    let Some(path) = expand_home(word) else {
+        return false;
+    };
+    let Ok(meta) = std::fs::metadata(&path) else {
+        return false;
+    };
+    if !meta.is_file() || meta.len() > MAX_SCRIPT_BYTES {
+        return false;
+    }
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let code: String = text
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    plays_audio_depth(&code, depth + 1)
 }
 
 /// Command hooks that play audio in one settings document.
@@ -219,6 +276,63 @@ mod tests {
     }
 
     #[test]
+    fn follows_wrapper_scripts_read_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let play = dir.path().join("play.sh");
+        std::fs::write(
+            &play,
+            "#!/bin/bash\n# afplay in a comment only\nEVENT=\"$1\"\n[ -z \"$EVENT\" ] && exit 0\n/usr/bin/afplay -v 1 \"$SOUND\" 2>/dev/null\nexit 0\n",
+        )
+        .unwrap();
+        let quiet = dir.path().join("quiet.sh");
+        std::fs::write(
+            &quiet,
+            "#!/bin/bash\n# afplay is only named here\necho hi\n",
+        )
+        .unwrap();
+        let outer = dir.path().join("outer.sh");
+        std::fs::write(&outer, format!("#!/bin/sh\n{} stop\n", play.display())).unwrap();
+        let before = std::fs::read(&play).unwrap();
+        let p = play.display();
+        assert!(plays_audio(&format!("{p} stop")));
+        assert!(plays_audio(&format!("'{p}' task")));
+        assert!(plays_audio(&format!("bash {p} session")));
+        assert!(plays_audio(&format!("bash -c '{p} stop'")));
+        assert!(plays_audio(&format!("{} go", outer.display())), "depth 2");
+        assert!(!plays_audio(&format!("{} stop", quiet.display())));
+        assert!(!plays_audio(&format!(
+            "{}/missing.sh stop",
+            dir.path().display()
+        )));
+        assert_eq!(before, std::fs::read(&play).unwrap());
+        // A script that calls itself terminates at the depth limit.
+        let looping = dir.path().join("loop.sh");
+        std::fs::write(&looping, format!("{} again\n", looping.display())).unwrap();
+        assert!(!plays_audio(&looping.display().to_string()));
+    }
+
+    #[test]
+    fn expands_home_in_wrapper_paths() {
+        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+            return;
+        };
+        let dir = tempfile::Builder::new()
+            .prefix("pr-hook-test-")
+            .tempdir_in(&home);
+        let Ok(dir) = dir else { return };
+        std::fs::write(dir.path().join("w.sh"), "afplay x.aiff\n").unwrap();
+        let name = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(plays_audio(&format!("$HOME/{name}/w.sh stop")));
+        assert!(plays_audio(&format!("~/{name}/w.sh stop")));
+        assert!(plays_audio(&format!("${{HOME}}/{name}/w.sh stop")));
+    }
+
+    #[test]
     fn ignores_other_commands() {
         for no in [
             "",
@@ -331,6 +445,52 @@ mod tests {
         .collect();
         assert_eq!(before, after, "files are only read");
         assert!(got[0].path.ends_with("cfg/settings.json"));
+    }
+
+    #[test]
+    fn wrapper_script_fixture_detects_stop_task_and_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("cfg");
+        let sounds = cfg.join("sounds");
+        std::fs::create_dir_all(&sounds).unwrap();
+        std::fs::write(
+            sounds.join("play.sh"),
+            "#!/bin/bash\nEVENT=\"$1\"\ncase \"$EVENT\" in\n  stop) SOUND=a ;;\n  *) exit 0 ;;\nesac\n/usr/bin/afplay -v \"$VOLUME\" \"$SOUND\" 2>/dev/null\nexit 0\n",
+        )
+        .unwrap();
+        let cmd = |arg: &str| format!("{}/play.sh {arg}", sounds.display());
+        let group = |arg: &str| json!([{"hooks": [{"type": "command", "command": cmd(arg)}]}]);
+        write(
+            &cfg.join("settings.json"),
+            &json!({"hooks": {
+                "SessionStart": group("session"),
+                "TaskCompleted": group("task"),
+                "Stop": group("stop"),
+                "PreToolUse": [{"hooks": [{"type": "command", "command": "./check.sh"}]}]
+            }}),
+        );
+        let mut events: Vec<String> = detect_sound_hooks(Some(&cfg), &[])
+            .into_iter()
+            .map(|h| h.event)
+            .collect();
+        events.sort();
+        assert_eq!(events, ["SessionStart", "Stop", "TaskCompleted"]);
+    }
+
+    /// Read-only check against the machine's real settings: `cargo test -- --ignored real_`.
+    #[test]
+    #[ignore = "reads the real ~/.claude/settings.json"]
+    fn real_user_settings_report_hooks() {
+        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+            return;
+        };
+        let found = detect_sound_hooks(Some(&home.join(".claude")), &[]);
+        let events: Vec<&str> = found.iter().map(|h| h.event.as_str()).collect();
+        eprintln!("detected: {events:?}");
+        assert!(
+            !events.is_empty(),
+            "expected audio hooks in the real settings"
+        );
     }
 
     #[test]

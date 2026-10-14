@@ -59,8 +59,8 @@ export function HooksSection() {
                   </td>
                   <td>{twins.length ? twins.map((t) => PACK[t].name).join(', ') : 'No overlap'}</td>
                   <td>
-                    <div className="seg" role="radiogroup" aria-label={`${event} policy`}>
-                      <label className="seg__opt">
+                    <div className="pf-seg" role="radiogroup" aria-label={`${event} policy`}>
+                      <label className="pf-seg__opt">
                         <input
                           type="radio"
                           name={`hook-${event}`}
@@ -69,7 +69,7 @@ export function HooksSection() {
                         />
                         <span>Keep yours</span>
                       </label>
-                      <label className="seg__opt">
+                      <label className="pf-seg__opt">
                         <input
                           type="radio"
                           name={`hook-${event}`}

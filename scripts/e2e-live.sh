@@ -6,11 +6,20 @@
 # shell can see: leftover claude and hook processes after quit, and config file checksums.
 # Prints a pass/fail table and the report path. Exit 0 only when every row passes.
 #
+# Two scenarios run, one after the other, each in its own app launch with its own data dir:
+#   1. ui/src/e2e/both.script.js     the UI scenario (P1, P1b, P2, P3 Slack layer, folder rows)
+#   2. scripts/e2e-backend.script.js the backend scenario: sound-hook detection on the real
+#      settings (read only), an unfocused needs-you notification, a folder section over a git
+#      repo with live haiku sessions (names, /rename, older-than-X fixture, resume with history,
+#      a session started outside Patchroom, a dragged-in DM keeping its pid) and a restart.
+# Afterwards a read-only listing of the real gamerNetworking folder runs and the config
+# checksums are compared.
+#
 # Usage: scripts/e2e-live.sh            build, run, report
 #        E2E_SKIP_BUILD=1 scripts/e2e-live.sh   reuse the last e2e build
-#        E2E_TIMEOUT=900 ...            seconds before the run is killed
-#        E2E_SCRIPT=/path/to/x.script.js ...   run another scenario (default: both.script.js)
-#        E2E_MAX_RESTARTS=3 ...         how many mid-script restarts are honored
+#        E2E_TIMEOUT=900 ...            seconds before each scenario is killed
+#        E2E_SCRIPT=/path/to/x.script.js ...   run only this scenario
+#        E2E_MAX_RESTARTS=3 ...         how many mid-script restarts are honored per scenario
 #
 # Restart mid-script: the scenario calls the `e2e_restart` command with a phase name. The app
 # quits through its normal quit path, this script relaunches it on the SAME data dir with
@@ -30,9 +39,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BASE="${E2E_BASE:-/tmp/pr-e2e-$$}"  # per-run dir: parallel runs never share or delete each other's files
 TIMEOUT="${E2E_TIMEOUT:-900}"
 APP="$ROOT/target/debug/bundle/macos/Patchroom.app/Contents/MacOS/patchroom"
-SCRIPT="${E2E_SCRIPT:-$ROOT/ui/src/e2e/both.script.js}"
+if [[ -n "${E2E_SCRIPT:-}" ]]; then
+  SCRIPTS=("$E2E_SCRIPT")
+else
+  SCRIPTS=("$ROOT/ui/src/e2e/both.script.js" "$ROOT/scripts/e2e-backend.script.js")
+fi
 MAX_RESTARTS="${E2E_MAX_RESTARTS:-3}"
-REPORT="$BASE/report"
 export PATH="$HOME/.cargo/bin:$PATH"
 
 [[ "$(uname)" == "Darwin" ]] || { echo "e2e-live: macOS only" >&2; exit 2; }
@@ -41,7 +53,7 @@ command -v claude >/dev/null || { echo "e2e-live: claude is not on PATH" >&2; ex
 # ---- temp dirs ------------------------------------------------------------------------------------
 case "$BASE" in /tmp/*) ;; *) echo "e2e-live: E2E_BASE must be under /tmp" >&2; exit 2 ;; esac
 rm -rf "$BASE"
-mkdir -p "$BASE/alpha" "$BASE/beta" "$BASE/data" "$REPORT"
+mkdir -p "$BASE"
 
 # ---- build ------------------------------------------------------------------------------------------
 if [[ "${E2E_SKIP_BUILD:-0}" != "1" ]]; then
@@ -81,7 +93,7 @@ claude_json_view >"$BASE/claude-json.before"
 patchroom_refs >"$BASE/refs.before"
 
 # Processes of THIS run only: claude or a hook whose cwd is under $BASE, or whose command
-# line names this run's data dir ($BASE/data, through --socket or --settings). Another run's
+# line names one of this run's data dirs ($BASE/s*/data, through --socket or --settings). Another run's
 # processes (a second e2e-live, the live_chat tests) match neither.
 ours() {
   local pid cwd cmd
@@ -91,76 +103,138 @@ ours() {
     case "$cwd" in
       "$BASE"/*|"/private$BASE"/*) echo "$pid"; continue ;;
     esac
-    case "$cmd" in *"$BASE/data/"*|*"/private$BASE/data/"*) echo "$pid" ;; esac
+    case "$cmd" in *"$BASE"/s*/data/*|*"/private$BASE"/s*/data/*) echo "$pid" ;; esac
   done < <(ps -axww -o pid=,command= | grep -E '(^|[ /])claude( |$)|patchroom-hook' | grep -v grep)
 }
 
 # ---- run ----------------------------------------------------------------------------------------------------
-echo "e2e-live: running the scenario (up to ${TIMEOUT}s)"
-start=$SECONDS
 timed_out=0
-phase=""
-phase_n=1
-app_status=0
 listeners_file="$BASE/listeners.txt"
 : >"$listeners_file"
-while :; do
-  rdir="$REPORT"; [[ "$phase_n" -gt 1 ]] && rdir="$BASE/report-$phase_n"
-  mkdir -p "$rdir"
-  rm -f "$rdir/restart-request"
-  open_dm=()
-  if [[ "$phase_n" -eq 1 ]]; then
-    open_dm=(--open-dm "$BASE/alpha" --open-dm-arg --model --open-dm-arg haiku --open-dm-arg --permission-mode --open-dm-arg default)
-  fi
-  PATCHROOM_DATA_DIR="$BASE/data" \
-  PATCHROOM_E2E_DIR_A="$BASE/alpha" \
-  PATCHROOM_E2E_DIR_B="$BASE/beta" \
-  PATCHROOM_E2E_PHASE="$phase" \
-  ANTHROPIC_MODEL=haiku \
-    "$APP" --e2e-script "$SCRIPT" --e2e-report "$rdir" ${open_dm[@]+"${open_dm[@]}"} \
-    >"$BASE/app-$phase_n.log" 2>&1 &
-  APP_PID=$!
-  while kill -0 "$APP_PID" 2>/dev/null; do
-    if (( SECONDS - start > TIMEOUT )); then
-      timed_out=1
-      echo "e2e-live: timed out, stopping the app"
-      kill "$APP_PID" 2>/dev/null
-      break
+: >"$BASE/manifest.txt"
+
+# The audio hooks the machine's real settings are expected to report: the events whose command
+# calls a sound wrapper script or plays audio directly. Read only; the backend scenario compares
+# `sound_hooks_detect` with it.
+expect_hooks() {
+  python3 -I - "$HOME/.claude/settings.json" <<'PY'
+import json, re, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    d = {}
+if d.get("disableAllHooks"):
+    d = {}
+events = []
+for ev, groups in (d.get("hooks") or {}).items():
+    for g in groups if isinstance(groups, list) else []:
+        for h in g.get("hooks", [g]) if isinstance(g, dict) else []:
+            c = h.get("command", "") if isinstance(h, dict) else ""
+            if re.search(r"sounds/play\.sh|\bafplay\b|\bpaplay\b", c):
+                events.append(ev)
+print(",".join(sorted(set(events))))
+PY
+}
+EXPECT_HOOKS="$(expect_hooks)"
+
+# A transcript fixture for the folder scenario, kept OUTSIDE ~/.claude: one old session that the
+# app reads through PATCHROOM_E2E_EXTRA_PROJECTS (debug builds only).
+make_old_fixture() {
+  local sb="$1" real enc dir ts
+  real="$(cd "$sb/fold" && pwd -P)"
+  enc="$(printf '%s' "$real" | sed 's/[^A-Za-z0-9]/-/g')"
+  dir="$sb/extra-projects/$enc"
+  mkdir -p "$dir"
+  ts="$(date -u -v-40d +%Y-%m-%dT%H:%M:%S.000Z)"
+  printf '{"type":"user","isSidechain":false,"cwd":"%s","gitBranch":"main","entrypoint":"cli","timestamp":"%s","origin":{"kind":"human"},"message":{"role":"user","content":"An old fixture session about the billing export"}}\n{"type":"ai-title","aiTitle":"Fixture old session","sessionId":"f1x7u4e0-0000-4000-8000-0000000000aa"}\n' "$real" "$ts" >"$dir/f1x7u4e0-0000-4000-8000-0000000000aa.jsonl"
+}
+
+# run_scenario <index> <script>: launch the app on a fresh data dir with the script; honor the
+# script's restart requests (same data dir, next phase). Appends "<index> <script> <phases>" to
+# the manifest. Folders: s<i>/alpha, s<i>/beta, s<i>/fold (a git repo), s<i>/data.
+run_scenario() {
+  local idx="$1" script="$2"
+  local sb="$BASE/s$idx" phase="" phase_n=1 rdir open_dm start="$SECONDS" app_pid
+  mkdir -p "$sb/alpha" "$sb/beta" "$sb/fold" "$sb/data" "$sb/extra-projects"
+  git -C "$sb/fold" init -q -b main && git -C "$sb/fold" -c user.name=e2e -c user.email=e2e@example.com commit -q --allow-empty -m init
+  make_old_fixture "$sb"
+  echo "e2e-live: scenario $idx: $(basename "$script") (up to ${TIMEOUT}s)"
+  while :; do
+    rdir="$sb/report"; [[ "$phase_n" -gt 1 ]] && rdir="$sb/report-$phase_n"
+    mkdir -p "$rdir"
+    rm -f "$rdir/restart-request"
+    open_dm=()
+    if [[ "$phase_n" -eq 1 ]]; then
+      open_dm=(--open-dm "$sb/alpha" --open-dm-arg --model --open-dm-arg haiku --open-dm-arg --permission-mode --open-dm-arg default)
     fi
-    # No network listener, ever: sample this app's TCP listeners while it runs.
-    lsof -a -p "$APP_PID" -iTCP -sTCP:LISTEN -n -P 2>/dev/null | tail -n +2 >>"$listeners_file"
-    sleep 2
+    PATCHROOM_DATA_DIR="$sb/data" \
+    PATCHROOM_E2E_DIR_A="$sb/alpha" \
+    PATCHROOM_E2E_DIR_B="$sb/beta" \
+    PATCHROOM_E2E_DIR_FOLD="$sb/fold" \
+    PATCHROOM_E2E_EXTRA_PROJECTS="$sb/extra-projects" \
+    PATCHROOM_E2E_OUTSIDE_DRIVER="$ROOT/scripts/e2e-outside-session.py" \
+    PATCHROOM_E2E_EXPECT_HOOKS="$EXPECT_HOOKS" \
+    PATCHROOM_E2E_PHASE="$phase" \
+    ANTHROPIC_MODEL=haiku \
+      "$APP" --e2e-script "$script" --e2e-report "$rdir" ${open_dm[@]+"${open_dm[@]}"} \
+      >"$sb/app-$phase_n.log" 2>&1 &
+    app_pid=$!
+    while kill -0 "$app_pid" 2>/dev/null; do
+      if (( SECONDS - start > TIMEOUT )); then
+        timed_out=1
+        echo "e2e-live: scenario $idx timed out, stopping the app"
+        kill "$app_pid" 2>/dev/null
+        break
+      fi
+      # No network listener, ever: sample this app's TCP listeners while it runs.
+      lsof -a -p "$app_pid" -iTCP -sTCP:LISTEN -n -P 2>/dev/null | tail -n +2 >>"$listeners_file"
+      sleep 2
+    done
+    wait "$app_pid" 2>/dev/null
+    if [[ "$timed_out" -eq 0 && -f "$rdir/restart-request" && "$phase_n" -le "$MAX_RESTARTS" ]]; then
+      phase="$(tr -cd 'A-Za-z0-9_-' <"$rdir/restart-request")"
+      phase_n=$((phase_n + 1))
+      echo "e2e-live: restarting the app on the same data dir (phase '$phase')"
+      sleep 2  # the quit path killed the children; let the socket and db settle
+      continue
+    fi
+    break
   done
-  wait "$APP_PID" 2>/dev/null
-  app_status=$?
-  if [[ "$timed_out" -eq 0 && -f "$rdir/restart-request" && "$phase_n" -le "$MAX_RESTARTS" ]]; then
-    phase="$(tr -cd 'A-Za-z0-9_-' <"$rdir/restart-request")"
-    phase_n=$((phase_n + 1))
-    echo "e2e-live: restarting the app on the same data dir (phase '$phase')"
-    sleep 2  # the quit path killed the children; let the socket and db settle
-    continue
-  fi
-  break
+  cat "$sb"/app-*.log >"$sb/app-all.log" 2>/dev/null
+  cp "$sb/data/notify-decisions.log" "$sb/notify-decisions.log" 2>/dev/null
+  echo "$idx $(basename "$script") $phase_n" >>"$BASE/manifest.txt"
+  sleep 2  # let hook and claude processes notice the exit
+}
+
+idx=0
+for script in "${SCRIPTS[@]}"; do
+  idx=$((idx + 1))
+  [[ -f "$script" ]] || { echo "e2e-live: no scenario at $script" >&2; exit 2; }
+  run_scenario "$idx" "$script"
+  [[ "$timed_out" -eq 0 ]] || break
 done
-cp "$BASE/app-$phase_n.log" "$BASE/app.log" 2>/dev/null
-cat "$BASE"/app-*.log >"$BASE/app-all.log" 2>/dev/null
-cp "$BASE/data/notify-decisions.log" "$BASE/notify-decisions.log" 2>/dev/null
-sleep 2  # let hook and claude processes notice the exit
+
+# Read-only look at the real gamerNetworking folder section (lists; opens and writes nothing).
+real_line="$(cd "$ROOT" && cargo test -q -p patchroom-folders --test real -- --ignored --nocapture 2>&1 | grep -m1 '^REAL' || true)"
+echo "$real_line" >"$BASE/real.txt"
 
 # ---- after snapshots -----------------------------------------------------------------------------------------
 left="$(ours | tr '\n' ' ')"
 sums >"$BASE/sums.after"
 claude_json_view >"$BASE/claude-json.after"
 patchroom_refs >"$BASE/refs.after"
-# Clean up anything that survived, after it has been counted.
+# Say what survived, then clean it up, after it has been counted.
+if [[ -n "${left// /}" ]]; then
+  # shellcheck disable=SC2086
+  ps -ww -o pid=,ppid=,etime=,command= -p ${left// /,} >"$BASE/left.txt" 2>/dev/null
+fi
 for pid in $left; do kill "$pid" 2>/dev/null; done
 
 # ---- table ---------------------------------------------------------------------------------------------------------------
-python3 -I - "$REPORT/report.json" "$BASE" "$left" "$timed_out" "$app_status" "$phase_n" <<'PY'
-import glob, json, os, sys
+python3 -I - "$BASE" "$left" "$timed_out" <<'PY'
+import json, os, sys
 
-report_path, base, left, timed_out, app_status, phases = sys.argv[1:7]
-phases = int(phases)
+base, left, timed_out = sys.argv[1:4]
 
 def read(p):
     try:
@@ -169,32 +243,44 @@ def read(p):
         return ""
 
 rows = []
-rep = {"steps": [], "done": False, "facts": {}}
-for n in range(1, phases + 1):
-    path = report_path if n == 1 else f"{base}/report-{n}/report.json"
-    try:
-        part = json.load(open(path))
-    except Exception as e:
-        rows.append((f"report written (phase {n})", False, f"no readable report: {e}"))
-        continue
-    prefix = "" if phases == 1 else f"[phase {n}] "
-    for s in part["steps"]:
-        rows.append((prefix + s["name"], s["ok"], s["detail"]))
-    if n == phases:
-        rep = part
-if rep.get("steps") and not rep.get("done"):
-    rows.append(("scenario finished", False, "the report is not marked done"))
+facts_all = {}
+manifest = [l.split() for l in read(f"{base}/manifest.txt").splitlines() if l.strip()]
+for idx, script, phases in manifest:
+    phases = int(phases)
+    tag = f"[{script.replace('.script.js', '')}] "
+    rep = {"steps": [], "done": False, "facts": {}}
+    for n in range(1, phases + 1):
+        rdir = f"{base}/s{idx}/report" + ("" if n == 1 else f"-{n}")
+        try:
+            part = json.load(open(f"{rdir}/report.json"))
+        except Exception as e:
+            rows.append((f"{tag}report written (phase {n})", False, f"no readable report: {e}"))
+            continue
+        prefix = tag + ("" if phases == 1 else f"[phase {n}] ")
+        for s in part["steps"]:
+            rows.append((prefix + s["name"], s["ok"], s["detail"]))
+        if n == phases:
+            rep = part
+    if rep.get("steps") and not rep.get("done"):
+        rows.append((f"{tag}scenario finished", False, "the report is not marked done"))
+    facts_all[script] = rep.get("facts", {})
+if not manifest:
+    rows.append(("a scenario ran", False, "no scenario reached the manifest"))
 
 listeners = read(f"{base}/listeners.txt").strip()
 rows.append(("no TCP listener while the app ran", listeners == "", listeners.replace("\n", " | ") or "none"))
 
-decisions = read(f"{base}/notify-decisions.log")
-bad = [l for l in decisions.splitlines() if [kv.split("=")[0] for kv in l.split(" ")[1:]] != ["event", "dm", "decision", "reason"]]
-rows.append(("decision log has only event, dm, decision, reason", not bad, f"{len(decisions.splitlines())} lines" if not bad else f"odd line: {bad[0][:120]}"))
+# Decision logs: only event, dm, decision, reason (and a hook policy reason), never a body.
+for idx, script, _ in manifest:
+    decisions = read(f"{base}/s{idx}/notify-decisions.log")
+    bad = [l for l in decisions.splitlines() if [kv.split("=")[0] for kv in l.split(" ")[1:]] != ["event", "dm", "decision", "reason"]]
+    rows.append((f"[{script.replace('.script.js', '')}] decision log has only event, dm, decision, reason", not bad,
+                 f"{len(decisions.splitlines())} lines" if not bad else f"odd line: {bad[0][:120]}"))
 if timed_out == "1":
     rows.append(("finished before timeout", False, "killed after the timeout"))
 
-rows.append(("quit leaves no claude or hook process", left.strip() == "", f"left: {left.strip() or 'none'}"))
+rows.append(("quit leaves no claude or hook process", left.strip() == "",
+             f"left: {left.strip() or 'none'} {read(f'{base}/left.txt').strip()[:120]}"))
 
 before, after = read(f"{base}/sums.before"), read(f"{base}/sums.after")
 rows.append(("settings.json, .bash_profile, .zshrc unchanged", before == after and before != "", "checksums identical" if before == after else "CHECKSUM CHANGED"))
@@ -208,6 +294,10 @@ extra_projects = sorted(set(ca.get("other_projects", [])) ^ set(cb.get("other_pr
 rows.append((".claude.json: only the DM folders' entries are new", not extra_projects,
              f"mine={len(ca.get('mine', []))} folders; other new/removed projects={extra_projects or 'none'}; other top-level keys claude itself touched={changed or 'none'}"))
 
+real = read(f"{base}/real.txt").strip()
+rows.append(("real data: the gamerNetworking folder lists read only", real.startswith("REAL"),
+             real[:150] or "no REAL line (the read-only listing did not run)"))
+
 w = max(len(r[0]) for r in rows) if rows else 10
 print()
 print(f"{'CHECK'.ljust(w)}  RESULT  DETAIL")
@@ -216,12 +306,10 @@ for name, ok, detail in rows:
 passed = sum(1 for r in rows if r[1])
 print()
 print(f"{passed}/{len(rows)} passed")
-facts = rep.get("facts", {})
-if facts.get("probe") or facts.get("visibilityStateReal"):
-    print(f"webview while the screen state was in effect: visibilityState={facts.get('visibilityStateReal')} hasFocus={facts.get('hasFocus')} probe={json.dumps(facts.get('probe'))}")
-print(f"report:   {report_path}")
-print(f"app log:  {base}/app-all.log")
-print(f"decisions: {base}/notify-decisions.log")
-print(f"DOM snapshots: {os.path.dirname(report_path)}/dom-*.html")
+for script, facts in facts_all.items():
+    if facts.get("probe") or facts.get("visibilityStateReal"):
+        print(f"{script}: visibilityState={facts.get('visibilityStateReal')} hasFocus={facts.get('hasFocus')} probe={json.dumps(facts.get('probe'))}")
+for idx, script, phases in manifest:
+    print(f"scenario {idx} ({script}): {base}/s{idx}/report/report.json  app log: {base}/s{idx}/app-all.log  decisions: {base}/s{idx}/notify-decisions.log")
 sys.exit(0 if passed == len(rows) else 1)
 PY

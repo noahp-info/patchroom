@@ -246,6 +246,10 @@ pub struct Section {
     pub position: i64,
     /// Whether the section is collapsed in the sidebar.
     pub collapsed: bool,
+    /// Home folder of a folder section; `None` for a plain section.
+    pub folder: Option<String>,
+    /// Folder sections fold sessions idle this many days into "Older than X days".
+    pub archive_days: i64,
 }
 
 /// Input for [`crate::Store::create_conversation`].

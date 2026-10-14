@@ -15,6 +15,7 @@ use crate::manager::{
     SessionInfo, SessionManager,
 };
 use patchroom_claude::{ChatItem, Cursor, Page};
+use patchroom_folders::Listing;
 use patchroom_prefs::{DetectedHook, Prefs};
 use patchroom_search::SearchResult;
 use serde::Deserialize;
@@ -499,4 +500,68 @@ pub async fn notify_test(state: State<'_, SessionManager>) -> CmdResult<()> {
 pub async fn session_focus(state: State<'_, SessionManager>, id: Option<String>) -> CmdResult<()> {
     state.session_focus(id.as_deref());
     Ok(())
+}
+
+// ---- P3: folder sections ----
+
+/// `section_create_from_folder {path, name?} -> {id}`: a section with a home folder.
+#[tauri::command]
+pub async fn section_create_from_folder(
+    state: State<'_, SessionManager>,
+    path: String,
+    name: Option<String>,
+) -> CmdResult<Created> {
+    let id = state
+        .section_create_from_folder(&path, name.as_deref())
+        .map_err(|e| e.to_string())?;
+    Ok(Created { id })
+}
+
+/// `section_set_archive_days {id, days}`: the "Older than X days" threshold.
+#[tauri::command]
+pub async fn section_set_archive_days(
+    state: State<'_, SessionManager>,
+    id: String,
+    days: i64,
+) -> CmdResult<()> {
+    state
+        .section_set_archive_days(&id, days)
+        .map_err(|e| e.to_string())
+}
+
+/// `folder_sessions {sectionId} -> {sessions, hiddenCount}`: the resumable sessions found
+/// under the section's folder. Read only; nothing starts.
+#[tauri::command]
+pub async fn folder_sessions(
+    state: State<'_, SessionManager>,
+    section_id: String,
+) -> CmdResult<Listing> {
+    let m = state.inner().clone();
+    blocking(move || m.folder_sessions(&section_id)).await
+}
+
+/// `folder_session_open {sectionId, sessionId} -> SessionInfo`: create the DM row and run
+/// `claude --resume <sessionId>` from the session's launch folder.
+#[tauri::command]
+pub async fn folder_session_open(
+    state: State<'_, SessionManager>,
+    section_id: String,
+    session_id: String,
+) -> CmdResult<SessionInfo> {
+    let m = state.inner().clone();
+    blocking(move || m.folder_session_open(&section_id, &session_id)).await
+}
+
+/// `folder_session_hide {sectionId, sessionId, hidden}`: hide a row from the list; the
+/// transcript is untouched.
+#[tauri::command]
+pub async fn folder_session_hide(
+    state: State<'_, SessionManager>,
+    section_id: String,
+    session_id: String,
+    hidden: bool,
+) -> CmdResult<()> {
+    state
+        .folder_session_hide(&section_id, &session_id, hidden)
+        .map_err(|e| e.to_string())
 }

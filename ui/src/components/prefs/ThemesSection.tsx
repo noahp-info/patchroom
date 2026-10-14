@@ -75,9 +75,9 @@ export function ThemesSection() {
 
       <fieldset className="pf-group">
         <legend>Appearance</legend>
-        <div className="seg" role="radiogroup" aria-label="Light or dark">
+        <div className="pf-seg" role="radiogroup" aria-label="Light or dark">
           {MODES.map((m) => (
-            <label key={m.id} className="seg__opt">
+            <label key={m.id} className="pf-seg__opt">
               <input
                 type="radio"
                 name={`${uid}-mode`}
@@ -89,7 +89,11 @@ export function ThemesSection() {
             </label>
           ))}
         </div>
-        <p className="pf-hint">System follows macOS. Showing {mode} now.</p>
+        <p className="pf-hint">
+          {prefs.mode === 'system'
+            ? `System follows macOS. Showing ${mode} now.`
+            : `Showing ${mode}. Pick System to follow macOS.`}
+        </p>
       </fieldset>
 
       <fieldset className="pf-group">

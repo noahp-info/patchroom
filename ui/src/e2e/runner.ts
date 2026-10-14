@@ -276,6 +276,16 @@ export class Runner {
     await invoke('e2e_report', { name: 'report.json', body });
   }
 
+  /**
+   * Mid-script restart: write this phase's report (not final), ask the driving script for a
+   * relaunch on the same data dir with `PATCHROOM_E2E_PHASE=<phase>`, and quit. Never returns.
+   */
+  async restart(phase: string): Promise<never> {
+    await this.writeReport(false);
+    await invoke('e2e_restart', { phase });
+    for (;;) await sleepNative(1000);
+  }
+
   /** Write the final report, then quit through the normal quit path. */
   async finish(quit = true): Promise<void> {
     await this.writeReport(true);
@@ -507,9 +517,9 @@ export class Runner {
 
   // ---- P3 helpers: real key and pointer events on real controls -----------------------------
 
-  /** A chord on the window, as the keyboard raises it (Cmd+K and friends). */
+  /** A chord as the keyboard raises it: on the focused element, bubbling up to window. */
   chord(key: string, mods: { meta?: boolean; shift?: boolean; alt?: boolean } = {}): void {
-    press(window, key, mods);
+    press(document.activeElement ?? document.body, key, mods);
   }
 
   /** Click an element found by CSS selector. */
