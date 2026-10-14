@@ -365,6 +365,8 @@ test.describe('per-DM overrides', () => {
       { play: false, reason: 'mix-off' },
       { play: true },
     ]);
+    // The in-page Cartridge play above is async; let it land before counting the Test click.
+    await expect.poll(async () => (await audio(page)).files.length).toBe(1);
     await resetAudio(page);
     await page.getByRole('button', { name: 'Test Error sound for hook-bridge' }).click();
     await expect.poll(async () => (await audio(page)).files.length).toBe(1);

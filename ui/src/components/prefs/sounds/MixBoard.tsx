@@ -18,6 +18,8 @@ export function MixBoard(props: {
   sound: Prefs['sound'];
   packs: PackInfo[];
   names: Record<string, string>;
+  /** Events a pack button just changed; their rows are highlighted for a moment. */
+  changed?: SoundEvent[];
   onEventOn(e: SoundEvent, on: boolean): void;
   onChoice(e: SoundEvent, c: MixChoice): void;
 }) {
@@ -25,13 +27,21 @@ export function MixBoard(props: {
   return (
     <ul className="plist mix" aria-label="Sound for each event">
       {SOUND_EVENTS.map((e) => (
-        <MixRow key={e} event={e} {...props} choice={s.mix[e] ?? { pack: DEFAULT_PACK }} />
+        <MixRow
+          key={e}
+          event={e}
+          {...props}
+          choice={s.mix[e] ?? { pack: DEFAULT_PACK }}
+          flash={props.changed?.includes(e) ?? false}
+        />
       ))}
     </ul>
   );
 }
 
-function MixRow(p: Parameters<typeof MixBoard>[0] & { event: SoundEvent; choice: MixChoice }) {
+function MixRow(
+  p: Parameters<typeof MixBoard>[0] & { event: SoundEvent; choice: MixChoice; flash: boolean },
+) {
   const { event: e, sound: s, choice } = p;
   const file = useFileImport();
   const info = EVENT_INFO[e];
@@ -50,7 +60,7 @@ function MixRow(p: Parameters<typeof MixBoard>[0] & { event: SoundEvent; choice:
   }
 
   return (
-    <li className="mixrow" data-testid={`mix-${e}`}>
+    <li className="mixrow" data-testid={`mix-${e}`} data-changed={p.flash || undefined}>
       <label className="chk mixrow__name">
         <input
           type="checkbox"
@@ -59,10 +69,7 @@ function MixRow(p: Parameters<typeof MixBoard>[0] & { event: SoundEvent; choice:
           disabled={!s.enabled}
           onChange={(ev) => p.onEventOn(e, ev.target.checked)}
         />
-        <span>
-          {info.name}
-          <small className="pf-hint"> {info.blurb}</small>
-        </span>
+        <span title={info.blurb}>{info.name}</span>
       </label>
       <div className="mixrow__ctl">
         <ChoiceSelect

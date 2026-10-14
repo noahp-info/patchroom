@@ -91,29 +91,76 @@
 .dmsounds {
   margin-top: 4px;
 }
+.sounds-master {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 24px;
+}
+.sounds-master .chk,
+.sounds-master .pf--inline {
+  margin: 4px 0;
+}
+.mixsec {
+  scroll-margin-top: 0;
+}
+.mixsec__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.mixsec__head h3 {
+  margin: 8px 0 4px;
+}
+.mixsec__btns {
+  display: flex;
+  gap: 8px;
+}
+.mixsec > .pf-hint {
+  margin: 0 0 4px;
+}
+.mixsec__note {
+  min-height: 1.4em;
+}
+/* Compact board: name, source, level and test on one line per event. */
 .mixrow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 136px minmax(0, 1fr);
   align-items: center;
   gap: 4px 12px;
-  padding: 8px 0;
+  padding: 4px 6px;
   border-bottom: 1px solid var(--line);
 }
 .plist > .mixrow {
   display: grid;
 }
+.mixrow[data-changed] {
+  border-bottom-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: var(--r-sm);
+}
+.mixrow .chk {
+  margin: 0;
+}
+.mixrow .btn,
+.dmrow .btn {
+  height: 28px;
+  padding: 0 10px;
+}
+.mixrow select {
+  width: 160px;
+}
 .mixrow__ctl {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 10px;
 }
 .mixrow__err {
   grid-column: 1 / -1;
   margin: 0;
-}
-.mixrow .pf-hint {
-  display: block;
 }
 
 .cimp {
@@ -129,13 +176,13 @@
   width: 100%;
 }
 
-.dmrow {
+.plist > .dmrow {
   display: block;
   padding: 6px 0;
 }
 .dmrow__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
@@ -166,7 +213,7 @@
   gap: 6px;
 }
 .gain input[type='range'] {
-  width: 120px;
+  width: 96px;
   accent-color: var(--accent);
 }
 .gain__out {
