@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { openWithDm, sweepLog, watchErrors } from './helpers';
 
 // A 10,000-item transcript opens in under a second, renders a window of rows, and scrolls smoothly.
@@ -34,11 +34,14 @@ test.describe('virtualized log', () => {
     expect(errs).toEqual([]);
   });
 
-  test('all 10,000 items arriving at once still open fast and scroll at frame rate', async ({
-    page,
-  }) => {
+  const scrollAtFrameRate = async (page: Page, cpuRate: number) => {
     const errs = watchErrors(page);
     const id = await openWithDm(page, 'mock', 'chat');
+    if (cpuRate > 1) {
+      // A slower machine: the same work takes cpuRate times longer on the main thread.
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpuRate });
+    }
     const t = await page.evaluate(
       async ([sid, n]) => {
         const m = window.__PR_MOCK__!;
@@ -92,13 +95,24 @@ test.describe('virtualized log', () => {
       2,
     );
     expect(worst, `worst long task ${worst.toFixed(1)} ms`).toBeLessThan(100);
-    if (!process.env.CI) {
+    // Throttled runs gate long tasks only: the frame bar belongs to an unthrottled machine.
+    if (!process.env.CI && cpuRate === 1) {
       // 60 fps is 16.7 ms. The bar is a p95 under two frames.
       expect(p95, `p95 frame ${p95.toFixed(1)} ms`).toBeLessThan(34);
       expect(slow, `share of frames over 50 ms: ${slow.toFixed(3)}`).toBeLessThan(0.03);
     }
     expect(await log.evaluate((el) => el.querySelectorAll('.vrow').length)).toBeLessThan(80);
     expect(errs).toEqual([]);
+  };
+
+  test('all 10,000 items arriving at once still open fast and scroll at frame rate', async ({
+    page,
+  }) => {
+    await scrollAtFrameRate(page, 1);
+  });
+
+  test('scrolling stays smooth with the CPU throttled 3x', async ({ page }) => {
+    await scrollAtFrameRate(page, 3);
   });
 
   test('sweeping the whole log shows every message exactly once, in order', async ({ page }) => {
