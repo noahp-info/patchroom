@@ -1,9 +1,12 @@
-//! Build script: compiles the `patchroom-hook` binary and stages it as a Tauri
-//! sidecar (`binaries/patchroom-hook-<target-triple>`), then runs `tauri-build`.
+//! Build script: compiles the `patchroom-hook` and `patchroom-statusline` binaries and
+//! stages them as Tauri sidecars (`binaries/<name>-<target-triple>`), then runs
+//! `tauri-build`.
 //!
-//! Tauri copies the staged file next to the app executable under the plain name
-//! `patchroom-hook`: `target/<profile>/` in dev and `Contents/MacOS/` in the
-//! bundle. The runtime resolver in `src/hook_path.rs` looks there first.
+//! Tauri copies each staged file next to the app executable under its plain name:
+//! `target/<profile>/` in dev and `Contents/MacOS/` in the bundle. The runtime resolver
+//! in `src/hook_path.rs` looks there first, and finds the statusLine wrapper beside the
+//! hook binary. The wrapper is a separate binary so `pgrep -f patchroom-hook` only ever
+//! matches real hook processes.
 //!
 //! The nested cargo build uses its own target dir under `OUT_DIR`, so it never
 //! contends for the outer build's lock.
@@ -62,22 +65,24 @@ fn stage_hook_sidecar() -> Result<(), Box<dyn Error>> {
         return Err("building the patchroom-hook sidecar failed".into());
     }
 
-    let built = target_dir
-        .join(&target)
-        .join(if profile == "release" {
-            "release"
-        } else {
-            "debug"
-        })
-        .join("patchroom-hook");
     let dest_dir = manifest_dir.join("binaries");
     std::fs::create_dir_all(&dest_dir)?;
-    let dest = dest_dir.join(format!("patchroom-hook-{target}"));
-    let new = std::fs::read(&built)?;
-    if std::fs::read(&dest).map_or(true, |old| old != new) {
-        std::fs::write(&dest, new)?;
+    for name in ["patchroom-hook", "patchroom-statusline"] {
+        let built = target_dir
+            .join(&target)
+            .join(if profile == "release" {
+                "release"
+            } else {
+                "debug"
+            })
+            .join(name);
+        let dest = dest_dir.join(format!("{name}-{target}"));
+        let new = std::fs::read(&built)?;
+        if std::fs::read(&dest).map_or(true, |old| old != new) {
+            std::fs::write(&dest, new)?;
+        }
+        // The staged copy must be executable: the CLI runs it as a hook or statusLine command.
+        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))?;
     }
-    // The staged copy must be executable: the CLI runs it as a hook command.
-    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))?;
     Ok(())
 }

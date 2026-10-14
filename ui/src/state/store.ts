@@ -1,6 +1,23 @@
 import { useSyncExternalStore } from 'react';
 import type { Ipc, SectionInfo, SessionInfo, SessionStatus } from '../ipc';
+import { bytesToBase64, utf8ToBase64 } from '../lib/base64';
+import { shellQuotePath } from '../lib/keys';
 import { SessionTerminal, type SessionTerminalOptions } from '../lib/sessionTerminal';
+import { ChatModel } from './chat';
+
+export type ViewMode = 'chat' | 'terminal';
+
+export interface Badges {
+  unread: number;
+  needsYou: number;
+}
+
+/** The subagent thread open in the right pane. */
+export interface OpenThread {
+  sessionId: string;
+  toolUseId: string;
+  title: string;
+}
 
 export interface AppState {
   ready: boolean;
@@ -10,6 +27,10 @@ export interface AppState {
   activeId: string | null;
   lastCwd: string;
   error: string | null;
+  /** Chat or terminal per DM. A DM opens as chat. */
+  views: Record<string, ViewMode>;
+  badges: Record<string, Badges>;
+  thread: OpenThread | null;
 }
 
 const LAST_CWD_KEY = 'patchroom.lastCwd';
@@ -46,9 +67,13 @@ export class AppStore {
     activeId: null,
     lastCwd: readLastCwd(),
     error: null,
+    views: {},
+    badges: {},
+    thread: null,
   };
   private readonly listeners = new Set<() => void>();
   private readonly terminals = new Map<string, SessionTerminal>();
+  private readonly chats = new Map<string, ChatModel>();
   private unlisten: (() => void)[] = [];
 
   constructor(
@@ -85,6 +110,100 @@ export class AppStore {
     return t;
   }
 
+  /** The chat model of one DM, created on first use. */
+  chat(id: string): ChatModel {
+    let c = this.chats.get(id);
+    if (!c) {
+      c = new ChatModel(id, this.ipc);
+      this.chats.set(id, c);
+      const w = window as unknown as { __PR_CHATS__?: Record<string, ChatModel> };
+      (w.__PR_CHATS__ ??= {})[id] = c;
+    }
+    return c;
+  }
+
+  viewOf(id: string): ViewMode {
+    return this.state.views[id] ?? 'chat';
+  }
+
+  setView(id: string, view: ViewMode): void {
+    if (this.viewOf(id) === view) return;
+    this.set({ views: { ...this.state.views, [id]: view } });
+    this.hintView(id, view);
+  }
+
+  /** Tell the backend which view shows, so a hidden picker goes to the TUI while it is on screen. */
+  private hintView(id: string, view: ViewMode): void {
+    void this.ipc.sessionView(id, view).catch(() => undefined);
+  }
+
+  toggleView(id: string): void {
+    this.setView(id, this.viewOf(id) === 'chat' ? 'terminal' : 'chat');
+  }
+
+  openThread(thread: OpenThread | null): void {
+    this.set({ thread });
+  }
+
+  private setBadges(id: string, b: Badges): void {
+    const cur = this.state.badges[id];
+    if (cur && cur.unread === b.unread && cur.needsYou === b.needsYou) return;
+    this.set({ badges: { ...this.state.badges, [id]: b } });
+  }
+
+  /** The DM is on screen: its unread count clears. Needs-you never clears here. */
+  markRead(id: string): void {
+    const cur = this.state.badges[id];
+    if (cur && cur.unread === 0) return;
+    this.setBadges(id, { unread: 0, needsYou: cur?.needsYou ?? 0 });
+    void this.ipc.sessionMarkRead(id).catch(() => undefined);
+  }
+
+  private readonly images = new Map<string, Promise<string>>();
+
+  /** Image bytes for a user message, fetched once per ref. */
+  chatImage(id: string, ref: string): Promise<string> {
+    const key = `${id}:${ref}`;
+    let p = this.images.get(key);
+    if (!p) {
+      p = this.ipc.chatImage(id, ref).then((r) => r.dataUrl);
+      p.catch(() => this.images.delete(key));
+      this.images.set(key, p);
+    }
+    return p;
+  }
+
+  cycleMode(id: string): void {
+    void this.ipc.statuslineCycleMode(id).catch((err: unknown) => {
+      this.set({ error: `Could not change the mode: ${String(err)}` });
+    });
+  }
+
+  /** Send composer text to claude exactly as typed. */
+  async sendText(id: string, text: string): Promise<void> {
+    try {
+      await this.ipc.sessionSendText(id, text);
+    } catch (err) {
+      this.set({ error: `Could not send the message: ${String(err)}` });
+    }
+  }
+
+  /** Save a pasted image and insert its absolute path into the draft. Nothing reaches the PTY. */
+  async pasteImage(id: string, file: Blob): Promise<void> {
+    try {
+      const data = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
+      const { path } = await this.ipc.pasteImage(id, data, file.type || 'image/png');
+      this.chat(id).insertIntoDraft(shellQuotePath(path) + ' ');
+    } catch (err) {
+      this.set({ error: `Could not paste the image: ${String(err)}` });
+    }
+  }
+
+  /** Esc to the PTY: interrupts the running turn. */
+  stopTurn(id: string): void {
+    void this.ipc.sessionWrite(id, utf8ToBase64('\x1b')).catch(() => undefined);
+  }
+
   private started = false;
 
   async start(): Promise<void> {
@@ -102,6 +221,13 @@ export class AppStore {
           needs: e.status === 'waiting' ? e.needs : undefined,
         });
       }),
+      this.ipc.on('chat:items', (e) => this.chat(e.id).apply(e.items)),
+      this.ipc.on('prompt:pending', (e) => this.chat(e.id).addPrompt(e)),
+      this.ipc.on('prompt:resolved', (e) => this.chat(e.id).resolvePrompt(e.promptId, e.by)),
+      this.ipc.on('session:badges', (e) =>
+        this.setBadges(e.id, { unread: e.unread, needsYou: asCount(e.needsYou) }),
+      ),
+      this.ipc.on('statusline:update', (e) => this.chat(e.id).setStatusline(e)),
     ]);
     try {
       const [sessions, sections] = await Promise.all([
@@ -110,6 +236,7 @@ export class AppStore {
       ]);
       const activeId = this.state.activeId ?? firstActive(sessions);
       this.set({
+        badges: seedBadges(sessions, this.state.badges),
         sessions: mergeSessions(sessions, this.state.sessions),
         sections: sortSections(sections),
         activeId,
@@ -125,11 +252,17 @@ export class AppStore {
     this.unlisten = [];
     for (const t of this.terminals.values()) t.dispose();
     this.terminals.clear();
+    this.chats.clear();
     this.started = false;
   }
 
   select(id: string): void {
+    const prev = this.state.activeId;
+    if (prev === id) return;
     this.set({ activeId: id });
+    // The terminal view only counts as shown for the DM that is open.
+    if (prev && this.viewOf(prev) === 'terminal') this.hintView(prev, 'chat');
+    if (this.viewOf(id) === 'terminal') this.hintView(id, 'terminal');
   }
 
   async create(cwd: string, name?: string): Promise<void> {
@@ -178,6 +311,7 @@ export class AppStore {
   async refresh(): Promise<void> {
     const [fresh, sections] = await Promise.all([this.ipc.sessionList(), this.ipc.sectionList()]);
     this.set({
+      badges: seedBadges(fresh, this.state.badges),
       sessions: mergeSessions(fresh, this.state.sessions),
       sections: sortSections(sections),
     });
@@ -221,6 +355,7 @@ export class AppStore {
       const sessions = this.state.sessions.filter((s) => s.id !== id);
       this.terminals.get(id)?.dispose();
       this.terminals.delete(id);
+      this.chats.delete(id);
       const activeId = this.state.activeId === id ? firstActive(sessions) : this.state.activeId;
       this.set({ sessions, activeId });
     } catch (err) {
@@ -247,6 +382,23 @@ export class AppStore {
 
 function sortSections(sections: SectionInfo[]): SectionInfo[] {
   return [...sections].sort((a, b) => a.position - b.position);
+}
+
+/** Persisted counts from `session_list` fill in DMs that have had no `session:badges` event yet. */
+function seedBadges(sessions: SessionInfo[], have: Record<string, Badges>): Record<string, Badges> {
+  const out = { ...have };
+  for (const s of sessions) {
+    if (out[s.id]) continue;
+    if (s.unread !== undefined || s.needsYou !== undefined) {
+      out[s.id] = { unread: s.unread ?? 0, needsYou: asCount(s.needsYou) };
+    }
+  }
+  return out;
+}
+
+/** `needsYou` is a boolean on the wire; the sidebar shows a count. */
+function asCount(v: number | boolean | undefined): number {
+  return typeof v === 'boolean' ? (v ? 1 : 0) : (v ?? 0);
 }
 
 function firstActive(sessions: SessionInfo[]): string | null {

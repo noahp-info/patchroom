@@ -37,7 +37,8 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/patchroom-hook"
+      "binaries/patchroom-hook",
+      "binaries/patchroom-statusline"
     ]
   }
 }

@@ -20,6 +20,7 @@
 
 mod error;
 pub mod migrate;
+mod repo_badge;
 mod repo_board;
 mod repo_chat;
 mod repo_misc;

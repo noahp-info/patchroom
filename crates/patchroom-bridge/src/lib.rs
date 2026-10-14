@@ -12,6 +12,10 @@
 //! * `PreToolUse` for `AskUserQuestion`: the TUI picker stays hidden until the hook
 //!   returns. A chat answer returns `updatedInput` with `answers`. If nobody answers
 //!   within [`BridgeConfig::ask_wait`] the hook is released so the picker appears.
+//! * `PreToolUse` for `ExitPlanMode`: same hold. No hook decision can close the TUI plan
+//!   dialog (it ignores both a `PermissionRequest` and a `PreToolUse` allow), so a chat
+//!   client answers by releasing the hold with [`Bridge::release`] and pressing the
+//!   dialog's keys itself. A `PermissionRequest` for `ExitPlanMode` gets no decision.
 //!
 //! Per prompt, the first answer wins ([`events::Resolution`]). Every other path fails
 //! open: no decision means the CLI's own TUI decides.
@@ -35,18 +39,20 @@ pub mod events;
 pub mod hookinfo;
 pub mod protocol;
 pub mod settings;
+pub mod statusline;
 pub mod transcript;
 
 mod server;
 
 pub use agents::{AgentEntry, AgentsSource, CommandAgentsSource};
 pub use events::{
-    BridgeEvent, HookRecord, NeedsKind, PermissionPrompt, PromptId, PromptResolved, Question,
-    QuestionOption, QuestionPrompt, Resolution, SessionRef, Status, StatusEvent, StatusSource,
+    BridgeEvent, HookRecord, NeedsKind, PermissionPrompt, PlanPrompt, PromptId, PromptResolved,
+    Question, QuestionOption, QuestionPrompt, Resolution, SessionRef, Status, StatusEvent,
+    StatusSource, StatuslineRecord,
 };
 pub use hookinfo::HookInfo;
 pub use server::{
     AnswerError, Bridge, BridgeConfig, BridgeError, PendingKind, PendingPrompt, PermissionAnswer,
     QuestionAnswers, Reconciler,
 };
-pub use settings::HookSettings;
+pub use settings::{HookSettings, StatuslineWrap};

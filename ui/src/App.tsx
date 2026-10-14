@@ -3,11 +3,13 @@ import { resolveMode, themeVars } from './theme/index.ts';
 import type { CSSProperties } from 'react';
 import { ClaudeGlyph, Icon } from './components/Icon';
 import { NewDmDialog } from './components/NewDmDialog';
+import { ChatView } from './components/chat/ChatView';
 import { Sidebar } from './components/Sidebar';
 import { Terminal } from './components/Terminal';
 import { loadDefaultTheme } from './lib/theme';
 import { ITERM_THEME } from './lib/sessionTerminal';
 import { cwdParts } from './lib/cwd';
+import { shellQuotePath } from './lib/keys';
 import { getStore } from './state/runtime';
 import { useAppState } from './state/store';
 import type { Needs, SessionStatus } from './ipc';
@@ -48,6 +50,20 @@ export function App() {
     void store.start();
   }, [store]);
 
+  // Cmd+J flips between chat and terminal. Captured on the window so xterm never sees it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'j' || !e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const id = store.getSnapshot().activeId;
+      if (!id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      store.toggleView(id);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [store]);
+
   // Dropping files on the window pastes their paths, like iTerm2. Tauri only: the browser
   // never exposes real paths.
   useEffect(() => {
@@ -58,7 +74,10 @@ export function App() {
       const un = await getCurrentWebview().onDragDropEvent((e) => {
         if (e.payload.type !== 'drop') return;
         const id = store.getSnapshot().activeId;
-        if (id) store.terminal(id).pastePaths(e.payload.paths);
+        if (!id) return;
+        if (store.viewOf(id) === 'chat') {
+          store.chat(id).insertIntoDraft(e.payload.paths.map(shellQuotePath).join(' ') + ' ');
+        } else store.terminal(id).pastePaths(e.payload.paths);
       });
       if (gone) un();
       else off = un;
@@ -71,8 +90,11 @@ export function App() {
 
   const style = { ...themeVars(theme, mode), colorScheme: mode } as CSSProperties;
   const active = state.sessions.find((s) => s.id === state.activeId) ?? null;
-  const needsCount = state.sessions.filter((s) => s.status === 'waiting').length;
-  const firstNeeding = state.sessions.find((s) => s.status === 'waiting');
+  const needsYou = (s: { id: string; status: SessionStatus }) =>
+    s.status === 'waiting' || (state.badges[s.id]?.needsYou ?? 0) > 0;
+  const needsCount = state.sessions.filter(needsYou).length;
+  const firstNeeding = state.sessions.find(needsYou);
+  const view = active ? (state.views[active.id] ?? 'chat') : 'chat';
 
   return (
     <div
@@ -113,7 +135,9 @@ export function App() {
                 {active.name}
               </span>
             </h2>
-            <span className="fid">Terminal</span>
+            <span className="sr-only" data-testid="view-label" role="status">
+              {view === 'chat' ? 'Chat' : 'Terminal'}
+            </span>
             <div className="meta">
               <span className="ch__cwd" title={active.cwd}>
                 <Icon name="folder" />
@@ -128,6 +152,26 @@ export function App() {
               </span>
             </div>
             <div className="tools">
+              <div className="viewseg" role="group" aria-label="View" data-testid="view-toggle">
+                <button
+                  type="button"
+                  aria-label="Chat"
+                  title="Chat (\u2318J)"
+                  aria-pressed={view === 'chat'}
+                  onClick={() => store.setView(active.id, 'chat')}
+                >
+                  <Icon name="chat" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Terminal"
+                  title="Terminal (\u2318J)"
+                  aria-pressed={view === 'terminal'}
+                  onClick={() => store.setView(active.id, 'terminal')}
+                >
+                  <Icon name="term" />
+                </button>
+              </div>
               <label className="sel">
                 <span className="sr-only">Section</span>
                 <select
@@ -186,33 +230,49 @@ export function App() {
           </div>
         )}
 
-        {active && (
-          // claude's live title (OSC 0/2), shown where iTerm2 shows it: above the terminal.
-          // Fixed height, so a title arriving never moves the terminal.
-          <div className="termbar" data-testid="term-title">
-            <span className="termbar__title" title={active.title || undefined}>
-              {active.title}
-            </span>
-          </div>
-        )}
-
-        <div className="stage" style={{ '--term-bg': ITERM_THEME.background } as CSSProperties}>
-          {state.sessions.map((s) => (
-            <Terminal
-              key={s.id}
-              terminal={store.terminal(s.id)}
-              active={s.id === state.activeId}
-              label={s.name}
-            />
-          ))}
-          {state.sessions.length === 0 && state.ready && (
-            <div className="empty">
-              <h3>No DMs yet</h3>
-              <p>Start one in a project folder. It runs claude in a real terminal.</p>
-              <button type="button" className="btn pri" onClick={() => setNewDmOpen(true)}>
-                New DM
-              </button>
+        <div className="pane">
+          {active && (
+            // claude's live title (OSC 0/2), shown where iTerm2 shows it: above the terminal.
+            // Fixed height, so a title arriving never moves the terminal.
+            <div
+              className={`termbar${view === 'chat' ? ' termbar--off' : ''}`}
+              data-testid="term-title"
+            >
+              <span className="termbar__title" title={active.title || undefined}>
+                {active.title}
+              </span>
             </div>
+          )}
+
+          <div className="stage" style={{ '--term-bg': ITERM_THEME.background } as CSSProperties}>
+            {state.sessions.map((s) => (
+              <Terminal
+                key={s.id}
+                terminal={store.terminal(s.id)}
+                active={s.id === state.activeId}
+                visible={s.id === state.activeId && (state.views[s.id] ?? 'chat') === 'terminal'}
+                label={s.name}
+              />
+            ))}
+            {state.sessions.length === 0 && state.ready && (
+              <div className="empty">
+                <h3>No DMs yet</h3>
+                <p>Start one in a project folder. It runs claude in a real terminal.</p>
+                <button type="button" className="btn pri" onClick={() => setNewDmOpen(true)}>
+                  New DM
+                </button>
+              </div>
+            )}
+          </div>
+          {active && (
+            <ChatView
+              key={active.id}
+              store={store}
+              session={active}
+              visible={view === 'chat'}
+              unread={state.badges[active.id]?.unread ?? 0}
+              thread={state.thread}
+            />
           )}
         </div>
       </main>

@@ -14,6 +14,9 @@
 //!   the caller;
 //! - one **bridge** thread turns hook status events into `session:status`.
 //!
+//! - one **transcript watcher** thread per claude DM tails the session transcript into chat
+//!   items (see [`chat`]).
+//!
 //! The store sits behind a `Mutex`; it is only held for short queries.
 
 use std::collections::HashMap;
@@ -22,7 +25,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -33,9 +36,16 @@ use patchroom_pty::{Command, PtyEvent, Session as PtySession, SpawnConfig, Title
 use patchroom_store::{Author, Conversation, ConversationKind, Id, NewConversation, Store};
 use serde::{Deserialize, Serialize};
 
+mod chat;
+mod paste;
+
+pub use chat::{ImageData, PromptAnswer};
+
 use crate::agents::LoginShellAgents;
 use crate::events::{EventSink, Needs, PresenceStatus, UiEvent};
 
+/// How often the manager checks that every held prompt is visible in a chat.
+const PROMPT_SWEEP: Duration = Duration::from_secs(1);
 /// Background reconcile period while a session is busy or waiting.
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(15);
 
@@ -102,6 +112,11 @@ pub struct ManagerConfig {
     /// Run the `claude agents --json` reconciler through the login shell. The app
     /// turns this on; tests leave it off so they never spawn the real CLI.
     pub reconcile: bool,
+    /// Absolute path of the `patchroom-statusline` wrapper. `None` leaves the user's
+    /// statusLine alone and the strip shows no chips.
+    pub statusline_bin: Option<PathBuf>,
+    /// Claude's config dir (`~/.claude`), where transcripts live. `None` disables chat.
+    pub claude_config_dir: Option<PathBuf>,
 }
 
 impl ManagerConfig {
@@ -114,7 +129,27 @@ impl ManagerConfig {
             claude_program: "claude".into(),
             kill_grace: Duration::from_secs(2),
             reconcile: false,
+            statusline_bin: None,
+            claude_config_dir: None,
         }
+        .with_default_claude_paths()
+    }
+
+    /// Fill `statusline_bin` (next to the hook binary) and `claude_config_dir`
+    /// (`$CLAUDE_CONFIG_DIR` or `~/.claude`) when they exist.
+    #[must_use]
+    pub fn with_default_claude_paths(mut self) -> Self {
+        if self.statusline_bin.is_none() {
+            self.statusline_bin = crate::hook_path::statusline_beside(&self.hook_bin);
+        }
+        if self.claude_config_dir.is_none() {
+            let home = std::env::var_os("HOME").map(PathBuf::from);
+            self.claude_config_dir = patchroom_bridge::statusline::config_dir(
+                std::env::var("CLAUDE_CONFIG_DIR").ok().as_deref(),
+                home.as_deref(),
+            );
+        }
+        self
     }
 }
 
@@ -155,6 +190,10 @@ pub struct SessionInfo {
     pub section_id: Option<String>,
     /// The claude session id used for `--resume`.
     pub claude_session_id: Option<String>,
+    /// New assistant items since the DM was last viewed.
+    pub unread: u32,
+    /// A prompt waits on the user. Clears on resolution, never on view.
+    pub needs_you: bool,
 }
 
 /// One section of the sidebar.
@@ -210,11 +249,16 @@ struct Presence {
 enum WriteJob {
     Bytes(Vec<u8>),
     Text(String),
+    /// Pause the queue (a released AskUserQuestion picker needs a moment to draw).
+    Sleep(Duration),
 }
 
 struct Live {
     pty: Arc<PtySession>,
     tx: Mutex<Sender<WriteJob>>,
+    /// A terminal emulator fed with the output, for reading dialog labels (claude DMs
+    /// only, see [`chat`]).
+    screen: Option<Mutex<chat::Screen>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -239,6 +283,7 @@ pub struct Manager {
     /// True while any session is busy or waiting. Gates the reconciler.
     active: Arc<AtomicBool>,
     reconciler: Option<Arc<Reconciler>>,
+    chats: Mutex<HashMap<String, Arc<chat::Chat>>>,
 }
 
 impl Manager {
@@ -280,7 +325,11 @@ impl Manager {
             shutting_down: AtomicBool::new(false),
             active,
             reconciler,
+            chats: Mutex::new(HashMap::new()),
         });
+        // The app always has a chat client, so blocking hooks are answered through it.
+        manager.bridge.set_chat_attached(true);
+        paste::prune_old(&manager.cfg.data_dir, paste::MAX_AGE);
         manager.spawn_bridge_thread(events)?;
         Ok(manager)
     }
@@ -357,11 +406,21 @@ impl Manager {
     ///
     /// # Errors
     /// Unknown id or exited session.
-    pub fn write(&self, id: &str, bytes: Vec<u8>) -> Result<()> {
+    pub fn write(self: &Arc<Self>, id: &str, bytes: Vec<u8>) -> Result<()> {
         let interrupt = is_interrupt(&bytes);
+        let mode_key = bytes.windows(3).any(|w| w == b"\x1b[Z");
+        // Typing in the terminal while an AskUserQuestion picker is hidden behind the hook:
+        // hand it to the TUI first and give it a moment to draw before the keys land.
+        if chat::looks_like_keystroke(&bytes) && self.release_questions_to_terminal(id) {
+            self.enqueue(id, WriteJob::Sleep(chat::PICKER_DRAW_DELAY))?;
+        }
         self.enqueue(id, WriteJob::Bytes(bytes))?;
         if interrupt {
             self.kick_reconciler();
+        }
+        if mode_key {
+            // Shift+Tab typed in the terminal: the mode chip follows once the footer repaints.
+            self.schedule_mode_scrape(id);
         }
         Ok(())
     }
@@ -400,6 +459,9 @@ impl Manager {
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<()> {
         let live = self.live_of(id)?;
         live.pty.resize(rows, cols)?;
+        if let Some(screen) = &live.screen {
+            lock(screen).resize(rows, cols);
+        }
         Ok(())
     }
 
@@ -420,7 +482,17 @@ impl Manager {
     /// Store failures.
     pub fn list(self: &Arc<Self>) -> Result<Vec<SessionInfo>> {
         self.start_queued_open_dm();
-        let convs = lock(&self.store).list_conversations(self.workspace)?;
+        let (convs, badges) = {
+            let store = lock(&self.store);
+            (
+                store.list_conversations(self.workspace)?,
+                store.list_badges()?,
+            )
+        };
+        let badges: HashMap<String, patchroom_store::Badges> = badges
+            .into_iter()
+            .map(|b| (b.conversation_id.to_string(), b))
+            .collect();
         let presence = lock(&self.presence);
         Ok(convs
             .into_iter()
@@ -435,6 +507,9 @@ impl Manager {
                         None,
                     ),
                 };
+                let (unread, needs_you) = badges
+                    .get(&id)
+                    .map_or((0, false), |b| (b.unread, b.needs_you));
                 SessionInfo {
                     id,
                     name: c.name,
@@ -444,6 +519,8 @@ impl Manager {
                     needs,
                     section_id: c.section_id.map(|s| s.to_string()),
                     claude_session_id: c.session_id,
+                    unread,
+                    needs_you,
                 }
             })
             .collect())
@@ -469,6 +546,10 @@ impl Manager {
             let _ = live.pty.kill();
         }
         self.bridge.untrack_session(id);
+        self.drop_chat(id);
+        let mut settings_file = self.bridge.socket_path().as_os_str().to_owned();
+        settings_file.push(format!(".d/{id}.json"));
+        let _ = std::fs::remove_file(settings_file);
         {
             let mut presence = lock(&self.presence);
             presence.remove(id);
@@ -567,6 +648,7 @@ impl Manager {
         for (id, _) in &lives {
             self.persist_title(id);
         }
+        self.stop_chats();
         // Safety net for hook processes that left the process group: every
         // hook command line carries the socket path.
         sweep_by_cmdline(self.bridge.socket_path());
@@ -613,6 +695,29 @@ impl Manager {
             &serde_json::to_string(&spec).unwrap_or_else(|_| "{}".into()),
         )?;
         Ok((conv.id.to_string(), spec, claude_sid))
+    }
+
+    /// Write the per-launch settings to `<socket>.d/<id>.json` (mode 0600) and return the
+    /// path. This is Patchroom's own file in its own data dir.
+    fn write_launch_settings(&self, id: &str, settings: &HookSettings) -> Result<PathBuf> {
+        use std::io::Write as _;
+        use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _};
+        let mut dir = self.bridge.socket_path().as_os_str().to_owned();
+        dir.push(".d");
+        let dir = PathBuf::from(dir);
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)?;
+        let file = dir.join(format!("{id}.json"));
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&file)?;
+        f.write_all(settings.to_json_string().as_bytes())?;
+        Ok(file)
     }
 
     fn conversation(&self, id: &str) -> Result<Conversation> {
@@ -663,10 +768,19 @@ impl Manager {
                 vec!["--session-id".into(), sid.into()]
             };
             args.extend(spec.args.iter().cloned());
-            // Per-launch hooks only: user settings files are never touched.
-            let settings = HookSettings::new(&self.cfg.hook_bin, self.bridge.socket_path())
+            // Per-launch hooks and statusLine wrapper only: user settings files are never
+            // touched. The wrapper copies the user's `padding` so the TUI layout is unchanged.
+            // The settings go in a Patchroom-owned file (not inline JSON) so claude's own
+            // command line never names the hook binary: `pgrep -f patchroom-hook` then
+            // matches real hook processes only, which is what leak checks need.
+            let mut settings = HookSettings::new(&self.cfg.hook_bin, self.bridge.socket_path())
                 .with_session_key(id);
-            args.extend(settings.cli_args());
+            if let Some(wrapper) = self.cfg.statusline_bin.as_ref().filter(|p| p.is_file()) {
+                settings = settings.with_statusline(wrapper, self.user_status_line_padding(cwd));
+            }
+            let file = self.write_launch_settings(id, &settings)?;
+            args.push("--settings".into());
+            args.push(file.to_string_lossy().into_owned());
             Command::program(self.cfg.claude_program.clone(), args)
         } else {
             Command::program(
@@ -705,6 +819,9 @@ impl Manager {
         let live = Arc::new(Live {
             pty: Arc::clone(&pty),
             tx: Mutex::new(tx),
+            screen: spec
+                .is_claude()
+                .then(|| Mutex::new(chat::Screen::new(rows, cols))),
         });
         {
             let mut presence = lock(&self.presence);
@@ -728,9 +845,14 @@ impl Manager {
             });
             self.refresh_active(&presence);
         }
-        live_map.insert(id.to_owned(), live);
+        live_map.insert(id.to_owned(), Arc::clone(&live));
         drop(live_map);
 
+        if spec.is_claude() {
+            // A new process has no open prompts: whatever waited before is gone.
+            self.clear_needs_you(id);
+            self.start_chat(id, cwd, claude_sid);
+        }
         let writer_pty = Arc::clone(&pty);
         thread::Builder::new()
             .name("patchroom-writer".into())
@@ -739,12 +861,12 @@ impl Manager {
         let fwd_id = id.to_owned();
         thread::Builder::new()
             .name("patchroom-forwarder".into())
-            .spawn(move || me.forward(&fwd_id, &pty))?;
+            .spawn(move || me.forward(&fwd_id, &pty, &live))?;
         Ok(())
     }
 
     /// Drain the PTY event channel into UI events, in order.
-    fn forward(&self, id: &str, pty: &PtySession) {
+    fn forward(&self, id: &str, pty: &PtySession, live: &Live) {
         let rx = pty.events();
         let mut pending: Vec<u8> = Vec::new();
         let mut exit_code: Option<i64> = None;
@@ -753,6 +875,9 @@ impl Manager {
             while let Some(ev) = next.take() {
                 match ev {
                     PtyEvent::Output(bytes) => {
+                        if let Some(screen) = &live.screen {
+                            lock(screen).feed(&bytes);
+                        }
                         pending.extend_from_slice(&bytes);
                         if pending.len() >= MAX_CHUNK {
                             self.flush(id, &mut pending);
@@ -806,6 +931,7 @@ impl Manager {
         self.bridge.untrack_session(id);
         self.set_status(id, PresenceStatus::Exited, None);
         drop(live_map);
+        self.on_session_exit(id);
         true
     }
 
@@ -893,20 +1019,40 @@ impl Manager {
         let me = Arc::clone(self);
         thread::Builder::new()
             .name("patchroom-bridge-events".into())
-            .spawn(move || loop {
-                if me.shutting_down.load(Ordering::SeqCst) {
-                    break;
-                }
-                match rx.recv_timeout(Duration::from_millis(200)) {
-                    Ok(ev) => me.on_bridge_event(&ev),
-                    Err(RecvTimeoutError::Timeout) => {}
-                    Err(RecvTimeoutError::Disconnected) => break,
+            .spawn(move || {
+                let mut last_sweep = Instant::now();
+                loop {
+                    if me.shutting_down.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    match rx.recv_timeout(Duration::from_millis(200)) {
+                        Ok(ev) => me.on_bridge_event(&ev),
+                        Err(RecvTimeoutError::Timeout) => {}
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    }
+                    if last_sweep.elapsed() >= PROMPT_SWEEP {
+                        last_sweep = Instant::now();
+                        // Handle everything already queued first, so the sweep never
+                        // replays a prompt whose event is merely waiting its turn.
+                        while let Ok(ev) = rx.try_recv() {
+                            me.on_bridge_event(&ev);
+                        }
+                        if me.any_busy_or_waiting() || !me.bridge.pending().is_empty() {
+                            me.sweep_prompts();
+                        }
+                    }
                 }
             })?;
         Ok(())
     }
 
-    fn on_bridge_event(&self, ev: &BridgeEvent) {
+    fn any_busy_or_waiting(&self) -> bool {
+        lock(&self.presence)
+            .values()
+            .any(|p| matches!(p.status, PresenceStatus::Busy | PresenceStatus::Waiting))
+    }
+
+    fn on_bridge_event(self: &Arc<Self>, ev: &BridgeEvent) {
         match ev {
             BridgeEvent::Status(se) => {
                 let Some(key) = se.session.key.as_deref() else {
@@ -917,16 +1063,21 @@ impl Manager {
                 }
                 let (status, needs) = map_status(se.status);
                 self.set_status(key, status, needs);
+                self.note_needs_you(key, status == PresenceStatus::Waiting);
             }
             BridgeEvent::Hook(rec) => {
-                if let (Some(key), Some(sid)) = (
-                    rec.session.key.as_deref(),
-                    rec.session.session_id.as_deref(),
-                ) {
-                    self.note_claude_session(key, sid);
+                if let Some(key) = rec.session.key.as_deref() {
+                    if let Some(sid) = rec.session.session_id.as_deref() {
+                        self.note_claude_session(key, sid);
+                    }
+                    self.on_hook_traffic(key, &rec.event, rec.transcript_path.as_deref());
                 }
             }
-            _ => {}
+            BridgeEvent::Permission(p) => self.on_permission_prompt(p),
+            BridgeEvent::Question(q) => self.on_question_prompt(q),
+            BridgeEvent::Plan(p) => self.on_plan_prompt(p),
+            BridgeEvent::Resolved(r) => self.on_prompt_resolved(r),
+            BridgeEvent::Statusline(rec) => self.on_statusline(rec),
         }
     }
 
@@ -995,6 +1146,10 @@ fn writer_loop(pty: &PtySession, rx: &Receiver<WriteJob>) {
         let r = match job {
             WriteJob::Bytes(b) => pty.write(&b),
             WriteJob::Text(t) => pty.send_text(&t),
+            WriteJob::Sleep(d) => {
+                thread::sleep(d);
+                Ok(())
+            }
         };
         if r.is_err() && pty.exit_info().is_some() {
             break;

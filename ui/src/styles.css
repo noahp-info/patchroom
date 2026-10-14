@@ -371,7 +371,7 @@ body {
 /* claude's live title strip, attached to the top of the terminal */
 .termbar {
   flex: none;
-  height: 24px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -416,4 +416,1086 @@ body {
 .exitbar :focus-visible {
   outline: 2px solid var(--link);
   outline-offset: 1px;
+}
+
+/* =========================================================================================
+   P2 chat layer. Colors only through theme tokens. Sizes follow the shell's two-step scale:
+   13px text and controls, 11px captions. The shell rule above routes every font-size through
+   --fs, so each block sets --fs instead of font-size. Hierarchy comes from weight and color.
+   ========================================================================================= */
+.pane {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.chat {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: var(--bg);
+  container: chat / inline-size;
+  --fs: 13px;
+}
+.chat--hidden {
+  visibility: hidden;
+}
+.chat-main {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chat :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+.logwrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.vlog {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 var(--gutter);
+  overscroll-behavior: contain;
+  /* The log anchors its own scroll position (ChatLog); the browser's anchoring would fight it. */
+  overflow-anchor: none;
+}
+.vlog:focus-visible {
+  outline-offset: -2px;
+}
+.vsize {
+  width: 100%;
+  max-width: 980px;
+}
+/* Rows are in normal flow between two spacers (the padding of .vsize), so a row's top is the sum
+   of the measured heights above it. */
+.vrow {
+  padding-top: 4px;
+}
+.vrow.head,
+.vrow.dayrow {
+  padding-top: var(--log-gap);
+}
+.logempty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  padding: 0 var(--gutter);
+  color: var(--muted);
+  text-align: center;
+  pointer-events: none;
+}
+.logempty b {
+  color: var(--fg);
+}
+.older {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  --fs: 11px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: var(--chip);
+  color: var(--chip-fg);
+  pointer-events: none;
+  z-index: 2;
+}
+.logcol {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The jump pill sits between the log and the composer, so it never covers a message. */
+.jumpbar {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 2px;
+}
+.jump {
+  --fs: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+.jump.needs {
+  background: var(--needs);
+  color: var(--needs-fg);
+}
+
+/* messages */
+.chat .msg {
+  --fs: 13px;
+}
+.chat .msg .av {
+  width: 32px;
+  height: 32px;
+  --fs: 11px;
+}
+.chat .msg {
+  grid-template-columns: 32px minmax(0, 1fr);
+}
+.chat .msg .who {
+  --fs: 13px;
+}
+.chat .msg .who time {
+  --fs: 11px;
+}
+.chat .msg .body {
+  min-width: 0;
+}
+.chat .msg.plain .body,
+.chat .msg.cont .body {
+  grid-column: 2;
+}
+.chat .usertext {
+  margin: 2px 0 6px;
+  max-width: 72ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chatimgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0;
+}
+.chatimg {
+  display: block;
+  max-width: 240px;
+  max-height: 160px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--code-bg);
+}
+.chatimg--loading,
+.chatimg--missing {
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 80px;
+  --fs: 11px;
+  color: var(--muted);
+}
+
+/* markdown */
+.md {
+  max-width: 72ch;
+  overflow-wrap: anywhere;
+}
+.md > :first-child {
+  margin-top: 2px;
+}
+.md p {
+  margin: 2px 0 8px;
+}
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  margin: 12px 0 4px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+.md h2 {
+  --fs: 13px;
+}
+.md h3 {
+  --fs: 13px;
+}
+.md h4,
+.md h5,
+.md h6 {
+  --fs: 13px;
+}
+.md ul,
+.md ol {
+  margin: 2px 0 8px;
+  padding-left: 22px;
+}
+.md li {
+  margin: 2px 0;
+}
+.md li > .tp {
+  display: block;
+}
+.md li.task {
+  list-style: none;
+  margin-left: -20px;
+}
+.md li.task > .tp {
+  display: inline;
+}
+.md li.task input {
+  margin: 0 6px 0 0;
+  vertical-align: -1px;
+}
+.md blockquote {
+  margin: 4px 0 8px;
+  padding: 0 0 0 12px;
+  border-left: 1px solid var(--box-line);
+  color: var(--muted);
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 12px 0;
+}
+.md a {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md code {
+  --fs: 11px;
+  font-family: var(--f-mono);
+}
+.md .tablewrap {
+  overflow-x: auto;
+  margin: 4px 0 10px;
+  max-width: 100%;
+}
+.md table {
+  border-collapse: collapse;
+}
+.md th,
+.md td {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.md th {
+  background: var(--surface);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.md pre.code {
+  position: relative;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  max-width: 100%;
+  max-height: 420px;
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--code-bg);
+  --fs: 11px;
+  font-family: var(--f-mono);
+  line-height: 1.55;
+  tab-size: 4;
+}
+.md pre.code code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.md pre.code .code__lang {
+  position: sticky;
+  float: right;
+  top: 0;
+  margin: -4px -4px 0 8px;
+  --fs: 11px;
+  color: var(--muted);
+}
+.tk-kw {
+  color: var(--syn-kw);
+}
+.tk-cm {
+  color: var(--syn-cm);
+  font-style: italic;
+}
+.tk-ty,
+.tk-num {
+  color: var(--syn-ty);
+}
+.tk-fn,
+.tk-str {
+  color: var(--syn-fn);
+}
+
+/* tool calls */
+.toolbox {
+  max-width: 620px;
+  margin-top: 4px;
+}
+.toolbox .tool {
+  width: 100%;
+  margin: 0;
+  max-width: none;
+  text-align: left;
+  --fs: 13px;
+  min-width: 0;
+}
+.toolbox .tool:hover {
+  background: var(--hover);
+}
+.toolbox .tool[aria-expanded='true'] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.toolbox .tn {
+  flex: none;
+  white-space: nowrap;
+}
+.toolbox .tsum {
+  --fs: 11px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--f-mono);
+}
+.toolbox .tdiff {
+  flex: none;
+  --fs: 11px;
+  font-family: var(--f-mono);
+  white-space: nowrap;
+}
+.toolbox .tst {
+  flex: none;
+  --fs: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.toolbox .tst:empty {
+  display: none;
+}
+.toolbox .tst.error,
+.toolbox .tst.denied {
+  color: var(--err-text);
+}
+.toolbox .tchev {
+  flex: none;
+  display: inline-grid;
+}
+.toolbox .tchev svg.i {
+  width: 13px;
+  height: 13px;
+}
+.tchev.open svg {
+  transform: rotate(90deg);
+}
+.tstate {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.tstate svg.i {
+  width: 14px;
+  height: 14px;
+}
+.tstate.ok {
+  color: var(--ok);
+}
+.tstate.error,
+.tstate.denied {
+  color: var(--err-text);
+}
+.tstate.pending {
+  box-shadow: inset 0 0 0 1.5px var(--muted);
+  width: 10px;
+  height: 10px;
+  margin: 2px;
+}
+.tstate.running {
+  box-shadow: inset 0 0 0 2px var(--line);
+  border-top: 2px solid var(--busy);
+  width: 12px;
+  height: 12px;
+  margin: 1px;
+}
+.tstate.interrupted {
+  width: 9px;
+  height: 9px;
+  margin: 2px;
+  border-radius: 2px;
+  background: var(--muted);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tstate.running {
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+.tool-body {
+  padding: 8px 10px 4px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  background: var(--bg);
+  --fs: 11px;
+}
+.tool-body .tl {
+  margin: 0 0 3px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.tool-body .tnote {
+  margin: 0 0 6px;
+  color: var(--muted);
+}
+.tpre {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--code-bg);
+  font-family: var(--f-mono);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tpre.err {
+  color: var(--err-text);
+}
+.diffwrap {
+  margin: 0 0 8px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.diff-path {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--f-mono);
+  overflow-wrap: anywhere;
+}
+.diffwrap .diff {
+  --fs: 11px;
+  width: max-content;
+  min-width: 100%;
+}
+
+/* thinking, system lines, fallbacks */
+.think-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  --fs: 13px;
+  color: var(--muted);
+  border-radius: var(--r-sm);
+}
+.think-btn:disabled {
+  cursor: default;
+}
+.think-btn .tchev svg.i {
+  width: 13px;
+  height: 13px;
+}
+.think-text {
+  margin: 4px 0 4px 17px;
+  max-width: 72ch;
+  --fs: 13px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sys-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  --fs: 11px;
+  color: var(--muted);
+}
+.sys-sub {
+  font-weight: 600;
+}
+.sys-text {
+  overflow-wrap: anywhere;
+}
+.fb-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  max-width: 720px;
+  padding: 4px 10px;
+  border: 1px dashed var(--box-line);
+  border-radius: var(--r-sm);
+  --fs: 11px;
+  color: var(--muted);
+}
+.fb-type {
+  font-family: var(--f-mono);
+  font-weight: 600;
+  color: var(--fg);
+}
+.fb-sum {
+  flex: 1 1 12ch;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fb-btn {
+  --fs: 11px;
+  color: var(--link);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* subagent thread summary */
+.chat button.thread {
+  width: 100%;
+  max-width: 720px;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  --fs: 13px;
+  min-width: 0;
+}
+.chat button.thread:hover {
+  background: var(--hover);
+}
+.chat .thread .stack .pg {
+  width: 12px;
+  height: 12px;
+}
+.thread-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.thread-name {
+  color: var(--link);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread .tx {
+  --fs: 11px;
+}
+.thread-open {
+  flex: none;
+  --fs: 11px;
+  color: var(--link);
+  font-weight: 600;
+}
+
+/* ask widget */
+.chat .ask {
+  max-width: 620px;
+  --fs: 13px;
+}
+.chat .ask[data-state='resolved'] {
+  border-color: var(--line);
+}
+.chat .ask[data-state='resolved'] .ask-h {
+  background: var(--chip);
+  color: var(--chip-fg);
+}
+.ask-h {
+  --fs: 13px;
+}
+.ask-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ask-h .needs-pill {
+  --fs: 11px;
+  flex: none;
+}
+.ask-done {
+  margin-left: auto;
+  flex: none;
+  --fs: 11px;
+  font-weight: 700;
+}
+.chat .ask-q {
+  --fs: 13px;
+  overflow-wrap: anywhere;
+}
+.qhead {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--chip);
+  color: var(--chip-fg);
+  --fs: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+.ask-pre {
+  margin: 0 14px 10px;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--code-bg);
+  --fs: 11px;
+  font-family: var(--f-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.qblock + .qblock {
+  border-top: 1px solid var(--line);
+}
+.chat .opts {
+  margin: 0;
+}
+.chat .opts li {
+  display: block;
+}
+.chat .opt {
+  position: relative;
+  --fs: 13px;
+}
+.chat .opt .od {
+  --fs: 13px;
+}
+.chat .opt .rec {
+  --fs: 11px;
+}
+.chat .opt:has(input:focus-visible) {
+  outline: 2px solid var(--link);
+  outline-offset: 0;
+}
+.chat .radio.check {
+  border-radius: 4px;
+}
+.chat .opt.sel .radio.check {
+  box-shadow: inset 0 0 0 5px var(--accent);
+}
+.chat .other {
+  --fs: 13px;
+  padding: 2px 8px 4px;
+}
+.chat .other.sel .radio {
+  box-shadow: inset 0 0 0 5px var(--accent);
+}
+.chat .other-pick {
+  position: relative;
+  display: inline-grid;
+}
+.chat .other .radio.check {
+  border-radius: 4px;
+}
+.chat .other input.f {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid var(--box-line);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  --fs: 13px;
+}
+.chat .other input.f::placeholder {
+  color: var(--muted);
+}
+.chat .ask-f {
+  flex-wrap: wrap;
+  --fs: 13px;
+}
+.chat .ask-f .hint {
+  flex: 1 1 18ch;
+  min-width: 0;
+  --fs: 11px;
+}
+.ask-err {
+  padding: 4px 14px;
+  --fs: 13px;
+  color: var(--err-text);
+}
+.ask-plan {
+  padding: 4px 14px 10px;
+  max-height: 360px;
+  overflow: auto;
+}
+.ask-note {
+  display: flex;
+  gap: 8px;
+  padding: 0 14px 10px;
+}
+.ask-note input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  --fs: 13px;
+}
+.qdone {
+  list-style: none;
+  margin: 0;
+  padding: 8px 14px 10px;
+  display: grid;
+  gap: 4px;
+}
+.qdone li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  --fs: 13px;
+}
+.qdone-q {
+  color: var(--muted);
+}
+.qdone-a {
+  font-weight: 700;
+}
+
+/* composer */
+.chat .composer {
+  flex: none;
+  padding-top: 8px;
+  --fs: 13px;
+}
+.chat .box {
+  position: relative;
+  max-width: 980px;
+}
+/* The hidden twin the composer measures. Same box as the real field, out of the flow. */
+.chat .box textarea.input.mirror {
+  position: absolute;
+  inset: 0 auto auto 0;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+.chat .box:focus-within {
+  border-color: var(--link);
+}
+.chat .box textarea.input {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  max-height: 200px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  line-height: 1.45;
+  padding: 10px 12px 6px;
+}
+.chat .box textarea.input::placeholder {
+  color: var(--muted);
+}
+.chat .bar {
+  --fs: 11px;
+}
+.chat .bar .ib:disabled,
+.chat .send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.hint-keys {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  padding-left: 6px;
+}
+@container chat (max-width: 620px) {
+  .hint-keys {
+    display: none;
+  }
+}
+.chat .stop {
+  --fs: 13px;
+}
+.chat .queued {
+  --fs: 13px;
+}
+
+/* status strip */
+.strip-wrap {
+  flex: none;
+  /* Same right edge as the composer box: the strip's children carry the gutter as margin. */
+  max-width: calc(980px + 2 * var(--gutter));
+  padding: 0 0 8px;
+  --fs: 11px;
+}
+.chat .strip {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding: 7px var(--gutter) 4px;
+}
+.chat .strip .sc {
+  min-width: 0;
+}
+.chat .strip button.sc {
+  cursor: pointer;
+}
+.chat .strip button.sc:hover {
+  filter: brightness(0.95);
+}
+.chat .strip .meter::after {
+  inset: 0 calc(100% - var(--pct, 0%)) 0 0;
+}
+.chat .strip a.sc {
+  text-decoration: none;
+}
+.sl {
+  margin: 0 var(--gutter);
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  background: var(--term-chrome);
+  color: var(--term-chrome-fg);
+  font-family: var(--f-mono);
+  line-height: 1.5;
+  overflow: hidden;
+}
+.sl-line {
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* subagent thread drawer */
+.thr {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: min(420px, calc(100% - 56px));
+  display: flex;
+  flex-direction: column;
+  background: var(--art-bg);
+  border-left: 1px solid var(--line);
+  --fs: 13px;
+}
+@container chat (min-width: 900px) {
+  .chat:has(.thr) .chat-main {
+    right: 420px;
+  }
+}
+.thr-h {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 10px 6px var(--gutter);
+  border-bottom: 1px solid var(--line);
+}
+.thr-t {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.thr-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.thr .ib {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+}
+.thr .ib:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+.thr .logwrap {
+  flex: 1;
+}
+.thr .vlog {
+  padding: 0 var(--gutter);
+}
+.thr .msg {
+  --fs: 13px;
+}
+
+/* The real input covers its option, invisible: clicks and keys hit it directly. */
+.chat .opt-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.chat .opt-input:disabled {
+  cursor: default;
+}
+
+/* Hints and system lines are sentences, so they read at text size too. */
+.hint-keys,
+.chat .ask-f .hint,
+.sys-text,
+.fb-sum {
+  --fs: 13px;
+}
+
+/* Code, diffs and tool output read at text size; labels and notes stay captions. */
+.md code,
+.md pre.code,
+.tpre,
+.diffwrap .diff,
+.ask-pre,
+.toolbox .tsum,
+.toolbox .tdiff,
+.sl,
+.tool-body {
+  --fs: 13px;
+}
+.tool-body .tl,
+.tool-body .tnote,
+.diff-path {
+  --fs: 11px;
+}
+
+/* Hidden chrome under the chat: out of the accessibility tree and out of hit tests. */
+.termbar--off {
+  visibility: hidden;
+}
+.termbar {
+  padding-block: 4px;
+}
+/* Syntax and link colors, softened toward the text color on dark grounds so code and links do
+   not glow. Same theme tokens, mixed; contrast against the ground goes up, not down. */
+.chat {
+  --c-link: var(--link);
+  --c-accent: var(--accent-text);
+  --c-kw: var(--syn-kw);
+  --c-ty: var(--syn-ty);
+  --c-fn: var(--syn-fn);
+}
+.pr-app[data-mode='dark'] .chat {
+  --c-link: color-mix(in srgb, var(--link) 55%, var(--fg));
+  --c-accent: color-mix(in srgb, var(--accent-text) 55%, var(--fg));
+  --c-kw: color-mix(in srgb, var(--syn-kw) 55%, var(--fg));
+  --c-ty: color-mix(in srgb, var(--syn-ty) 55%, var(--fg));
+  --c-fn: color-mix(in srgb, var(--syn-fn) 60%, var(--fg));
+}
+.tk-kw {
+  color: var(--c-kw);
+}
+.tk-ty,
+.tk-num {
+  color: var(--c-ty);
+}
+.tk-fn,
+.tk-str {
+  color: var(--c-fn);
+}
+.md a,
+.thread-name,
+.thread-open,
+.fb-btn {
+  color: var(--c-link);
+}
+.chat .opt .rec {
+  color: var(--c-accent);
+}
+
+/* Narrow panes: the thread takes the whole pane and the chat under it steps out, so no text
+   sits half-covered. Wide panes dock it beside the chat. */
+@container chat (max-width: 899px) {
+  .thr {
+    width: 100%;
+    border-left: 0;
+  }
+  .chat:has(.thr) .chat-main {
+    visibility: hidden;
+  }
+}
+
+/* Title bar, header, composer and strip are pinned chrome around the scrolling log: the log
+   scrolls under them by design, so they are marked sticky. */
+.pr-app .tb,
+.pr-app .ch {
+  position: sticky;
+  top: 0;
+}
+.chat .composer,
+.chat .strip-wrap {
+  position: sticky;
+  bottom: 0;
+}
+
+/* View switch: chat and terminal as one segmented control. The pressed segment is the view. */
+.pr-app .ch .tools .viewseg {
+  display: inline-flex;
+  flex: none;
+}
+.pr-app .ch .tools .viewseg button {
+  border-radius: 0;
+  padding: 0 8px;
+}
+.pr-app .ch .tools .viewseg button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.pr-app .ch .tools .viewseg button:last-child {
+  border-radius: 0 6px 6px 0;
+  margin-left: -1px;
+}
+.pr-app .ch .tools .viewseg button[aria-pressed='true'] {
+  background: var(--chip);
+  color: var(--chip-fg);
+}
+.chat .jumpbar {
+  position: sticky;
+  bottom: 0;
+}
+
+/* xterm parks its zero-size input textarea 9999em off to the left. That is a positioned child
+   outside every clipping ancestor; at the corner of the terminal it is the same invisible box
+   without being clipped. xterm still moves it to the cursor while composing text. */
+.pr-app .xterm .xterm-helper-textarea {
+  left: 0;
+}
+
+/* Narrow chat: the hint takes its own line so the buttons stay together on the next one. */
+@container chat (max-width: 760px) {
+  .chat .ask-f .hint {
+    flex-basis: 100%;
+  }
 }

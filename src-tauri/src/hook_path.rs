@@ -15,6 +15,16 @@ use std::path::{Path, PathBuf};
 /// File name of the hook binary.
 pub const HOOK_BIN_NAME: &str = "patchroom-hook";
 
+/// File name of the statusLine wrapper binary.
+pub const STATUSLINE_BIN_NAME: &str = "patchroom-statusline";
+
+/// The statusLine wrapper next to the hook binary, if it exists there.
+#[must_use]
+pub fn statusline_beside(hook_bin: &Path) -> Option<PathBuf> {
+    let p = hook_bin.parent()?.join(STATUSLINE_BIN_NAME);
+    p.is_file().then_some(p)
+}
+
 /// Environment variable that overrides the lookup with an explicit path.
 pub const HOOK_BIN_ENV: &str = "PATCHROOM_HOOK_BIN";
 

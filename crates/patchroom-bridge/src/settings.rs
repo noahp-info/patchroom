@@ -1,7 +1,7 @@
 //! Per-launch `--settings` JSON that registers `patchroom-hook`.
 //!
 //! The generator is pure: it returns a JSON value or string and never reads or writes any
-//! settings file. Pass the result to the CLI as `--settings <json>`. Combined with
+//! settings file. It registers the hooks and, optionally, the statusLine wrapper. Pass the result to the CLI as `--settings <json>`. Combined with
 //! `--setting-sources`, the user's own settings files stay untouched.
 
 use std::path::{Path, PathBuf};
@@ -25,6 +25,21 @@ pub struct HookSettings {
     pub permission_wait: Duration,
     /// Bridge-side bound for AskUserQuestion. Must match `BridgeConfig::ask_wait`.
     pub ask_wait: Duration,
+    /// The statusLine wrapper, when the launch should tee the status line to the bridge.
+    pub statusline: Option<StatuslineWrap>,
+}
+
+/// The statusLine wrapper registered through `--settings`.
+///
+/// `--settings` outranks the user's settings files, so claude runs the wrapper in place
+/// of the user's `statusLine`. The wrapper looks the user's command up itself on every
+/// render (see [`crate::statusline`]) and runs it unchanged.
+#[derive(Debug, Clone)]
+pub struct StatuslineWrap {
+    /// Absolute path of the `patchroom-statusline` binary.
+    pub binary: PathBuf,
+    /// `padding` copied from the user's own `statusLine`, so the TUI layout is unchanged.
+    pub padding: Option<i64>,
 }
 
 /// Quote a string for a POSIX shell with single quotes.
@@ -48,7 +63,17 @@ impl HookSettings {
             session_key: None,
             permission_wait: defaults.permission_wait,
             ask_wait: defaults.ask_wait,
+            statusline: None,
         }
+    }
+
+    /// Also register the statusLine wrapper.
+    pub fn with_statusline(mut self, binary: impl Into<PathBuf>, padding: Option<i64>) -> Self {
+        self.statusline = Some(StatuslineWrap {
+            binary: binary.into(),
+            padding,
+        });
+        self
     }
 
     /// Set the Patchroom session key.
@@ -71,6 +96,24 @@ impl HookSettings {
         cmd
     }
 
+    fn statusline_value(&self) -> Option<Value> {
+        let wrap = self.statusline.as_ref()?;
+        let mut cmd = format!(
+            "{} --socket {}",
+            shell_quote(&path_str(&wrap.binary)),
+            shell_quote(&path_str(&self.socket_path)),
+        );
+        if let Some(k) = &self.session_key {
+            cmd.push_str(" --session-key ");
+            cmd.push_str(&shell_quote(k));
+        }
+        let mut v = json!({"type": "command", "command": cmd});
+        if let Some(p) = wrap.padding {
+            v["padding"] = json!(p);
+        }
+        Some(v)
+    }
+
     fn entry(&self, matcher: Option<&str>, wait: Duration, timeout: Duration) -> Value {
         let mut e = json!({
             "hooks": [{
@@ -91,17 +134,21 @@ impl HookSettings {
         let quick_timeout = Duration::from_secs(10);
         let perm_timeout = self.permission_wait + HOOK_SLACK + Duration::from_secs(5);
         let ask_timeout = self.ask_wait + HOOK_SLACK + Duration::from_secs(5);
-        json!({
+        let mut settings = json!({
             "hooks": {
                 "PermissionRequest": [self.entry(None, self.permission_wait + HOOK_SLACK, perm_timeout)],
-                "PreToolUse": [self.entry(Some("AskUserQuestion"), self.ask_wait + HOOK_SLACK, ask_timeout)],
+                "PreToolUse": [self.entry(Some("AskUserQuestion|ExitPlanMode"), self.ask_wait + HOOK_SLACK, ask_timeout)],
                 "PostToolUse": [self.entry(None, quick, quick_timeout)],
                 "Notification": [self.entry(None, quick, quick_timeout)],
                 "Stop": [self.entry(None, quick, quick_timeout)],
                 "UserPromptSubmit": [self.entry(None, quick, quick_timeout)],
                 "SessionStart": [self.entry(None, quick, quick_timeout)],
             }
-        })
+        });
+        if let Some(sl) = self.statusline_value() {
+            settings["statusLine"] = sl;
+        }
+        settings
     }
 
     /// The settings as a compact JSON string.
@@ -140,7 +187,10 @@ mod tests {
             assert!(hooks.contains_key(ev), "missing {ev}");
         }
         assert_eq!(hooks.len(), 7);
-        assert_eq!(hooks["PreToolUse"][0]["matcher"], "AskUserQuestion");
+        assert_eq!(
+            hooks["PreToolUse"][0]["matcher"],
+            "AskUserQuestion|ExitPlanMode"
+        );
         let cmd = hooks["PermissionRequest"][0]["hooks"][0]["command"]
             .as_str()
             .unwrap();
@@ -148,6 +198,26 @@ mod tests {
         assert!(cmd.ends_with("--session-key dm-1"));
         // Only hooks: no permissions, no statusLine, nothing that overrides user config.
         assert_eq!(v.as_object().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn statusline_wrapper_is_registered_only_when_asked() {
+        let plain = HookSettings::new("/h", "/s");
+        assert!(plain.to_value().get("statusLine").is_none());
+        let s = HookSettings::new("/h", "/my sock")
+            .with_session_key("dm-1")
+            .with_statusline("/opt/pr/patchroom-statusline", Some(3));
+        let v = s.to_value();
+        assert_eq!(v["statusLine"]["type"], "command");
+        assert_eq!(v["statusLine"]["padding"], 3);
+        assert_eq!(
+            v["statusLine"]["command"],
+            "/opt/pr/patchroom-statusline --socket '/my sock' --session-key dm-1"
+        );
+        let v = HookSettings::new("/h", "/s")
+            .with_statusline("/w", None)
+            .to_value();
+        assert!(v["statusLine"].get("padding").is_none());
     }
 
     #[test]

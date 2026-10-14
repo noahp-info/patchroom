@@ -514,3 +514,14 @@ pub struct Setting {
     /// Value text (callers store JSON if they need structure).
     pub value: String,
 }
+
+/// Sidebar badges of one conversation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Badges {
+    /// The conversation.
+    pub conversation_id: Id,
+    /// New assistant items since the DM was last viewed.
+    pub unread: u32,
+    /// A prompt waits on the user. Clears on resolution, never on view.
+    pub needs_you: bool,
+}

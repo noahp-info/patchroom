@@ -6,6 +6,7 @@
 //!
 //! ```text
 //! hook   -> bridge  {"v":1,"type":"hook","session_key":"dm-1","hook_pid":42,"ppid":41,"payload":{...}}
+//! wrapper -> bridge {"v":1,"type":"statusline","session_key":"dm-1","payload":{...},"output":"..."}
 //! bridge -> hook    {"v":1,"type":"ack"}
 //! bridge -> hook    {"v":1,"type":"decision","output":{...}|null,"resolution":"chat"}
 //! bridge -> hook    {"v":1,"type":"cancel","reason":"terminal"}
@@ -66,6 +67,19 @@ pub enum ClientMessage {
         wait_ms: u64,
         /// The hook JSON exactly as the CLI sent it on stdin.
         payload: Value,
+    },
+    /// One statusLine render. The wrapper tees the statusLine stdin JSON and the output
+    /// of the user's own statusLine command. The bridge only acks.
+    Statusline {
+        /// Patchroom's own key for the session, when known.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_key: Option<String>,
+        /// The statusLine stdin JSON exactly as the CLI sent it.
+        payload: Value,
+        /// What the user's statusLine command printed (ANSI included). Empty when the
+        /// user has no statusLine.
+        #[serde(default)]
+        output: String,
     },
 }
 

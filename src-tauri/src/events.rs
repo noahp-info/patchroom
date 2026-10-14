@@ -64,6 +64,47 @@ pub enum UiEvent {
         /// Reason, only for `waiting`.
         needs: Option<Needs>,
     },
+    /// `chat:items {id, items}`: new or updated chat items (same `key` replaces).
+    ChatItems {
+        /// Session id.
+        id: String,
+        /// Items as JSON (the `patchroom-claude` wire format).
+        items: Value,
+    },
+    /// `prompt:pending {id, promptId, kind, toolName, toolInput, toolUseId?, questions?, canAlways}`.
+    PromptPending {
+        /// Session id.
+        id: String,
+        /// The full payload, `id` included.
+        payload: Value,
+    },
+    /// `prompt:resolved {id, promptId, by}`.
+    PromptResolved {
+        /// Session id.
+        id: String,
+        /// Prompt id, for example `prompt-3`.
+        prompt_id: String,
+        /// `chat`, `terminal`, `timeout` or `interrupt`.
+        by: &'static str,
+    },
+    /// `session:badges {id, unread, needsYou}`.
+    Badges {
+        /// Session id.
+        id: String,
+        /// New assistant items since the DM was last viewed.
+        unread: u32,
+        /// A prompt waits on the user.
+        needs_you: bool,
+    },
+    /// `statusline:update {id, text, chips}`.
+    Statusline {
+        /// Session id.
+        id: String,
+        /// The user's statusLine output as ANSI.
+        text: String,
+        /// Structured chips as JSON.
+        chips: Value,
+    },
 }
 
 impl UiEvent {
@@ -75,6 +116,11 @@ impl UiEvent {
             UiEvent::Exit { .. } => "pty:exit",
             UiEvent::Title { .. } => "session:title",
             UiEvent::Status { .. } => "session:status",
+            UiEvent::ChatItems { .. } => "chat:items",
+            UiEvent::PromptPending { .. } => "prompt:pending",
+            UiEvent::PromptResolved { .. } => "prompt:resolved",
+            UiEvent::Badges { .. } => "session:badges",
+            UiEvent::Statusline { .. } => "statusline:update",
         }
     }
 
@@ -89,6 +135,19 @@ impl UiEvent {
                 Some(n) => json!({ "id": id, "status": status, "needs": n }),
                 None => json!({ "id": id, "status": status }),
             },
+            UiEvent::ChatItems { id, items } => json!({ "id": id, "items": items }),
+            UiEvent::PromptPending { payload, .. } => payload.clone(),
+            UiEvent::PromptResolved { id, prompt_id, by } => {
+                json!({ "id": id, "promptId": prompt_id, "by": by })
+            }
+            UiEvent::Badges {
+                id,
+                unread,
+                needs_you,
+            } => json!({ "id": id, "unread": unread, "needsYou": needs_you }),
+            UiEvent::Statusline { id, text, chips } => {
+                json!({ "id": id, "text": text, "chips": chips })
+            }
         }
     }
 }
@@ -103,6 +162,49 @@ pub trait EventSink: Send + Sync + 'static {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chat_event_payloads_match_the_contract() {
+        let e = UiEvent::Badges {
+            id: "a".into(),
+            unread: 2,
+            needs_you: true,
+        };
+        assert_eq!(
+            (e.name(), e.payload()),
+            (
+                "session:badges",
+                json!({"id":"a","unread":2,"needsYou":true})
+            )
+        );
+        let e = UiEvent::PromptResolved {
+            id: "a".into(),
+            prompt_id: "prompt-1".into(),
+            by: "terminal",
+        };
+        assert_eq!(
+            (e.name(), e.payload()),
+            (
+                "prompt:resolved",
+                json!({"id":"a","promptId":"prompt-1","by":"terminal"})
+            )
+        );
+        let e = UiEvent::Statusline {
+            id: "a".into(),
+            text: "\u{1b}[1mx".into(),
+            chips: json!({"model":"Haiku"}),
+        };
+        assert_eq!(e.name(), "statusline:update");
+        assert_eq!(e.payload()["chips"]["model"], "Haiku");
+        let e = UiEvent::ChatItems {
+            id: "a".into(),
+            items: json!([]),
+        };
+        assert_eq!(
+            (e.name(), e.payload()),
+            ("chat:items", json!({"id":"a","items":[]}))
+        );
+    }
 
     #[test]
     fn payload_shapes_match_the_contract() {

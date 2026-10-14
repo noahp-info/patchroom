@@ -10,7 +10,10 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
-use crate::manager::{CreateRequest, SectionInfo, SessionInfo, SessionManager};
+use crate::manager::{
+    CreateRequest, ImageData, PromptAnswer, SectionInfo, SessionInfo, SessionManager,
+};
+use patchroom_claude::{ChatItem, Cursor, Page};
 
 type CmdResult<T> = std::result::Result<T, String>;
 
@@ -63,7 +66,7 @@ pub async fn session_write(
     data: String,
 ) -> CmdResult<()> {
     let bytes = B64.decode(data.as_bytes()).map_err(|e| e.to_string())?;
-    state.write(&id, bytes).map_err(|e| e.to_string())
+    state.inner().write(&id, bytes).map_err(|e| e.to_string())
 }
 
 /// `session_send_text {id, text}`.
@@ -187,4 +190,116 @@ pub async fn pick_folder(
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+/// `chat_history {id, before?, limit?} -> {items, hasMore, cursor}`: newest page first,
+/// oldest first within the page. `before` is the key of the oldest item the caller has, or
+/// the `cursor` of the previous page.
+#[tauri::command]
+pub async fn chat_history(
+    state: State<'_, SessionManager>,
+    id: String,
+    before: Option<Cursor>,
+    limit: Option<usize>,
+) -> CmdResult<Page> {
+    let m = state.inner().clone();
+    blocking(move || m.chat_history(&id, before, limit)).await
+}
+
+/// `chat_thread {id, toolUseId} -> {items}`: the items of a subagent.
+#[tauri::command]
+pub async fn chat_thread(
+    state: State<'_, SessionManager>,
+    id: String,
+    tool_use_id: String,
+) -> CmdResult<ChatThread> {
+    let m = state.inner().clone();
+    let items = blocking(move || m.chat_thread(&id, &tool_use_id)).await?;
+    Ok(ChatThread { items })
+}
+
+/// Result of `chat_thread`.
+#[derive(Serialize)]
+pub struct ChatThread {
+    items: Vec<ChatItem>,
+}
+
+/// `chat_image {id, ref} -> {dataUrl}`.
+#[tauri::command]
+pub async fn chat_image(
+    state: State<'_, SessionManager>,
+    id: String,
+    r#ref: String,
+) -> CmdResult<ImageData> {
+    let m = state.inner().clone();
+    blocking(move || m.chat_image(&id, &r#ref)).await
+}
+
+/// `prompt_answer {id, promptId, answer}`. `answer` is
+/// `{kind:"allow"} | {kind:"allow_always"} | {kind:"deny", message?} |
+/// {kind:"questions", answers:{[questionText]: string}} | {kind:"terminal"}`.
+#[tauri::command]
+pub async fn prompt_answer(
+    state: State<'_, SessionManager>,
+    id: String,
+    prompt_id: String,
+    answer: PromptAnswer,
+) -> CmdResult<()> {
+    // A plan answer waits for the TUI dialog to draw, so keep it off the async runtime.
+    let m = state.inner().clone();
+    blocking(move || m.prompt_answer(&id, &prompt_id, answer)).await
+}
+
+/// `session_mark_read {id}`: clears the unread count, never the needs-you badge.
+#[tauri::command]
+pub async fn session_mark_read(state: State<'_, SessionManager>, id: String) -> CmdResult<()> {
+    state.mark_read(&id).map_err(|e| e.to_string())
+}
+
+/// `prompt_list {id}`: the DM's announced, unresolved prompts as `prompt:pending` payloads.
+#[tauri::command]
+pub async fn prompt_list(
+    state: State<'_, SessionManager>,
+    id: String,
+) -> CmdResult<Vec<serde_json::Value>> {
+    state.prompt_list(&id).map_err(|e| e.to_string())
+}
+
+/// `statusline_cycle_mode {id}`: writes Shift+Tab to the PTY.
+#[tauri::command]
+pub async fn statusline_cycle_mode(state: State<'_, SessionManager>, id: String) -> CmdResult<()> {
+    state.inner().cycle_mode(&id).map_err(|e| e.to_string())
+}
+
+/// `session_view {id, view}`: `view` is `"chat"` or `"terminal"`. Optional hint: while the
+/// terminal is shown, a hidden AskUserQuestion picker is handed to the TUI at once.
+#[tauri::command]
+pub async fn session_view(
+    state: State<'_, SessionManager>,
+    id: String,
+    view: String,
+) -> CmdResult<()> {
+    state
+        .set_view(&id, view == "terminal")
+        .map_err(|e| e.to_string())
+}
+
+/// Result of `paste_image`.
+#[derive(Serialize)]
+pub struct PastedImage {
+    path: String,
+}
+
+/// `paste_image {id, data, mediaType} -> {path}`: `data` is base64. Writes a 0600 file
+/// under `<data_dir>/pastes/` and returns its absolute path. Nothing goes to the PTY.
+#[tauri::command]
+pub async fn paste_image(
+    state: State<'_, SessionManager>,
+    id: String,
+    data: String,
+    media_type: String,
+) -> CmdResult<PastedImage> {
+    let m = state.inner().clone();
+    let path = blocking(move || m.paste_image(&id, &data, &media_type)).await?;
+    Ok(PastedImage { path })
 }
