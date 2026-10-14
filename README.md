@@ -40,4 +40,4 @@ Enable the local git hooks once per clone: `bash scripts/setup-hooks.sh`.
 
 ## License
 
-[MIT](LICENSE)
+[Apache-2.0](LICENSE). See [NOTICE](NOTICE) for the trademark terms. Contributions need a signed contributor license agreement; see [CONTRIBUTING.md](CONTRIBUTING.md).
