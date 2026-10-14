@@ -11,6 +11,9 @@ use serde_json::Value;
 
 use crate::dnd::{parse_hhmm, Dnd};
 
+/// Layout bases the UI can render.
+pub const BASES: [&str; 4] = ["homeroom", "patchbay", "scrollback", "bluepencil"];
+
 /// Largest serialized prefs the backend stores, in bytes.
 const MAX_PREFS_BYTES: usize = 1024 * 1024;
 
@@ -156,6 +159,10 @@ pub struct Prefs {
     pub theme_id: String,
     /// Light, dark or system.
     pub mode: Mode,
+    /// Layout base: `homeroom` (Slack-faithful) or `patchbay` (hardware panel).
+    pub base: String,
+    /// Patch Bay cable and plug preset id, or `theme` to follow the theme's own tokens.
+    pub cable_preset: String,
     /// Themes the user made or imported. The shape belongs to the UI's theme engine.
     pub custom_themes: Vec<Value>,
     /// Notification levels.
@@ -175,6 +182,8 @@ impl Default for Prefs {
         Self {
             theme_id: "homeroom".into(),
             mode: Mode::System,
+            base: "homeroom".into(),
+            cable_preset: "theme".into(),
             custom_themes: Vec::new(),
             notify: Notify::default(),
             sound: Sound::default(),
@@ -259,6 +268,12 @@ impl Prefs {
         if self.theme_id.trim().is_empty() {
             return Err(PrefsError("themeId must not be empty".into()));
         }
+        if !BASES.contains(&self.base.as_str()) {
+            return Err(PrefsError(format!("unknown base {:?}", self.base)));
+        }
+        if self.cable_preset.trim().is_empty() {
+            return Err(PrefsError("cablePreset must not be empty".into()));
+        }
         Ok(self)
     }
 }
@@ -273,6 +288,8 @@ mod tests {
         let v = serde_json::to_value(Prefs::default()).unwrap();
         assert_eq!(v["themeId"], "homeroom");
         assert_eq!(v["mode"], "system");
+        assert_eq!(v["base"], "homeroom");
+        assert_eq!(v["cablePreset"], "theme");
         assert_eq!(v["notify"], json!({"default":"all","perDm":{}}));
         assert_eq!(
             v["sound"]["perEvent"]["needs"],
@@ -327,6 +344,8 @@ mod tests {
             json!({"dnd":{"manual":false,"schedule":{"days":[7],"start":"22:00","end":"07:00"}}}),
             json!({"dnd":{"manual":false,"schedule":{"days":[1],"start":"25:00","end":"07:00"}}}),
             json!({"themeId":"  "}),
+            json!({"base":"neon"}),
+            json!({"cablePreset":""}),
         ] {
             assert!(base.patched(&bad).is_err(), "{bad}");
         }
@@ -354,6 +373,29 @@ mod tests {
         let p = Prefs::from_stored("{\"themeId\":\"x\"}");
         assert_eq!(p.theme_id, "x");
         assert!(p.sound.enabled);
+    }
+
+    #[test]
+    fn prefs_stored_before_base_and_cable_preset_load_with_defaults() {
+        // A P3-era blob: no `base`, no `cablePreset`. Everything else must survive.
+        let old = r#"{"themeId":"mine","mode":"dark","customThemes":[{"id":"mine"}],
+            "sound":{"enabled":true,"volume":0.4,"perEvent":{},"perDm":{},"hookPolicy":{}},
+            "searchAllSessions":true}"#;
+        let p = Prefs::from_stored(old);
+        assert_eq!(p.theme_id, "mine");
+        assert_eq!(p.mode, Mode::Dark);
+        assert_eq!(p.base, "homeroom");
+        assert_eq!(p.cable_preset, "theme");
+        assert!(p.search_all_sessions);
+        assert_eq!(p.custom_themes.len(), 1);
+        assert!((p.sound.volume - 0.4).abs() < 1e-9);
+        let p = p
+            .patched(&json!({"base":"patchbay","cablePreset":"copper"}))
+            .unwrap();
+        assert_eq!(
+            (p.base.as_str(), p.cable_preset.as_str()),
+            ("patchbay", "copper")
+        );
     }
 
     #[test]

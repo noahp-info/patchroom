@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import type {
   ActivityRow,
   Ipc,
+  Prefs,
   MarkInfo,
   SearchHit,
   FolderSession,
@@ -152,8 +153,8 @@ export function createTauriIpc(): Ipc {
       return { before: r.before ?? null };
     },
     activityList: async () => (await invoke<Loose[]>('activity_list', {})).map(activity),
-    prefsGet: () => invoke('prefs_get', {}),
-    prefsSet: (patch) => invoke('prefs_set', { patch }),
+    prefsGet: () => invoke<Prefs>('prefs_get', {}),
+    prefsSet: (patch) => invoke<Prefs>('prefs_set', { patch }),
     soundHooksDetect: () => invoke('sound_hooks_detect', {}),
     notifyTest: () => invoke('notify_test', {}),
     sessionFocus: (id) => invoke('session_focus', { id }),

@@ -1,4 +1,5 @@
-import type { Theme } from '../../theme/types.ts';
+import { DEFAULT_BASE, getBase } from '../../theme/bases.ts';
+import type { BaseId, Theme } from '../../theme/types.ts';
 
 /** Patchroom events that can make a sound or a notification. */
 export const SOUND_EVENTS = ['needs', 'done', 'message', 'error', 'bell'] as const;
@@ -25,6 +26,10 @@ export interface Prefs {
   themeId: string;
   mode: ModePref;
   customThemes: Theme[];
+  /** Layout base: Homeroom or Patch Bay. */
+  base: BaseId;
+  /** Patch Bay cable and plug preset id, or `theme` to follow the theme's own tokens. */
+  cablePreset: string;
   notify: { default: NotifyLevel; perDm: Record<string, NotifyLevel> };
   sound: {
     enabled: boolean;
@@ -52,6 +57,8 @@ export const DEFAULT_PREFS: Prefs = {
   themeId: 'homeroom',
   mode: 'system',
   customThemes: [],
+  base: DEFAULT_BASE,
+  cablePreset: 'theme',
   notify: { default: 'all', perDm: {} },
   sound: {
     enabled: true,
@@ -86,6 +93,9 @@ export function normalizePrefs(raw: unknown): Prefs {
     ...d,
     ...(r as Partial<Prefs>),
     customThemes: Array.isArray(r.customThemes) ? (r.customThemes as Theme[]) : [],
+    // Prefs stored before bases and cable presets existed have no keys: Homeroom, follow the theme.
+    base: typeof r.base === 'string' && getBase(r.base) ? (r.base as BaseId) : d.base,
+    cablePreset: typeof r.cablePreset === 'string' ? r.cablePreset : d.cablePreset,
     notify: { ...d.notify, ...(notify as Partial<Prefs['notify']>) },
     sound: {
       ...d.sound,

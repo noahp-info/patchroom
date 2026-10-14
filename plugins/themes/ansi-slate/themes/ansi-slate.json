@@ -90,7 +90,9 @@
       "c-red": "#c8322b",
       "c-yellow": "#d9a21b",
       "c-blue": "#0b6e86",
-      "c-green": "#2e8b3e"
+      "c-green": "#2e8b3e",
+      "cable": "#d9a21b",
+      "plug": "#ccd0d4"
     },
     "dark": {
       "bg": "#111418",
@@ -175,7 +177,9 @@
       "c-red": "#f2685c",
       "c-yellow": "#e2b93b",
       "c-blue": "#56c2d6",
-      "c-green": "#86d68a"
+      "c-green": "#86d68a",
+      "cable": "#e2b93b",
+      "plug": "#a4a9b0"
     }
   }
 }

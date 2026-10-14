@@ -288,6 +288,8 @@ export interface ReferenceScreenProps {
   mode: ThemeMode;
   /** Fixed pixel size. Omit to fill the parent. */
   size?: { width: number; height: number };
+  /** Cable preset id from `CABLE_PRESETS`. Omit to use the theme's own `cable` and `plug`. */
+  cable?: string;
 }
 
 /**
@@ -295,9 +297,9 @@ export interface ReferenceScreenProps {
  * with a tool call, an AskUserQuestion widget, a composer with chips, Stop and the status strip,
  * and an artifact pane. Base and theme arrive as props; nothing in here knows a color.
  */
-export function ReferenceScreen({ base, theme, mode, size }: ReferenceScreenProps) {
+export function ReferenceScreen({ base, theme, mode, size, cable }: ReferenceScreenProps) {
   const style = {
-    ...themeVars(theme, mode),
+    ...themeVars(theme, mode, cable),
     colorScheme: mode,
     ...(size ? { '--app-w': `${size.width}px`, '--app-h': `${size.height}px` } : {}),
   } as CSSProperties;

@@ -161,6 +161,8 @@ const DEFAULT_PREFS: Prefs = {
   themeId: 'homeroom',
   mode: 'system',
   customThemes: [],
+  base: 'homeroom',
+  cablePreset: 'theme',
   notify: { default: 'all', perDm: {} },
   sound: { enabled: true, volume: 0.6, perEvent: {}, perDm: {}, hookPolicy: {} },
   dnd: { manual: false, schedule: null },
@@ -279,7 +281,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
         for (const [k, v] of d.badges) badges.set(k, { unread: v.unread, needsYou: false });
         for (const [k, v] of d.drafts) drafts.set(k, v);
         marks = d.marks;
-        prefs = d.prefs;
+        // Prefs saved before `base` and `cablePreset` existed load with the defaults.
+        prefs = { ...structuredClone(DEFAULT_PREFS), ...d.prefs };
         for (const [k, v] of d.folderRows ?? []) folderRows.set(k, v);
         for (const [k, v] of d.hideOverride ?? []) hideOverride.set(k, v);
       }

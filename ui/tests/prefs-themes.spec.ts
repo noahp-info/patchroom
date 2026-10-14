@@ -131,3 +131,18 @@ test('a bad Slack string is refused with a reason', async ({ page }) => {
   }
   await expect(page.locator('[data-theme-card^="slack-"]')).toHaveCount(0);
 });
+
+test('Homeroom is the jade default: band, panel and workspace mark come from the mark', async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await openPrefs(page);
+  await expect(root(page)).toHaveAttribute('data-theme', 'homeroom');
+  const v = (n: string) =>
+    root(page).evaluate((el, k) => getComputedStyle(el).getPropertyValue(k).trim(), n);
+  expect(await v('--side-bg')).toBe('#135a4b');
+  expect(await v('--panel')).toBe('#135a4b');
+  expect(await v('--ws-mark')).toBe('#f7f3e8');
+  expect(await v('--side-active')).toBe('#f2c35b');
+  expect(await v('--accent')).not.toBe('#135a4b');
+});

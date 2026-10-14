@@ -120,6 +120,9 @@ function mapMode(c: SlackColors, base: TokenMap, mode: ThemeMode): TokenMap {
   t.silk = sideFg;
   t['silk-muted'] = t['side-muted'];
   t.nut = mix(sideFg, sideBg, 0.55);
+  // The cable follows the active row; the plug is the sidebar ink pushed toward silver.
+  t.cable = sideActive;
+  t.plug = mix(sideFg, '#ffffff', 0.3);
   t.hole = mode === 'dark' ? '#050505' : '#1c1b19';
   return t;
 }

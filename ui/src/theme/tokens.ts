@@ -70,6 +70,8 @@ export const TOKEN_GROUPS = {
     'c-yellow',
     'c-blue',
     'c-green',
+    'cable',
+    'plug',
   ],
 } as const;
 
@@ -89,7 +91,7 @@ export const TOKEN_GROUP_NOTES: Record<TokenGroup, string> = {
   chrome: 'Chips, status strip, avatars, inline code, highlights, ask widget, composer, Stop.',
   artifact: 'Artifact pane ground, diff gutters and fills, syntax colors.',
   hardware:
-    'Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base.',
+    'Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load.',
 };
 
 /** A text-bearing pair that must reach WCAG AA (4.5:1 for normal text, 3:1 for large or bold UI). */
@@ -103,6 +105,8 @@ export interface ContrastPair {
 }
 
 const T = 4.5;
+/** Graphic objects need 3:1 (WCAG 1.4.11). */
+const G = 3;
 export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   { fg: 'fg', bg: 'bg', min: T, what: 'message text' },
   { fg: 'fg', bg: 'surface', min: T, what: 'text on raised surface' },
@@ -173,4 +177,6 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   { fg: 'side-active-fg', bg: 'side-active', min: T, what: 'Patch Bay active row' },
   { fg: 'tb-fg', bg: 'panel-2', min: T, what: 'Patch Bay title bar' },
   { fg: 'tb-muted', bg: 'panel-2', min: T, what: 'Patch Bay title bar secondary text' },
+  { fg: 'cable', bg: 'hole', min: G, what: 'patch cable in a jack (graphic)' },
+  { fg: 'plug', bg: 'hole', min: G, what: 'plug metal in a jack (graphic)' },
 ];

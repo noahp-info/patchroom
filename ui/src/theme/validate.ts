@@ -1,4 +1,5 @@
 import { contrast, isColor } from './color.ts';
+import { fillLegacyTokens } from './legacy.ts';
 import { CONTRAST_PAIRS, TOKEN_KEYS } from './tokens.ts';
 import type { ContrastPair } from './tokens.ts';
 import type { Theme, ThemeMode, TokenMap } from './types.ts';
@@ -34,8 +35,13 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-/** Check shape, token completeness and color syntax of untrusted theme data. */
-export function validateTheme(input: unknown, opts: ValidateOptions = {}): ValidationResult {
+/**
+ * Check shape, token completeness and color syntax of untrusted theme data. The returned theme
+ * is the input with any missing post-P3 tokens filled.
+ */
+export function validateTheme(raw: unknown, opts: ValidateOptions = {}): ValidationResult {
+  // Themes saved before `cable` and `plug` existed are completed, not rejected.
+  const input = fillLegacyTokens(raw);
   const errors: string[] = [];
   if (!isRecord(input)) return { ok: false, errors: ['theme must be a JSON object'] };
 

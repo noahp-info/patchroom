@@ -2,6 +2,8 @@ import { useMemo, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import {
   BASES,
+  CABLE_PRESETS,
+  THEME_CABLE,
   contrastReport,
   importSlackTheme,
   resolveMode,
@@ -80,6 +82,9 @@ export function App() {
   const [pref, setPref] = useState<ModePreference>(
     pick(query.get('mode'), ['light', 'dark', 'system'] as const, 'system'),
   );
+  const [cable, setCable] = useState(
+    pick(query.get('cable'), [THEME_CABLE, ...CABLE_PRESETS.map((p) => p.id)], THEME_CABLE),
+  );
   const [slack, setSlack] = useState(SAMPLE_SLACK);
   const [slackName, setSlackName] = useState('Aubergine');
   const [slackError, setSlackError] = useState<string | null>(null);
@@ -96,7 +101,7 @@ export function App() {
     return (
       <div className="bare" style={{ width: WIDTH, height: HEIGHT }}>
         <Sprite />
-        <ReferenceScreen base={base} theme={theme} mode={mode} size={size} />
+        <ReferenceScreen base={base} theme={theme} mode={mode} size={size} cable={cable} />
       </div>
     );
   }
@@ -143,7 +148,7 @@ export function App() {
                     height: HEIGHT,
                   }}
                 >
-                  <ReferenceScreen base={b.id} theme={t} mode={mode} size={size} />
+                  <ReferenceScreen base={b.id} theme={t} mode={mode} size={size} cable={cable} />
                 </div>
               </div>
               <figcaption>
@@ -161,7 +166,7 @@ export function App() {
         tabIndex={0}
         aria-label="Reference screen, scroll sideways on narrow windows"
       >
-        <ReferenceScreen base={base} theme={theme} mode={mode} size={size} />
+        <ReferenceScreen base={base} theme={theme} mode={mode} size={size} cable={cable} />
       </div>
     );
   }
@@ -198,6 +203,18 @@ export function App() {
             onChange={(v) => {
               setThemeId(v);
               remember({ theme: v });
+            }}
+          />
+          <Seg
+            label="Cable"
+            value={cable}
+            options={[
+              { value: THEME_CABLE, label: 'Theme', hint: "The theme's own cable and plug" },
+              ...CABLE_PRESETS.map((p) => ({ value: p.id, label: p.name, hint: p.blurb })),
+            ]}
+            onChange={(v) => {
+              setCable(v);
+              remember({ cable: v });
             }}
           />
           <Seg

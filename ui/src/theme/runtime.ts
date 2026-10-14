@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { usePrefs } from '../components/prefs/store.ts';
-import { activeTheme } from './active.ts';
+import { activeBase, activeTheme } from './active.ts';
 import { resolveMode, themeVars } from './apply.ts';
-import { DEFAULT_BASE } from './bases.ts';
 import type { BaseId, Theme, ThemeMode } from './types.ts';
 
 function useSystemDark(): boolean {
@@ -34,8 +33,8 @@ export function useThemeRuntime(): ThemeRuntime {
   const theme = useMemo(() => activeTheme(prefs), [prefs]);
   const mode = resolveMode(prefs.mode, dark);
   const style = useMemo(
-    () => ({ ...themeVars(theme, mode), colorScheme: mode }) as CSSProperties,
-    [theme, mode],
+    () => ({ ...themeVars(theme, mode, prefs.cablePreset), colorScheme: mode }) as CSSProperties,
+    [theme, mode, prefs.cablePreset],
   );
-  return { base: DEFAULT_BASE, theme, mode, style };
+  return { base: activeBase(prefs), theme, mode, style };
 }

@@ -2,7 +2,7 @@
  * Base: Patch Bay. Hardware panel: sessions are modules, presence lives on jacks with an LED,
  * labels are condensed silkscreen caps, and one patch cable joins the active DM to the
  * conversation. Base-only elements: .jack, .screw, .cable, jack-style radios.
- * Reads the `hardware` token group (panel, silk, nut, hole, cable colors) from the theme.
+ * Reads the `hardware` token group (panel, silk, nut, hole, cable rubber, plug metal) from the theme.
  */
 [data-base='patchbay'] {
   --side-w: 276px;
@@ -27,7 +27,7 @@
   border-radius: 50%;
   background: radial-gradient(
     circle at 35% 35%,
-    color-mix(in srgb, var(--nut) 60%, #fff),
+    color-mix(in srgb, var(--plug) 60%, #fff),
     var(--nut)
   );
   position: relative;
@@ -105,9 +105,10 @@
 [data-base='patchbay'] .dot {
   display: none;
 }
+/* The plug sits at the row's right end so the cable leaves sideways into the channel. */
 [data-base='patchbay'] .row .jack {
   order: 10;
-  margin-left: 2px;
+  margin-left: auto;
 }
 [data-base='patchbay'] .log,
 [data-base='patchbay'] .composer {
@@ -128,7 +129,7 @@
   border-radius: 50%;
   background: radial-gradient(
     circle at 40% 35%,
-    color-mix(in srgb, var(--nut) 55%, #fff) 0 30%,
+    color-mix(in srgb, var(--plug) 55%, #fff) 0 30%,
     var(--nut) 70%
   );
   box-shadow: 0 1px 1px rgb(0 0 0/0.25);
@@ -172,8 +173,10 @@
   border-radius: 1px;
 }
 [data-base='patchbay'] .jack.plugged::before {
-  background: var(--c-yellow);
-  box-shadow: 0 0 0 2px var(--hole);
+  background: var(--cable);
+  box-shadow:
+    0 0 0 2px var(--hole),
+    0 0 0 3.5px var(--plug);
 }
 [data-base='patchbay'] .row .bdg {
   border-radius: 3px;
@@ -279,7 +282,7 @@
   margin-top: 1px;
   background: radial-gradient(
     circle at 40% 35%,
-    color-mix(in srgb, var(--nut) 55%, #fff) 0 30%,
+    color-mix(in srgb, var(--plug) 55%, #fff) 0 30%,
     var(--nut) 70%
   );
   box-shadow: none;
@@ -299,7 +302,7 @@
 [data-base='patchbay'] .opt.sel .radio::before {
   width: 9px;
   height: 9px;
-  background: var(--c-yellow);
+  background: var(--cable);
   box-shadow: 0 0 0 2px var(--hole);
 }
 [data-base='patchbay'] .opt .ol {
@@ -345,11 +348,16 @@
 [data-base='patchbay'] .send {
   border-radius: 3px;
 }
+/* The band spans the whole pane; the chips keep the composer's left edge through the padding. */
+[data-base='patchbay'] .strip-wrap {
+  max-width: none;
+  padding-bottom: 0;
+}
 [data-base='patchbay'] .strip {
   background: var(--panel);
   border-top: 1px solid var(--panel-edge);
   margin-top: 8px;
-  padding: 6px 18px;
+  padding: 6px 40px;
   color: var(--silk-muted);
 }
 [data-base='patchbay'] .strip .sc {
@@ -392,6 +400,9 @@
 [data-base='patchbay'] .cable {
   display: block;
   position: absolute;
+  /* The cable runs in the channel at the sidebar's inner right edge (PatchCable measures it), so it
+     never crosses text. Below menus and dialogs (z-index 40 and up). */
+  z-index: 6;
   inset: 0;
   pointer-events: none;
   width: 100%;

@@ -1,15 +1,12 @@
 {
   "name": "patchroom-theme-homeroom",
   "version": "0.1.0",
-  "description": "Homeroom color theme for Patchroom. Deep spruce sidebar band with a marigold active row. The default palette.",
+  "description": "Homeroom color theme for Patchroom. Deep jade sidebar band with a marigold active row. The default palette, from the Patchroom mark.",
   "author": {
     "name": "Patchroom"
   },
   "license": "MIT",
-  "keywords": [
-    "patchroom",
-    "theme"
-  ],
+  "keywords": ["patchroom", "theme"],
   "patchroom": {
     "kind": "data",
     "themes": [

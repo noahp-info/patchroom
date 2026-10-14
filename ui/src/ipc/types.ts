@@ -397,6 +397,10 @@ export interface Prefs {
   themeId: string;
   mode: 'light' | 'dark' | 'system';
   customThemes: Theme[];
+  /** Layout base: `homeroom` or `patchbay`. */
+  base: 'homeroom' | 'patchbay' | 'scrollback' | 'bluepencil';
+  /** Patch Bay cable and plug preset id, or `theme` for the theme's own tokens. */
+  cablePreset: string;
   notify: { default: NotifyLevel; perDm: Record<string, NotifyLevel> };
   sound: {
     enabled: boolean;

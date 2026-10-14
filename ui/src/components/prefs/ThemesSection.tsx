@@ -1,13 +1,18 @@
 import { useId, useState } from 'react';
 import { allThemes, shippedThemes } from '../../theme/active.ts';
+import { BASES } from '../../theme/bases.ts';
 import { currentMode } from '../../theme/active.ts';
 import { importSlackTheme } from '../../theme/slack.ts';
 import type { Theme } from '../../theme/types.ts';
 import { contrastReport } from '../../theme/validate.ts';
 import type { ModePref } from './ipc.ts';
+import { CablePresets } from './CablePresets.tsx';
 import { CustomEditor, uniqueThemeId } from './CustomEditor.tsx';
 import { getPrefsStore, usePrefs } from './store.ts';
 import { ThemePreview } from './ThemePreview.tsx';
+
+/** The bases that ship a full look. Stubs stay out of the picker. */
+const STYLES = BASES.filter((b) => b.status === 'ready');
 
 const MODES: { id: ModePref; label: string }[] = [
   { id: 'light', label: 'Light' },
@@ -96,6 +101,27 @@ export function ThemesSection() {
         </p>
       </fieldset>
 
+      <fieldset className="pf-group" data-testid="style-picker">
+        <legend>Style</legend>
+        <div className="pf-seg" role="radiogroup" aria-label="Style">
+          {STYLES.map((b) => (
+            <label key={b.id} className="pf-seg__opt">
+              <input
+                type="radio"
+                name={`${uid}-style`}
+                value={b.id}
+                checked={prefs.base === b.id}
+                onChange={() => void store.update({ base: b.id })}
+              />
+              <span>{b.name}</span>
+            </label>
+          ))}
+        </div>
+        <p className="pf-hint">
+          {STYLES.find((b) => b.id === prefs.base)?.tagline ?? ''} Colors come from the theme below.
+        </p>
+      </fieldset>
+
       <fieldset className="pf-group">
         <legend>Theme</legend>
         <ul className="tgrid" aria-label="Themes">
@@ -134,6 +160,14 @@ export function ThemesSection() {
           })}
         </ul>
       </fieldset>
+
+      <CablePresets
+        theme={themes.find((t) => t.id === prefs.themeId) ?? themes[0]}
+        mode={mode}
+        base={prefs.base}
+        value={prefs.cablePreset}
+        onChange={(id) => void store.update({ cablePreset: id })}
+      />
 
       {editor ? (
         <CustomEditor

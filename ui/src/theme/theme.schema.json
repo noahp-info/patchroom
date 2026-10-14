@@ -137,7 +137,9 @@
         "c-red",
         "c-yellow",
         "c-blue",
-        "c-green"
+        "c-green",
+        "cable",
+        "plug"
       ],
       "properties": {
         "bg": {
@@ -430,47 +432,55 @@
         },
         "panel": {
           "$ref": "#/$defs/color",
-          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
         },
         "panel-2": {
           "$ref": "#/$defs/color",
-          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
         },
         "panel-edge": {
           "$ref": "#/$defs/color",
-          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
         },
         "silk": {
           "$ref": "#/$defs/color",
-          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
         },
         "silk-muted": {
           "$ref": "#/$defs/color",
-          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
         },
         "nut": {
           "$ref": "#/$defs/color",
-          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
         },
         "hole": {
           "$ref": "#/$defs/color",
-          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
         },
         "c-red": {
           "$ref": "#/$defs/color",
-          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
         },
         "c-yellow": {
           "$ref": "#/$defs/color",
-          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
         },
         "c-blue": {
           "$ref": "#/$defs/color",
-          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
         },
         "c-green": {
           "$ref": "#/$defs/color",
-          "description": "Panel, silkscreen, nut, hole and four cable colors. Read by Patch Bay only, but every theme must define them so any theme fits any base."
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
+        },
+        "cable": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
+        },
+        "plug": {
+          "$ref": "#/$defs/color",
+          "description": "Panel, silkscreen, nut, hole, four chip colors, and the patch cable and plug metal. Read by Patch Bay only, but every theme must define them so any theme fits any base. A theme saved before `cable` and `plug` existed gets both filled on load."
         }
       }
     }
