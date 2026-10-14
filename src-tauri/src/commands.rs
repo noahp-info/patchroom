@@ -274,3 +274,23 @@ pub async fn session_view(
         .set_view(&id, view == "terminal")
         .map_err(|e| e.to_string())
 }
+
+/// Result of `paste_image`.
+#[derive(Serialize)]
+pub struct PastedImage {
+    path: String,
+}
+
+/// `paste_image {id, data, mediaType} -> {path}`: `data` is base64. Writes a 0600 file
+/// under `<data_dir>/pastes/` and returns its absolute path. Nothing goes to the PTY.
+#[tauri::command]
+pub async fn paste_image(
+    state: State<'_, SessionManager>,
+    id: String,
+    data: String,
+    media_type: String,
+) -> CmdResult<PastedImage> {
+    let m = state.inner().clone();
+    let path = blocking(move || m.paste_image(&id, &data, &media_type)).await?;
+    Ok(PastedImage { path })
+}

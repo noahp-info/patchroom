@@ -735,7 +735,7 @@ body {
 
 /* tool calls */
 .toolbox {
-  max-width: 720px;
+  max-width: 620px;
   margin-top: 4px;
 }
 .toolbox .tool {
@@ -930,7 +930,6 @@ body {
 }
 .sys-sub {
   font-weight: 600;
-  text-transform: capitalize;
 }
 .sys-text {
   overflow-wrap: anywhere;

@@ -82,6 +82,8 @@ struct OpenPrompt {
     can_always: bool,
     /// `prompt:pending` was sent.
     emitted: bool,
+    /// `prompt:pending` went out without a `toolUseId`; re-emit it when the line lands.
+    awaiting_link: bool,
 }
 
 #[derive(Default)]
@@ -730,6 +732,7 @@ impl Manager {
                 questions: None,
                 can_always,
                 emitted: false,
+                awaiting_link: false,
             },
         );
         // Look now, then once more after the grace period (the tool_use line trails the
@@ -775,6 +778,7 @@ impl Manager {
                         questions: Some(questions),
                         can_always: false,
                         emitted: true,
+                        awaiting_link: false,
                     },
                 );
                 if let Some(p) = st.prompts.get(&q.id) {
@@ -817,6 +821,7 @@ impl Manager {
                         // "Yes, and use auto mode" is the plan dialog's own always.
                         can_always: true,
                         emitted: true,
+                        awaiting_link: false,
                     },
                 );
                 if let Some(open) = st.prompts.get(&p.id) {
@@ -867,6 +872,47 @@ impl Manager {
                     }
                 }
                 p.emitted = true;
+                p.awaiting_link = p.tool_use_id.is_none();
+                let mut shown = p.tool_input.clone();
+                patchroom_claude::cap_strings(&mut shown, PROMPT_INPUT_STRING_LIMIT);
+                let payload = pending_payload_with(id, pid, p, &shown);
+                self.sink.emit(UiEvent::PromptPending {
+                    id: id.to_owned(),
+                    payload,
+                });
+            }
+        }
+        // A prompt announced without its tool_use (the line trailed LINK_WAIT) keeps
+        // watching. Once the line lands, announce again with the same promptId.
+        {
+            let mut st = lock(&chat.state);
+            let claimed: Vec<String> = st
+                .prompts
+                .values()
+                .filter_map(|p| p.tool_use_id.clone())
+                .collect();
+            let mut ids: Vec<PromptId> = st
+                .prompts
+                .iter()
+                .filter(|(_, p)| p.emitted && p.awaiting_link && p.kind == PromptKind::Permission)
+                .map(|(k, _)| *k)
+                .collect();
+            ids.sort();
+            let mut claimed = claimed;
+            for pid in ids {
+                let Some(p) = st.prompts.get_mut(&pid) else {
+                    continue;
+                };
+                let found = adapter.find_open_tool(&p.tool_name, &p.tool_input, &claimed);
+                if !relink(p, found) {
+                    continue;
+                }
+                if let Some(tu) = &p.tool_use_id {
+                    claimed.push(tu.clone());
+                    if let Some(item) = adapter.set_tool_pending(tu, true) {
+                        pending_items.push(item);
+                    }
+                }
                 let mut shown = p.tool_input.clone();
                 patchroom_claude::cap_strings(&mut shown, PROMPT_INPUT_STRING_LIMIT);
                 let payload = pending_payload_with(id, pid, p, &shown);
@@ -965,6 +1011,22 @@ impl Manager {
     }
 }
 
+/// Attach a late-found `tool_use` id to a prompt that was announced without one.
+/// True when the prompt must be announced again.
+fn relink(p: &mut OpenPrompt, found: Option<String>) -> bool {
+    if !p.awaiting_link {
+        return false;
+    }
+    match found {
+        Some(tu) => {
+            p.tool_use_id = Some(tu);
+            p.awaiting_link = false;
+            true
+        }
+        None => false,
+    }
+}
+
 fn pending_payload(id: &str, pid: PromptId, p: &OpenPrompt) -> Value {
     pending_payload_with(id, pid, p, &p.tool_input)
 }
@@ -990,6 +1052,28 @@ fn pending_payload_with(id: &str, pid: PromptId, p: &OpenPrompt, input: &Value) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn late_tool_use_is_re_announced_once() {
+        let mut p = OpenPrompt {
+            kind: PromptKind::Permission,
+            tool_name: "Bash".into(),
+            tool_input: json!({"command": "ls"}),
+            tool_use_id: None,
+            questions: None,
+            can_always: true,
+            emitted: true,
+            awaiting_link: true,
+        };
+        assert!(!relink(&mut p, None));
+        assert!(p.awaiting_link);
+        assert!(relink(&mut p, Some("toolu_1".into())));
+        assert_eq!(p.tool_use_id.as_deref(), Some("toolu_1"));
+        let v = pending_payload("dm", PromptId(7), &p);
+        assert_eq!(v["toolUseId"], "toolu_1");
+        assert!(!relink(&mut p, Some("toolu_2".into())));
+        assert_eq!(p.tool_use_id.as_deref(), Some("toolu_1"));
+    }
 
     #[test]
     fn keystrokes_are_told_from_terminal_replies() {

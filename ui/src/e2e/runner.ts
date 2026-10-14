@@ -322,6 +322,25 @@ export class Runner {
     return this.chat(id).items.flatMap((i) => (i.kind === 'user' ? [i.text] : []));
   }
 
+  /** Image count of each user message, in order. */
+  userImageCounts(id: string | null = this.activeId()): number[] {
+    return this.chat(id).items.flatMap((i) => (i.kind === 'user' ? [i.images.length] : []));
+  }
+
+  /** Paste a real image through a ClipboardEvent on the composer, as the webview delivers it. */
+  pasteImageIntoComposer(base64: string, mediaType = 'image/png'): void {
+    const el = this.composer();
+    const bin = atob(base64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], 'shot.png', { type: mediaType }));
+    el.focus();
+    el.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }),
+    );
+  }
+
   assistantTexts(id: string | null = this.activeId()): string[] {
     return this.chat(id).items.flatMap((i) => (i.kind === 'assistant' ? [i.text] : []));
   }
@@ -472,13 +491,18 @@ export class Runner {
   }
 
   /** Type into the visible composer and press Enter. */
-  async sendFromComposer(text: string): Promise<void> {
+  async sendFromComposer(text: string, keep = ''): Promise<void> {
     const el = this.composer();
     if (el.disabled) throw new Error('composer is disabled');
     typeInto(el, text);
     await this.sleep(50);
-    if (el.value !== text) throw new Error(`composer holds ${JSON.stringify(el.value)}`);
+    if (el.value !== keep + text) throw new Error(`composer holds ${JSON.stringify(el.value)}`);
     press(el, 'Enter');
+  }
+
+  /** Press Enter in the composer as it stands. */
+  pressEnterInComposer(): void {
+    press(this.composer(), 'Enter');
   }
 
   /** Click a button by its visible text inside `scope`. */

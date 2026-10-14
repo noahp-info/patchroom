@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openChat, openWithDm, seedChat, watchErrors } from './helpers';
+import { openChat, openWithDm, revealRow, seedChat, watchErrors } from './helpers';
 
 // Ask widgets: permission, AskUserQuestion and plan approval, answered from chat or the terminal.
 
@@ -327,6 +327,83 @@ test.describe('ask widgets', () => {
     await expect(jump).toContainText('Needs you below');
     await jump.click();
     await expect(page.locator('.ask[data-kind="permission"]')).toBeVisible();
+  });
+
+  test('no "Needs you below" while the pending widget is on screen, even with a waiting tool row', async ({
+    page,
+  }) => {
+    const ts = '2026-10-14T10:00:00.000Z';
+    const N_BETWEEN = 6; // puts the waiting tool row in the overscan, just above the view
+    const filler = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        key: `f-${n}-${i}`,
+        ts,
+        kind: 'assistant',
+        text: `Line ${i} of the running commentary.`,
+      }));
+    const id = await openChat(page, [
+      ...filler(20),
+      {
+        key: 'tool-wait',
+        ts,
+        kind: 'tool',
+        toolUseId: 'tu-wait',
+        name: 'WebFetch',
+        input: { url: 'https://example.com' },
+        state: 'pending',
+      },
+      ...filler(N_BETWEEN),
+      // The prompt's own tool row: the widget renders inline here, mid-log.
+      {
+        key: 'tool-new',
+        ts,
+        kind: 'tool',
+        toolUseId: 'tu-new',
+        name: 'Bash',
+        input: { command: 'rm -rf build && cargo build' },
+        state: 'pending',
+      },
+    ]);
+    await prompt(page, id, 'permission');
+    await page.evaluate((sid) => {
+      window.__PR_MOCK__!.pushItems(
+        sid,
+        Array.from({ length: 40 }, (_, i) => ({
+          key: `after-${i}`,
+          ts: '2026-10-14T10:01:00.000Z',
+          kind: 'assistant' as const,
+          text: `Later line ${i}.`,
+        })),
+      );
+    }, id);
+    // Scroll so the widget sits fully in view with newer rows below it (not stuck to the end).
+    await revealRow(page, 'tool-new');
+    const ask = page.locator('.ask[data-state="pending"]');
+    for (let i = 0; i < 3; i++) {
+      await ask.evaluate((el) => {
+        const log = document.querySelector<HTMLElement>('[data-testid="chat-log"]')!;
+        log.scrollTop += el.getBoundingClientRect().top - log.getBoundingClientRect().top - 120;
+      });
+    }
+    // The waiting tool row is rendered (overscan) but above the visible area.
+    const where = await page.evaluate(() => {
+      const box = document.querySelector('[data-testid="chat-log"]')!.getBoundingClientRect();
+      const tool = document
+        .querySelector('.toolbox[data-state="pending"]')
+        ?.getBoundingClientRect();
+      const ask = document.querySelector('.ask[data-state="pending"]')!.getBoundingClientRect();
+      return {
+        toolAbove: tool ? tool.bottom <= box.top : null,
+        ok: ask.top >= box.top - 1 && ask.bottom <= box.bottom - 40,
+        dbg: [box.top, box.bottom, tool?.top, ask.top, ask.bottom],
+      };
+    });
+    expect(where.toolAbove).toBe(true);
+    const inView = where;
+    expect(inView.ok).toBe(true);
+    await expect(
+      page.getByTestId('jump-latest').filter({ hasText: 'Needs you below' }),
+    ).toHaveCount(0);
   });
 
   test('widgets are keyboard reachable: radios by arrow keys, buttons by Tab', async ({ page }) => {

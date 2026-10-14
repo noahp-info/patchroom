@@ -127,6 +127,8 @@ export function ChatLog(props: ChatLogProps) {
     h: 700,
   });
   const [atBottom, setAtBottom] = useState(initial.atBottom);
+  // Every pending widget is fully on screen: the "Needs you below" pill would point at nothing.
+  const [pendingShown, setPendingShown] = useState(false);
   const stick = useRef(initial.atBottom);
   const anchor = useRef<{ key: string; top: number } | null>(null);
   /** The scrollTop at which `anchor` was recorded. The anchor is only trusted while it matches. */
@@ -335,6 +337,26 @@ export function ChatLog(props: ChatLogProps) {
     if (hasMore && !loading && total < view.h + LOAD_OLDER_AT) onLoadOlder();
   }, [hasMore, loading, total, view.h, onLoadOlder]);
 
+  const waitingCount = props.waiting ?? 0;
+  // Runs after every commit on purpose: row layout moves the widgets. setState bails when equal.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || waitingCount === 0) {
+      setPendingShown(false);
+      return;
+    }
+    const box = el.getBoundingClientRect();
+    const widgets = Array.from(el.querySelectorAll('.ask[data-state="pending"]'));
+    const shown =
+      widgets.length >= waitingCount &&
+      widgets.every((w) => {
+        const r = w.getBoundingClientRect();
+        return r.top >= box.top - 1 && r.bottom <= box.bottom + 1;
+      });
+    setPendingShown((prev) => (prev === shown ? prev : shown));
+  });
+
   const jump = () => {
     const el = scroller.current;
     if (!el) return;
@@ -386,7 +408,7 @@ export function ChatLog(props: ChatLogProps) {
         )}
         {rows.length === 0 && props.empty}
       </div>
-      {!atBottom && rows.length > 0 && (
+      {!atBottom && rows.length > 0 && !(waitingCount > 0 && pendingShown) && (
         <div className="jumpbar">
           <button
             type="button"

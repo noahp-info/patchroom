@@ -78,6 +78,8 @@ export interface Ipc {
   /** `data` is base64. */
   sessionWrite(id: string, data: string): Promise<void>;
   sessionSendText(id: string, text: string): Promise<void>;
+  /** Save pasted image bytes (`data` is base64) to a private file and return its absolute path. */
+  pasteImage(id: string, data: string, mediaType: string): Promise<{ path: string }>;
   sessionResize(id: string, cols: number, rows: number): Promise<void>;
   sessionKill(id: string): Promise<void>;
   sessionList(): Promise<SessionInfo[]>;

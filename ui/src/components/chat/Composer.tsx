@@ -7,7 +7,6 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
 } from 'react';
-import { shellQuotePath } from '../../lib/keys';
 import type { ChatModel } from '../../state/chat';
 import { Icon } from '../Icon';
 
@@ -20,8 +19,8 @@ export interface ComposerProps {
   ended: boolean;
   onSend(text: string): void;
   onStop(): void;
-  /** Ctrl+V to the PTY so claude reads an image off the system clipboard. */
-  onPasteImage(): void;
+  /** Save a pasted image; its absolute path lands in the draft. */
+  onPasteImage(file: Blob): Promise<void> | void;
 }
 
 const MAX_HEIGHT = 200;
@@ -37,7 +36,6 @@ export function Composer({
   onPasteImage,
 }: ComposerProps) {
   const [text, setText] = useState(model.draft);
-  const [images, setImages] = useState(0);
   const box = useRef<HTMLTextAreaElement>(null);
   const mirror = useRef<HTMLTextAreaElement>(null);
 
@@ -65,7 +63,6 @@ export function Composer({
     onSend(text);
     setText('');
     model.setDraft('');
-    setImages(0);
   }, [ended, text, onSend, model]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -82,21 +79,10 @@ export function Composer({
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const data = e.clipboardData;
     const files = Array.from(data.files).filter((f) => f.type.startsWith('image/'));
-    if (files.length === 0) return;
-    const paths = files
-      .map((f) => (f as File & { path?: string }).path)
-      .filter((p): p is string => !!p && p.startsWith('/'));
-    if (paths.length > 0) {
-      // A real file on disk: paste its absolute path, which claude attaches as an image.
-      e.preventDefault();
-      model.insertIntoDraft(paths.map(shellQuotePath).join(' ') + ' ');
-      return;
-    }
-    if (data.getData('text/plain')) return;
-    // A clipboard bitmap has no path. claude reads it from the system clipboard on Ctrl+V.
+    if (files.length === 0 || data.getData('text/plain')) return;
+    // A clipboard bitmap has no path. Save it and put the saved path in the draft.
     e.preventDefault();
-    onPasteImage();
-    setImages((n) => n + files.length);
+    for (const f of files) void onPasteImage(f);
   };
 
   const slash = () => {
@@ -107,15 +93,6 @@ export function Composer({
   return (
     <div className="composer" data-testid="composer">
       <div className="box">
-        {images > 0 && (
-          <div className="queued" role="status">
-            <span className="qc">
-              {images === 1
-                ? '1 image attached from the clipboard'
-                : `${images} images attached from the clipboard`}
-            </span>
-          </div>
-        )}
         <textarea
           ref={box}
           className="input"

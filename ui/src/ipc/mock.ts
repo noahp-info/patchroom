@@ -23,6 +23,8 @@ export interface MockControl {
   resizes: { id: string; cols: number; rows: number }[];
   /** Every `session_send_text` payload. */
   texts: { id: string; text: string }[];
+  /** Every `paste_image` call (bytes as base64). */
+  pastes: { id: string; data: string; mediaType: string }[];
   /** Feed bytes (base64) to a session's terminal as if the pty produced them. */
   emitOutput(id: string, base64: string): void;
   emitText(id: string, text: string): void;
@@ -103,6 +105,7 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
     writes: {},
     resizes: [],
     texts: [],
+    pastes: [],
     resumes: [],
     pickResult: null,
     answers: [],
@@ -230,6 +233,11 @@ export function createMockIpc(opts: { banner?: boolean } = {}): { ipc: Ipc; cont
     async sessionWrite(id, data) {
       const arr = (control.writes[id] ??= []);
       for (const b of base64ToBytes(data)) arr.push(b);
+    },
+    async pasteImage(id, data, mediaType) {
+      control.pastes.push({ id, data, mediaType });
+      const ext = mediaType.split('/')[1]?.replace(/[^a-z0-9]/gi, '') || 'png';
+      return { path: `/tmp/patchroom-mock/pastes/${id}-${control.pastes.length}.${ext}` };
     },
     async sessionSendText(id, text) {
       control.texts.push({ id, text });

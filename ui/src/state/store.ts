@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { Ipc, SectionInfo, SessionInfo, SessionStatus } from '../ipc';
-import { utf8ToBase64 } from '../lib/base64';
+import { bytesToBase64, utf8ToBase64 } from '../lib/base64';
+import { shellQuotePath } from '../lib/keys';
 import { SessionTerminal, type SessionTerminalOptions } from '../lib/sessionTerminal';
 import { ChatModel } from './chat';
 
@@ -187,9 +188,15 @@ export class AppStore {
     }
   }
 
-  /** Ctrl+V to the PTY: claude reads a clipboard image itself. */
-  pasteClipboardImage(id: string): void {
-    void this.ipc.sessionWrite(id, utf8ToBase64('\x16')).catch(() => undefined);
+  /** Save a pasted image and insert its absolute path into the draft. Nothing reaches the PTY. */
+  async pasteImage(id: string, file: Blob): Promise<void> {
+    try {
+      const data = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
+      const { path } = await this.ipc.pasteImage(id, data, file.type || 'image/png');
+      this.chat(id).insertIntoDraft(shellQuotePath(path) + ' ');
+    } catch (err) {
+      this.set({ error: `Could not paste the image: ${String(err)}` });
+    }
   }
 
   /** Esc to the PTY: interrupts the running turn. */

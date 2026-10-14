@@ -10,6 +10,9 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
   const NAME_A = A.split('/').pop();
   const NAME_B = 'beta';
   const TURN_MS = 120_000;
+  // An 8x8 solid PNG.
+  const PNG_B64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC';
 
   const strip = (s) =>
     s
@@ -133,6 +136,42 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     if (n !== 1) throw new Error(`user message count in the chat model is ${n}`);
     if (dom !== 1) throw new Error(`user message count in the DOM is ${dom}`);
     return 'one user message, one reply';
+  });
+
+  // ---- 1b. image paste ------------------------------------------------------------------------
+  await t.step('pasted image becomes a path and the sent message carries an image', async () => {
+    const before = t.userImageCounts().length;
+    t.pasteImageIntoComposer(PNG_B64);
+    await t.waitFor(
+      'path in the composer',
+      () => {
+        const v = document.querySelector(
+          '[data-testid="chat"]:not(.chat--hidden) [data-testid="composer-input"]',
+        ).value;
+        return /\/pastes\/\S+\.png/.test(v) ? v : null;
+      },
+      10_000,
+    );
+    t.pressEnterInComposer();
+    await t.waitFor(
+      'user message with an image',
+      () => {
+        const c = t.userImageCounts();
+        return c.length > before && c[c.length - 1] > 0;
+      },
+      30_000,
+    );
+    // claude may ask to Read the pasted file after the image attached: allow it and let the turn end.
+    const end = Date.now() + TURN_MS;
+    while (t.dm(NAME_A).status !== 'idle' && Date.now() < end) {
+      const ask = document.querySelector(
+        '[data-testid="chat"]:not(.chat--hidden) .ask[data-state="pending"]',
+      );
+      if (ask) t.clickButton(ask, 'Allow');
+      await t.sleep(500);
+    }
+    await turnIdle(NAME_A);
+    return 'user message carries an image';
   });
 
   // ---- 2. second DM (used for badges) -------------------------------------------------------

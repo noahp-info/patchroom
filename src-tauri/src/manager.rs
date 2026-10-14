@@ -37,6 +37,7 @@ use patchroom_store::{Author, Conversation, ConversationKind, Id, NewConversatio
 use serde::{Deserialize, Serialize};
 
 mod chat;
+mod paste;
 
 pub use chat::{ImageData, PromptAnswer};
 
@@ -326,6 +327,7 @@ impl Manager {
         });
         // The app always has a chat client, so blocking hooks are answered through it.
         manager.bridge.set_chat_attached(true);
+        paste::prune_old(&manager.cfg.data_dir, paste::MAX_AGE);
         manager.spawn_bridge_thread(events)?;
         Ok(manager)
     }

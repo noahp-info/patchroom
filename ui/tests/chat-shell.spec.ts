@@ -101,14 +101,13 @@ test.describe('composer', () => {
     await expect(page.getByTestId('composer-input')).toHaveAttribute('placeholder', /has ended/);
   });
 
-  test('a pasted clipboard image reaches claude as Ctrl+V; a pasted file path is inserted', async ({
+  test('a pasted image is saved through paste_image and its path lands in the draft', async ({
     page,
   }) => {
     const id = await openChat(page, []);
     const box = page.getByTestId('composer-input');
     await box.click();
     await takeWrites(page, id);
-    // A bitmap with no path: claude reads it off the system clipboard on Ctrl+V.
     await box.evaluate((el) => {
       const dt = new DataTransfer();
       dt.items.add(
@@ -118,24 +117,17 @@ test.describe('composer', () => {
         new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }),
       );
     });
-    expect(await takeWrites(page, id)).toEqual([0x16]);
-    await expect(page.getByText('1 image attached from the clipboard')).toBeVisible();
-    // A file that has an absolute path: the path goes into the text, as V8 pastes it.
-    await box.evaluate((el) => {
-      const file = new File([new Uint8Array([1])], 'My Shot.png', { type: 'image/png' });
-      Object.defineProperty(file, 'path', { value: '/Users/me/Desktop/My Shot.png' });
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      el.dispatchEvent(
-        new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }),
-      );
-    });
-    await expect(box).toHaveValue('/Users/me/Desktop/My\\ Shot.png ');
+    await expect(box).toHaveValue(/^\/tmp\/patchroom-mock\/pastes\/\S+\.png $/);
+    const pastes = await page.evaluate(() => window.__PR_MOCK__!.pastes);
+    expect(pastes).toHaveLength(1);
+    expect(pastes[0]).toMatchObject({ id, data: 'iVBORw==', mediaType: 'image/png' });
+    // Nothing reaches the PTY at paste time, and no Ctrl+V.
     expect(await takeWrites(page, id)).toEqual([]);
+    const path = (await box.inputValue()).trim();
     await box.pressSequentially('what is this');
     await page.keyboard.press('Enter');
-    expect(await texts(page)).toEqual(['/Users/me/Desktop/My\\ Shot.png what is this']);
-    await expect(page.getByText('image attached from the clipboard')).toHaveCount(0);
+    expect(await texts(page)).toEqual([`${path} what is this`]);
+    expect(await takeWrites(page, id)).toEqual([]);
   });
 
   test('plain text paste is left to the textarea', async ({ page }) => {

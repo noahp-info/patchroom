@@ -185,10 +185,21 @@ impl Drop for Live {
     }
 }
 
+/// Pids whose command line matches `pattern`, ignoring shells. (Another shell elsewhere
+/// on the machine can carry the pattern in its own command line.)
 fn pgrep(pattern: &str) -> Vec<String> {
     let out = Proc::new("pgrep").args(["-f", pattern]).output().unwrap();
     String::from_utf8_lossy(&out.stdout)
         .lines()
+        .filter(|pid| {
+            let comm = Proc::new("ps")
+                .args(["-o", "comm=", "-p", pid])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+                .unwrap_or_default();
+            let base = comm.rsplit('/').next().unwrap_or("");
+            !comm.is_empty() && !matches!(base, "bash" | "zsh" | "sh" | "pgrep")
+        })
         .map(str::to_owned)
         .collect()
 }
@@ -288,10 +299,25 @@ impl Live {
 
     /// Wait for a `prompt:pending` of this kind after `from`.
     fn wait_prompt(&self, from: usize, kind: &str) -> (usize, Value) {
+        self.wait_prompt_where(from, kind, false)
+    }
+
+    /// Like `wait_prompt` for a permission prompt, but wait for the announcement that
+    /// carries `toolUseId`. The first one may lack it (the tool_use line trails the hook);
+    /// the backend re-announces with the same promptId once the line lands. claude may
+    /// hold that line until the prompt is answered, so only use this where the line
+    /// reliably lands first (a plain Bash call in a fresh session).
+    fn wait_prompt_linked(&self, from: usize) -> (usize, Value) {
+        self.wait_prompt_where(from, "permission", true)
+    }
+
+    fn wait_prompt_where(&self, from: usize, kind: &str, linked: bool) -> (usize, Value) {
         let (i, _, v) = self
             .sink
             .wait(from, T, &format!("prompt:pending {kind}"), |e| match e {
-                UiEvent::PromptPending { payload, .. } if payload["kind"] == kind => {
+                UiEvent::PromptPending { payload, .. }
+                    if payload["kind"] == kind && (!linked || payload["toolUseId"].is_string()) =>
+                {
                     Some(payload.clone())
                 }
                 _ => None,
@@ -380,7 +406,7 @@ fn permission_from_chat_then_terminal_then_always() {
         user["text"],
         "Use the Bash tool to run exactly this command and nothing else: echo p1 > p1.txt"
     );
-    let (i, p) = l.wait_prompt(i, "permission");
+    let (i, p) = l.wait_prompt_linked(i);
     println!("prompt: {p}");
     assert_eq!(p["toolName"], "Bash");
     assert_eq!(p["toolInput"]["command"], "echo p1 > p1.txt");

@@ -18,6 +18,8 @@ export function createTauriIpc(): Ipc {
     sessionCreate: (args) => invoke('session_create', { ...args }),
     sessionWrite: (id, data) => invoke('session_write', { id, data }),
     sessionSendText: (id, text) => invoke('session_send_text', { id, text }),
+    pasteImage: (id, data, mediaType) =>
+      invoke<{ path: string }>('paste_image', { id, data, mediaType }),
     sessionResize: (id, cols, rows) => invoke('session_resize', { id, cols, rows }),
     sessionKill: (id) => invoke('session_kill', { id }),
     async sessionList() {

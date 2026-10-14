@@ -32,6 +32,7 @@ const P2_COMMANDS = [
   'chat_history',
   'chat_image',
   'chat_thread',
+  'paste_image',
   'prompt_answer',
   'session_mark_read',
   'statusline_cycle_mode',
@@ -130,6 +131,7 @@ async function recordTauriCalls(): Promise<Call[]> {
   await ipc.sessionCreate({ cwd: '/w', command: 'claude', args: ['--model', 'haiku'], name: 'n' });
   await ipc.sessionWrite('i', 'AA==');
   await ipc.sessionSendText('i', 't');
+  await ipc.pasteImage('i', 'AA==', 'image/png');
   await ipc.sessionResize('i', 80, 24);
   await ipc.sessionKill('i');
   await ipc.sessionList();

@@ -134,7 +134,7 @@ export function ChatView({ store, session, visible, unread, thread }: ChatViewPr
             ended={ended}
             onSend={(t) => void store.sendText(id, t)}
             onStop={() => store.stopTurn(id)}
-            onPasteImage={() => store.pasteClipboardImage(id)}
+            onPasteImage={(f) => store.pasteImage(id, f)}
           />
           <StatusStrip
             statusline={snap.statusline}

@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { ChatItem, PromptAnswer, SubagentItem } from '../../ipc';
 import type { Row } from '../../lib/rows';
+import { systemLabel } from '../../lib/systemLabel';
 import { Markdown } from '../../lib/markdown';
 import { formatClock } from '../../lib/time';
 import type { AppStore } from '../../state/store';
@@ -242,7 +243,7 @@ function ItemBody({
       return (
         <div className="body sys" data-subtype={item.subtype}>
           <span className="sys-line">
-            <span className="sys-sub">{item.subtype.replace(/_/g, ' ')}</span>
+            <span className="sys-sub">{systemLabel(item.subtype)}</span>
             {item.text && <span className="sys-text">{item.text}</span>}
           </span>
         </div>
