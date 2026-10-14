@@ -4,7 +4,7 @@ Worktree: /Users/NDP/temp/patchroom-wt/p1b-app (branch feat/p1b-app, off dev at 
 
 ## Bar statement
 
-Launching the debug app opens a Homeroom-styled window with a sidebar of DMs. Creating a DM runs the real `claude` through the user's login shell, in a terminal that is byte-for-byte as faithful as iTerm2. Typing, paste, image paste, resize, the permission dialog and the AskUserQuestion picker all work by keyboard exactly as in iTerm2. The DM's presence dot and title follow the session live. State survives an app restart via the store. Nothing in `~/.claude` or the shell profiles changes (checksums before and after).
+Launching the debug app opens a Homeroom-styled window with a sidebar of DMs. Creating a DM runs the real `claude` through the user's login shell, in a terminal that is byte-for-byte as faithful as iTerm2. Typing, paste, image paste, resize, the permission dialog and the AskUserQuestion picker all work by keyboard exactly as in iTerm2. The DM's presence dot and title follow the session live. State survives an app restart via the store. Patchroom writes none of the user's config files.
 
 ## Reference artifacts
 
@@ -45,7 +45,7 @@ Events:
 
 ### both (judged on the integrated build)
 - Launch the debug app with `--open-dm` in a temp dir. Drive one turn with `--model haiku` that triggers a permission prompt, answer it by keyboard, and confirm the presence dot moves busy, then waiting, then idle. Screenshot the window next to iTerm2 running the same command at the same size, for a human-reviewable comparison.
-- Before and after checksums of /Users/NDP/.claude/settings.json, /Users/NDP/.claude.json, /Users/NDP/.bash_profile and /Users/NDP/.zshrc are identical.
+- Patchroom never writes /Users/NDP/.claude/settings.json, /Users/NDP/.claude.json, /Users/NDP/.bash_profile or /Users/NDP/.zshrc. settings.json and the shell profiles checksum identical before and after. In /Users/NDP/.claude.json, only claude's own entries for the DM's folder change, and nothing references Patchroom, patchroom-hook or the bridge socket. (Reworded 2026-10-14, approved by Noah: claude itself writes .claude.json, as it does in iTerm2.)
 
 ## Inspection method
 
