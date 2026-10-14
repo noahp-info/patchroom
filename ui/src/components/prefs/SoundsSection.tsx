@@ -1,20 +1,39 @@
-import { PACK, playSound } from '../../sound/index.ts';
-import { SOUND_EVENTS, type SoundEvent } from './ipc.ts';
+import './sounds/sounds.css';
+import { useCatalog } from '../../sound/catalog.ts';
+import { ClaudeImport } from './sounds/ClaudeImport.tsx';
+import { SoundCredits } from './sounds/Credits.tsx';
+import { DmSounds } from './sounds/DmSounds.tsx';
+import { MixBoard } from './sounds/MixBoard.tsx';
+import { PackCards } from './sounds/PackCards.tsx';
+import {
+  SOUND_EVENTS,
+  type DmSoundPref,
+  type MixChoice,
+  type PackInfo,
+  type SoundEvent,
+} from './ipc.ts';
 import { getPrefsStore, usePrefs } from './store.ts';
 import type { PrefsDm } from './types.ts';
 
-export function SoundsSection({ dms }: { dms: PrefsDm[] }) {
+export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string }) {
   const prefs = usePrefs();
   const store = getPrefsStore();
+  const { packs, names } = useCatalog();
   const s = prefs.sound;
 
   const patch = (next: Partial<typeof s>) => void store.update({ sound: { ...s, ...next } });
   const setEvent = (e: SoundEvent, on: boolean) =>
     patch({ perEvent: { ...s.perEvent, [e]: { sound: s.perEvent[e]?.sound ?? e, on } } });
-  const setDm = (id: string, mute: boolean) => {
+  const setChoice = (e: SoundEvent, c: MixChoice) => patch({ mix: { ...s.mix, [e]: c } });
+  const useAll = (pack: PackInfo) => {
+    const mix = { ...s.mix };
+    for (const e of SOUND_EVENTS) if (pack.events[e]) mix[e] = { pack: pack.id };
+    patch({ mix });
+  };
+  const setDm = (id: string, pref: DmSoundPref) => {
     const perDm = { ...s.perDm };
-    if (mute) perDm[id] = 'mute';
-    else delete perDm[id];
+    if (pref === 'default') delete perDm[id];
+    else perDm[id] = pref;
     patch({ perDm });
   };
 
@@ -45,59 +64,35 @@ export function SoundsSection({ dms }: { dms: PrefsDm[] }) {
         <output className="pf-hint">{Math.round(s.volume * 100)}%</output>
       </label>
 
-      <h3>Events</h3>
-      <ul className="plist">
-        {SOUND_EVENTS.map((e) => (
-          <li key={e}>
-            <label className="chk plist__name">
-              <input
-                type="checkbox"
-                aria-label={`${PACK[e].name} sound`}
-                checked={s.perEvent[e]?.on ?? true}
-                disabled={!s.enabled}
-                onChange={(ev) => setEvent(e, ev.target.checked)}
-              />
-              <span>
-                {PACK[e].name}
-                <small className="pf-hint"> {PACK[e].blurb}</small>
-              </span>
-            </label>
-            <button
-              type="button"
-              className="btn sec"
-              aria-label={`Test ${PACK[e].name} sound`}
-              onClick={() => playSound(e, { force: true })}
-            >
-              Test
-            </button>
-          </li>
-        ))}
-      </ul>
+      <h3>Packs</h3>
+      <p className="pf-hint">
+        A pack is a set of sounds, one for each event. Play any of them, or use a pack for
+        everything.
+      </p>
+      <PackCards packs={packs} mix={s.mix} onUseAll={useAll} />
 
-      <h3>Mute a DM</h3>
-      {dms.length === 0 ? (
-        <p className="pf-hint">No DMs yet.</p>
-      ) : (
-        <ul className="plist">
-          {dms.map((d) => (
-            <li key={d.id}>
-              <label className="chk plist__name">
-                <input
-                  type="checkbox"
-                  aria-label={`Mute sounds for ${d.name}`}
-                  checked={s.perDm[d.id] === 'mute'}
-                  onChange={(ev) => setDm(d.id, ev.target.checked)}
-                />
-                <span>{d.name}</span>
-              </label>
-            </li>
-          ))}
-        </ul>
-      )}
+      <h3>Mix by event</h3>
+      <p className="pf-hint">
+        Pick a sound for each event from any pack, use your own file, or turn the sound off. Your
+        file can be wav, aiff, mp3 or m4a, up to 5 seconds and 2 MB.
+      </p>
+      <MixBoard sound={s} packs={packs} names={names} onEventOn={setEvent} onChoice={setChoice} />
+
+      <h3>Your Claude sounds</h3>
+      <ClaudeImport />
+
+      <h3>Sounds for one DM</h3>
+      <p className="pf-hint">
+        Mute a DM, or open it to give it a pack or a sound of its own for any event.
+      </p>
+      <DmSounds dms={dms} sound={s} packs={packs} names={names} openId={openDm} onSet={setDm} />
       <p className="pf-hint">
         Sounds also stay silent during Do Not Disturb and for events your own sound hooks already
         cover.
       </p>
+
+      <h3>Credits</h3>
+      <SoundCredits />
     </div>
   );
 }

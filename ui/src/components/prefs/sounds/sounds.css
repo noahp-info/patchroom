@@ -1,0 +1,160 @@
+/* Sounds pane. Colors only through theme tokens (DESIGN.md, No Color In CSS Rule). */
+.packs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.pack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.pack[data-in-use='true'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.pack__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pack__name {
+  margin: 0;
+  font-size: 14px;
+}
+.pack__kind {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+.packs__group {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.packs__group:first-child {
+  margin-top: 0;
+}
+.pack__playlbl {
+  align-self: center;
+  margin-right: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pack__desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.pack__play {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pack__foot {
+  margin-top: auto;
+}
+.chip {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chip:hover:not(:disabled) {
+  background: var(--hover);
+}
+.chip:disabled {
+  color: var(--muted);
+  border-style: dashed;
+  cursor: default;
+}
+
+.mix,
+.dmsounds {
+  margin-top: 4px;
+}
+.mixrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.plist > .mixrow {
+  display: grid;
+}
+.mixrow__ctl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.mixrow__err {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.mixrow .pf-hint {
+  display: block;
+}
+
+.cimp {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+.cimp .pf-hint,
+.cimp .plist {
+  margin: 0;
+}
+.cimp .plist {
+  width: 100%;
+}
+
+.dmrow {
+  display: block;
+  padding: 6px 0;
+}
+.dmrow__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dmrow__more summary {
+  margin-top: 2px;
+  color: var(--link);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dmrow__body {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 8px 0 4px 12px;
+  border-left: 2px solid var(--line);
+}
+.dmrow__body .plist {
+  width: 100%;
+}
+.credits .plist li {
+  padding: 4px 0;
+}

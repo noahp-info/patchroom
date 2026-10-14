@@ -94,10 +94,18 @@ pub(super) struct SlackState {
 }
 
 impl SlackState {
-    pub(super) fn open(data_dir: &Path, stored_prefs: Option<&str>) -> Self {
+    pub(super) fn open(data_dir: &Path, stored_prefs: Option<&str>, session_hook: bool) -> Self {
         let search = open_index(data_dir);
+        let prefs = stored_prefs.map_or_else(
+            || {
+                let mut p = Prefs::default();
+                p.apply_session_default(session_hook);
+                p
+            },
+            |raw| Prefs::from_stored_with(raw, session_hook),
+        );
         Self {
-            prefs: Mutex::new(stored_prefs.map(Prefs::from_stored).unwrap_or_default()),
+            prefs: Mutex::new(prefs),
             search: Mutex::new(search),
             forgotten: Mutex::new(HashSet::new()),
             focus: Mutex::new(None),

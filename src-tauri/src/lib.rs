@@ -30,6 +30,16 @@
 //! `setting` table; the search index is `search.db` and the notification decision log is
 //! `notify-decisions.log`, both in the data dir. See [`manager`] (`slack` module).
 //!
+//! # Sound packs
+//! The `plugins/sounds` tree ships as the `sounds` Tauri resource (`generated-packs.json` plus one
+//! folder per CC0 file pack). Commands: `sound_packs`, `sound_file {packId, event}`,
+//! `sound_import_file {path}`, `sound_custom_list`, `sound_custom_file {id}`,
+//! `sound_custom_remove {id}`, `sound_claude_profiles`, `sound_import_claude_profile {id}`.
+//! Custom files live in `<data dir>/sounds/<ULID>.<ext>` (0600) and are pruned at start-up when no
+//! prefs reference them; imported Claude profiles become packs under `<data dir>/sounds/packs/`.
+//! The Claude sound folder is only ever read. See [`manager`] (`sound` module) and
+//! `patchroom-sounds`. `PATCHROOM_SOUNDS_DIR` overrides the bundled folder.
+//!
 //! # Folder sections (P3 addendum)
 //! Commands: `section_create_from_folder`, `section_set_archive_days`, `folder_sessions`,
 //! `folder_session_open`, `folder_session_hide`. Event: `folder:changed {sectionId}`.
@@ -109,6 +119,32 @@ fn data_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
     }
 }
 
+/// The first candidate that holds `generated-packs.json`, the mark of the bundled sounds.
+fn first_sounds_dir(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    candidates
+        .into_iter()
+        .find(|d| d.join("generated-packs.json").is_file())
+}
+
+/// Where the bundled sound packs live: `PATCHROOM_SOUNDS_DIR`, the `sounds` Tauri resource,
+/// and, in debug builds, the source tree (`plugins/sounds`) as a last resort.
+fn sounds_dir(app: &tauri::App) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(p) = std::env::var_os("PATCHROOM_SOUNDS_DIR").filter(|p| !p.is_empty()) {
+        candidates.push(PathBuf::from(p));
+    }
+    if let Ok(p) = app
+        .path()
+        .resolve("sounds", tauri::path::BaseDirectory::Resource)
+    {
+        candidates.push(p);
+    }
+    if cfg!(debug_assertions) {
+        candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugins/sounds"));
+    }
+    first_sounds_dir(candidates)
+}
+
 /// The IPC handler. Debug builds add the e2e commands; release builds register none of them.
 #[cfg(debug_assertions)]
 macro_rules! app_handler {
@@ -162,6 +198,14 @@ macro_rules! app_handler {
             commands::folder_sessions,
             commands::folder_session_open,
             commands::folder_session_hide,
+            commands::sound_packs,
+            commands::sound_file,
+            commands::sound_import_file,
+            commands::sound_custom_list,
+            commands::sound_custom_file,
+            commands::sound_custom_remove,
+            commands::sound_claude_profiles,
+            commands::sound_import_claude_profile,
             e2e::e2e_report,
             e2e::e2e_pgrep,
             e2e::e2e_sleep,
@@ -231,6 +275,14 @@ macro_rules! app_handler {
             commands::folder_sessions,
             commands::folder_session_open,
             commands::folder_session_hide,
+            commands::sound_packs,
+            commands::sound_file,
+            commands::sound_import_file,
+            commands::sound_custom_list,
+            commands::sound_custom_file,
+            commands::sound_custom_remove,
+            commands::sound_claude_profiles,
+            commands::sound_import_claude_profile,
         ]
     };
 }
@@ -254,6 +306,7 @@ pub fn run() {
         .setup(|app| {
             let mut cfg = ManagerConfig::new(data_dir(app)?, hook_path::resolve_hook_binary());
             cfg.reconcile = true;
+            cfg.sounds_dir = sounds_dir(app);
             if cfg!(debug_assertions) {
                 if let Some(extra) = std::env::var_os("PATCHROOM_E2E_EXTRA_PROJECTS") {
                     cfg.extra_projects_dirs = std::env::split_paths(&extra).collect();
@@ -305,7 +358,7 @@ mod tests {
     #[test]
     fn p3_commands_are_registered_in_both_handler_lists() {
         const SRC: &str = include_str!("lib.rs");
-        const P3: [&str; 26] = [
+        const P3: [&str; 34] = [
             "section_rename",
             "section_delete",
             "section_reorder",
@@ -332,6 +385,14 @@ mod tests {
             "folder_session_open",
             "folder_session_hide",
             "section_set_emoji",
+            "sound_packs",
+            "sound_file",
+            "sound_import_file",
+            "sound_custom_list",
+            "sound_custom_file",
+            "sound_custom_remove",
+            "sound_claude_profiles",
+            "sound_import_claude_profile",
         ];
         let bodies: Vec<&str> = SRC
             .split("generate_handler![\n")
@@ -351,6 +412,29 @@ mod tests {
             assert!(debug.iter().any(|d| d == c), "{c} is not registered");
         }
         assert!(bodies[0].contains("e2e::e2e_restart") && !bodies[1].contains("e2e::"));
+    }
+
+    #[test]
+    fn the_bundled_sounds_dir_is_found_by_its_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let empty = tmp.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../plugins/sounds");
+        assert_eq!(
+            first_sounds_dir([tmp.path().join("missing"), empty, src.clone()]),
+            Some(src)
+        );
+        assert_eq!(first_sounds_dir([tmp.path().join("missing")]), None);
+    }
+
+    #[test]
+    fn tauri_bundles_the_sounds_tree_as_a_resource() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(
+            conf["bundle"]["resources"]["../plugins/sounds/"],
+            serde_json::json!("sounds/")
+        );
     }
 
     #[test]

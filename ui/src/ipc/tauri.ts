@@ -162,6 +162,23 @@ export function createTauriIpc(): Ipc {
     prefsSet: (patch) => invoke<Prefs>('prefs_set', { patch }),
     soundHooksDetect: () => invoke('sound_hooks_detect', {}),
     notifyTest: () => invoke('notify_test', {}),
+    soundPacks: () => invoke('sound_packs', {}),
+    soundFile: (packId, event) => invoke('sound_file', { packId, event }),
+    soundCustomList: () => invoke('sound_custom_list', {}),
+    soundCustomFile: (id) => invoke('sound_custom_file', { id }),
+    soundPickFile: async () => {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const picked = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Sound', extensions: ['wav', 'aiff', 'mp3', 'm4a'] }],
+      });
+      return typeof picked === 'string' ? picked : null;
+    },
+    soundImportFile: (path) => invoke('sound_import_file', { path }),
+    soundCustomRemove: (id) => invoke('sound_custom_remove', { id }),
+    soundClaudeProfiles: () => invoke('sound_claude_profiles', {}),
+    soundImportClaudeProfile: (id) => invoke('sound_import_claude_profile', { id }),
     sessionFocus: (id) => invoke('session_focus', { id }),
     sectionCreateFromFolder: (path, name) =>
       invoke<{ id: string }>('section_create_from_folder', { path, name }),

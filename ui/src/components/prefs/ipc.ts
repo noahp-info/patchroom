@@ -1,9 +1,61 @@
 import { DEFAULT_BASE, getBase } from '../../theme/bases.ts';
+import {
+  createMockSoundBackend,
+  type MockSoundBackend,
+  type MockSoundOptions,
+} from '../../ipc/mockSounds.ts';
 import type { BaseId, Theme } from '../../theme/types.ts';
 
 /** Patchroom events that can make a sound or a notification. */
-export const SOUND_EVENTS = ['needs', 'done', 'message', 'error', 'bell'] as const;
+export const SOUND_EVENTS = [
+  'needs',
+  'done',
+  'message',
+  'error',
+  'bell',
+  'decision',
+  'due',
+  'session',
+] as const;
 export type SoundEvent = (typeof SOUND_EVENTS)[number];
+
+/** The pack every event uses until the user mixes it. */
+export const DEFAULT_PACK = 'patchtones';
+
+/** What one event plays: a pack's sound, the user's own file (its id), or nothing. */
+export type MixChoice = { pack: string } | { custom: string } | 'off';
+
+/** A DM's own sound setup: the global mix, muted, or a pack and/or single events of its own. */
+export type DmSoundPref =
+  'default' | 'mute' | { pack?: string; mix?: Partial<Record<SoundEvent, MixChoice>> };
+
+export type PackKind = 'generated' | 'files' | 'imported';
+
+/** One row of `sound_packs`. */
+export interface PackInfo {
+  id: string;
+  name: string;
+  description: string;
+  kind: PackKind;
+  license: string;
+  author: string;
+  /** Where the sounds come from, for the credits. */
+  source?: string;
+  events: Partial<Record<SoundEvent, boolean>>;
+}
+
+/** One row of `sound_claude_profiles` (read only). */
+export interface ClaudeProfile {
+  id: string;
+  name: string;
+  events: SoundEvent[];
+}
+
+export interface ImportedFile {
+  id: string;
+  name: string;
+  durationMs: number;
+}
 
 export type NotifyLevel = 'all' | 'needs' | 'mute';
 export type ModePref = 'light' | 'dark' | 'system';
@@ -35,7 +87,9 @@ export interface Prefs {
     enabled: boolean;
     volume: number;
     perEvent: Record<string, { on: boolean; sound: string }>;
-    perDm: Record<string, 'default' | 'mute'>;
+    /** Per event: a pack's sound, the user's own file or off. */
+    mix: Record<string, MixChoice>;
+    perDm: Record<string, DmSoundPref>;
     hookPolicy: Record<string, 'keep' | 'both'>;
   };
   dnd: { manual: boolean; schedule: DndSchedule | null };
@@ -70,7 +124,11 @@ export const DEFAULT_PREFS: Prefs = {
       message: { on: false, sound: 'message' },
       error: { on: true, sound: 'error' },
       bell: { on: true, sound: 'bell' },
+      decision: { on: true, sound: 'decision' },
+      due: { on: true, sound: 'due' },
+      session: { on: true, sound: 'session' },
     },
+    mix: Object.fromEntries(SOUND_EVENTS.map((e) => [e, { pack: DEFAULT_PACK }])),
     perDm: {},
     hookPolicy: {},
   },
@@ -106,6 +164,12 @@ export function normalizePrefs(raw: unknown): Prefs {
         ...d.sound.perEvent,
         ...(isRecord(sound.perEvent) ? (sound.perEvent as Prefs['sound']['perEvent']) : {}),
       },
+      // Prefs from before sound packs have no mix: every event plays Patch Tones.
+      mix: {
+        ...d.sound.mix,
+        ...(isRecord(sound.mix) ? (sound.mix as Prefs['sound']['mix']) : {}),
+      },
+      perDm: isRecord(sound.perDm) ? (sound.perDm as Prefs['sound']['perDm']) : {},
     },
     dnd: { ...d.dnd, ...(dnd as Partial<Prefs['dnd']>) },
     termPerDm: isRecord(r.termPerDm) ? (r.termPerDm as Prefs['termPerDm']) : {},
@@ -118,6 +182,20 @@ export interface PrefsApi {
   prefsSet(patch: Partial<Prefs>): Promise<Prefs>;
   soundHooksDetect(): Promise<HookDetect[]>;
   notifyTest(): Promise<void>;
+  /** Sound packs: the commands of docs/gauntlet/SOUND-PACKS-BAR.md. */
+  soundPacks(): Promise<PackInfo[]>;
+  /** A file or imported pack's audio. */
+  soundFile(packId: string, event: string): Promise<{ dataUrl: string }>;
+  /** The user's own sounds, newest first. */
+  soundCustomList(): Promise<ImportedFile[]>;
+  /** One of the user's own sounds. */
+  soundCustomFile(id: string): Promise<{ dataUrl: string }>;
+  /** The native file picker. Resolves null when cancelled. */
+  soundPickFile(): Promise<string | null>;
+  soundImportFile(path: string): Promise<ImportedFile>;
+  soundCustomRemove(id: string): Promise<void>;
+  soundClaudeProfiles(): Promise<ClaudeProfile[]>;
+  soundImportClaudeProfile(id: string): Promise<{ packId: string }>;
   /** Subscribe to `prefs:changed`. */
   onPrefsChanged(handler: (prefs: Prefs) => void): Promise<() => void>;
 }
@@ -141,6 +219,47 @@ export function createTauriPrefsApi(): PrefsApi {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('notify_test');
     },
+    async soundPacks() {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<PackInfo[]>('sound_packs');
+    },
+    async soundFile(packId, event) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<{ dataUrl: string }>('sound_file', { packId, event });
+    },
+    async soundPickFile() {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const picked = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Sound', extensions: ['wav', 'aiff', 'mp3', 'm4a'] }],
+      });
+      return typeof picked === 'string' ? picked : null;
+    },
+    async soundCustomList() {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<ImportedFile[]>('sound_custom_list');
+    },
+    async soundCustomFile(id) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<{ dataUrl: string }>('sound_custom_file', { id });
+    },
+    async soundImportFile(path) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<ImportedFile>('sound_import_file', { path });
+    },
+    async soundCustomRemove(id) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('sound_custom_remove', { id });
+    },
+    async soundClaudeProfiles() {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<ClaudeProfile[]>('sound_claude_profiles');
+    },
+    async soundImportClaudeProfile(id) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<{ packId: string }>('sound_import_claude_profile', { id });
+    },
     async onPrefsChanged(handler) {
       const { listen } = await import('@tauri-apps/api/event');
       return listen<{ prefs: Prefs }>('prefs:changed', (e) =>
@@ -151,6 +270,8 @@ export function createTauriPrefsApi(): PrefsApi {
 }
 
 export interface MockPrefsOptions {
+  /** Seed for the mock sound backend (profiles, picked files). */
+  sound?: MockSoundOptions;
   detected?: HookDetect[];
   /** Persist in localStorage under this key so a reload keeps the prefs. */
   storageKey?: string;
@@ -159,7 +280,9 @@ export interface MockPrefsOptions {
 /** In-memory backend for the browser and Playwright. Records `notify_test` calls. */
 export function createMockPrefsApi(opts: MockPrefsOptions = {}): PrefsApi & {
   notifyTests: number;
+  sound: MockSoundBackend;
 } {
+  const sound = createMockSoundBackend(opts.sound);
   const key = opts.storageKey;
   let prefs = DEFAULT_PREFS;
   if (key) {
@@ -173,6 +296,16 @@ export function createMockPrefsApi(opts: MockPrefsOptions = {}): PrefsApi & {
   const handlers = new Set<(p: Prefs) => void>();
   const api = {
     notifyTests: 0,
+    sound,
+    soundPacks: sound.soundPacks,
+    soundFile: sound.soundFile,
+    soundCustomList: sound.soundCustomList,
+    soundCustomFile: sound.soundCustomFile,
+    soundPickFile: sound.soundPickFile,
+    soundImportFile: sound.soundImportFile,
+    soundCustomRemove: sound.soundCustomRemove,
+    soundClaudeProfiles: sound.soundClaudeProfiles,
+    soundImportClaudeProfile: sound.soundImportClaudeProfile,
     prefsGet: () => Promise.resolve(prefs),
     prefsSet(patch: Partial<Prefs>) {
       prefs = normalizePrefs({ ...prefs, ...patch });

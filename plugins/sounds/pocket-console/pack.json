@@ -1,0 +1,29 @@
+{
+  "id": "pocket-console",
+  "name": "Pocket Console",
+  "description": "Bleeps and two-tone blips from a handheld.",
+  "kind": "files",
+  "license": "CC0-1.0",
+  "author": "Kenney (kenney.nl)",
+  "source": "Kenney Digital Audio (CC0)",
+  "originals": {
+    "needs": "twoTone1.ogg",
+    "done": "threeTone1.ogg",
+    "message": "pepSound3.ogg",
+    "error": "lowDown.ogg",
+    "bell": "tone1.ogg",
+    "decision": "phaseJump2.ogg",
+    "due": "powerUp2.ogg",
+    "session": "highUp.ogg"
+  },
+  "sounds": {
+    "needs": "sounds/needs.m4a",
+    "done": "sounds/done.m4a",
+    "message": "sounds/message.m4a",
+    "error": "sounds/error.m4a",
+    "bell": "sounds/bell.m4a",
+    "decision": "sounds/decision.m4a",
+    "due": "sounds/due.m4a",
+    "session": "sounds/session.m4a"
+  }
+}

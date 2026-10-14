@@ -120,6 +120,16 @@ export function PrefsView({ state, store }: { state: AppState; store: AppStore }
     if (!target?.dmId) return;
     const id = target.dmId;
     const raf = requestAnimationFrame(() => {
+      if (target.tab === 'sounds') {
+        const dm = document.querySelector<HTMLDetailsElement>(
+          `.prefs [data-testid="sound-dm-${id}"]`,
+        );
+        if (!dm) return;
+        dm.open = true;
+        dm.scrollIntoView({ block: 'center' });
+        dm.querySelector<HTMLElement>('select')?.focus({ preventScroll: true });
+        return;
+      }
       const row = [
         ...document.querySelectorAll<HTMLElement>('.prefs [data-testid^="term-row-"]'),
       ].find((r) => r.dataset.testid === `term-row-${id}`);
@@ -136,6 +146,7 @@ export function PrefsView({ state, store }: { state: AppState; store: AppStore }
         onClose={() => store.closePanel()}
         dms={state.sessions.map((s) => ({ id: s.id, name: s.name }))}
         initialTab={target?.tab}
+        targetDm={target?.tab === 'sounds' ? target.dmId : undefined}
       />
     );
   }

@@ -27,7 +27,9 @@ export interface PrefsPaneProps {
   onClose(): void;
   dms?: { id: string; name: string }[];
   /** Section to open first. */
-  initialTab?: 'terminal';
+  initialTab?: 'terminal' | 'sounds';
+  /** Open this DM's sound settings. */
+  targetDm?: string;
 }
 
 interface PrefsApi {
@@ -35,6 +37,15 @@ interface PrefsApi {
   prefsSet(patch: Partial<Prefs>): Promise<Prefs>;
   soundHooksDetect(): Promise<{ event: string; command: string; source: string }[]>;
   notifyTest(): Promise<void>;
+  soundPacks: Ipc['soundPacks'];
+  soundFile: Ipc['soundFile'];
+  soundCustomList: Ipc['soundCustomList'];
+  soundCustomFile: Ipc['soundCustomFile'];
+  soundPickFile: Ipc['soundPickFile'];
+  soundImportFile: Ipc['soundImportFile'];
+  soundCustomRemove: Ipc['soundCustomRemove'];
+  soundClaudeProfiles: Ipc['soundClaudeProfiles'];
+  soundImportClaudeProfile: Ipc['soundImportClaudeProfile'];
   onPrefsChanged(handler: (prefs: Prefs) => void): Promise<() => void>;
 }
 
@@ -81,6 +92,15 @@ export function installPrefsApi(ipc: Ipc): void {
     prefsSet: (patch) => ipc.prefsSet(patch),
     soundHooksDetect: () => ipc.soundHooksDetect(),
     notifyTest: () => ipc.notifyTest(),
+    soundPacks: () => ipc.soundPacks(),
+    soundFile: (packId, event) => ipc.soundFile(packId, event),
+    soundCustomList: () => ipc.soundCustomList(),
+    soundCustomFile: (id) => ipc.soundCustomFile(id),
+    soundPickFile: () => ipc.soundPickFile(),
+    soundImportFile: (path) => ipc.soundImportFile(path),
+    soundCustomRemove: (id) => ipc.soundCustomRemove(id),
+    soundClaudeProfiles: () => ipc.soundClaudeProfiles(),
+    soundImportClaudeProfile: (id) => ipc.soundImportClaudeProfile(id),
     onPrefsChanged: (handler) => ipc.on('prefs:changed', (e) => handler(e.prefs)),
   });
 }

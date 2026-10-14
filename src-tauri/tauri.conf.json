@@ -39,6 +39,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "../plugins/sounds/": "sounds/"
+    },
     "externalBin": [
       "binaries/patchroom-hook",
       "binaries/patchroom-statusline"

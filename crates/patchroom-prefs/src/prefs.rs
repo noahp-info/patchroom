@@ -20,6 +20,28 @@ const MAX_PREFS_BYTES: usize = 1024 * 1024;
 /// Patchroom events that can notify or sound.
 pub const EVENTS: [&str; 5] = ["needs", "done", "message", "error", "bell"];
 
+/// Every event a sound can be chosen for. `decision`, `due` and `session` are fired by later
+/// phases; they are selectable and testable now.
+pub const SOUND_EVENTS: [&str; 8] = [
+    "needs", "done", "message", "error", "bell", "decision", "due", "session",
+];
+
+/// The pack every event uses until the user mixes.
+pub const DEFAULT_PACK: &str = "patchtones";
+
+/// Longest pack or custom sound id accepted in prefs.
+const MAX_ID_LEN: usize = 64;
+
+/// Is this a safe id for a pack or a custom sound? Letters, digits, `-` and `_` only.
+#[must_use]
+pub fn valid_sound_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_ID_LEN
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
 /// How much a DM may notify.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -42,14 +64,113 @@ pub enum HookPolicy {
     Both,
 }
 
+/// What one event plays: a pack's sound, one of the user's own files, or nothing.
+///
+/// JSON: `{"pack": "<id>"}`, `{"custom": "<id>"}` or `"off"`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Pick {
+    /// The event's sound from this pack.
+    Pack(String),
+    /// A custom sound the user added.
+    Custom(String),
+    /// No sound for the event.
+    Off,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum PickRepr {
+    Word(String),
+    Pack { pack: String },
+    Custom { custom: String },
+}
+
+impl Serialize for Pick {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Pack(p) => PickRepr::Pack { pack: p.clone() },
+            Self::Custom(c) => PickRepr::Custom { custom: c.clone() },
+            Self::Off => PickRepr::Word("off".into()),
+        }
+        .serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Pick {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        match PickRepr::deserialize(d)? {
+            PickRepr::Word(w) if w == "off" => Ok(Self::Off),
+            PickRepr::Word(w) => Err(serde::de::Error::custom(format!(
+                "a sound choice is {{pack}}, {{custom}} or \"off\", not {w:?}"
+            ))),
+            PickRepr::Pack { pack } => Ok(Self::Pack(pack)),
+            PickRepr::Custom { custom } => Ok(Self::Custom(custom)),
+        }
+    }
+}
+
+impl Pick {
+    fn valid(&self) -> bool {
+        match self {
+            Self::Pack(id) | Self::Custom(id) => valid_sound_id(id),
+            Self::Off => true,
+        }
+    }
+}
+
+/// A DM's own sound mix: the whole pack, or single events.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DmMix {
+    /// Pack that every event of this DM uses, unless `mix` names the event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pack: Option<String>,
+    /// Single events that differ.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub mix: BTreeMap<String, Pick>,
+}
+
 /// Per-DM sound override.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+///
+/// JSON: `"default"`, `"mute"`, or `{pack?, mix?}` (P3 stored only the two words).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DmSound {
     /// Follow the global sound settings.
     Default,
     /// No sound for this DM.
     Mute,
+    /// This DM's own pack or mix.
+    Mix(DmMix),
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum DmSoundRepr {
+    Word(String),
+    Mix(DmMix),
+}
+
+impl Serialize for DmSound {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Default => DmSoundRepr::Word("default".into()),
+            Self::Mute => DmSoundRepr::Word("mute".into()),
+            Self::Mix(m) => DmSoundRepr::Mix(m.clone()),
+        }
+        .serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DmSound {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        match DmSoundRepr::deserialize(d)? {
+            DmSoundRepr::Word(w) if w == "default" => Ok(Self::Default),
+            DmSoundRepr::Word(w) if w == "mute" => Ok(Self::Mute),
+            DmSoundRepr::Word(w) => Err(serde::de::Error::custom(format!(
+                "a DM sound is \"default\", \"mute\" or {{pack, mix}}, not {w:?}"
+            ))),
+            DmSoundRepr::Mix(m) => Ok(Self::Mix(m)),
+        }
+    }
 }
 
 /// Notification settings.
@@ -91,8 +212,10 @@ pub struct Sound {
     pub volume: f64,
     /// Settings per Patchroom event.
     pub per_event: BTreeMap<String, EventSound>,
-    /// Override per DM id.
+    /// Override per DM id: mute, or the DM's own pack or mix.
     pub per_dm: BTreeMap<String, DmSound>,
+    /// What each of the 8 events plays. Missing events play Patch Tones.
+    pub mix: BTreeMap<String, Pick>,
     /// Policy per event, keyed by Patchroom event or by Claude hook event name.
     pub hook_policy: BTreeMap<String, HookPolicy>,
 }
@@ -117,8 +240,15 @@ impl Default for Sound {
                 on("message", false),
                 on("error", true),
                 on("bell", true),
+                on("decision", true),
+                on("due", true),
+                on("session", true),
             ]),
             per_dm: BTreeMap::new(),
+            mix: SOUND_EVENTS
+                .iter()
+                .map(|e| ((*e).to_owned(), Pick::Pack(DEFAULT_PACK.into())))
+                .collect(),
             hook_policy: BTreeMap::new(),
         }
     }
@@ -221,10 +351,82 @@ impl Prefs {
     /// stops the app.
     #[must_use]
     pub fn from_stored(raw: &str) -> Self {
-        serde_json::from_str::<Self>(raw)
+        Self::from_stored_with(raw, false)
+    }
+
+    /// Does `raw` parse and validate as stored prefs? When it does not, [`Prefs::from_stored`]
+    /// falls back to the defaults, and a caller must not act on the defaults as if they were
+    /// the user's choices (for example by deleting files nothing seems to reference).
+    #[must_use]
+    pub fn is_readable(raw: &str) -> bool {
+        serde_json::from_str::<Self>(raw).is_ok_and(|p| p.validated().is_ok())
+    }
+
+    /// Like [`Prefs::from_stored`]. `session_hook` says the user already has a SessionStart
+    /// audio hook: when the stored prefs have no `session` sound row yet (first run, or P3-era
+    /// prefs), that row starts off so the app never doubles the user's own start sound.
+    #[must_use]
+    pub fn from_stored_with(raw: &str, session_hook: bool) -> Self {
+        let fresh = serde_json::from_str::<Value>(raw).map_or(true, |v| {
+            v.pointer("/sound/perEvent/session")
+                .is_none_or(Value::is_null)
+        });
+        let mut p = serde_json::from_str::<Self>(raw)
             .ok()
             .and_then(|p| p.validated().ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if fresh {
+            p.apply_session_default(session_hook);
+        }
+        p
+    }
+
+    /// Set the `session` sound row for a user who has (or has not) a SessionStart audio hook.
+    pub fn apply_session_default(&mut self, session_hook: bool) {
+        if let Some(row) = self.sound.per_event.get_mut("session") {
+            row.on = !session_hook;
+        }
+    }
+
+    /// Ids of the custom sounds that this mix or any DM mix points at.
+    #[must_use]
+    pub fn custom_sound_ids(&self) -> std::collections::HashSet<String> {
+        let mut ids = std::collections::HashSet::new();
+        let mut take = |m: &BTreeMap<String, Pick>| {
+            for p in m.values() {
+                if let Pick::Custom(id) = p {
+                    ids.insert(id.clone());
+                }
+            }
+        };
+        take(&self.sound.mix);
+        for d in self.sound.per_dm.values() {
+            if let DmSound::Mix(m) = d {
+                take(&m.mix);
+            }
+        }
+        ids
+    }
+
+    /// Replace every pick of custom sound `id` with Patch Tones for that event, so removing a
+    /// custom file falls back to a pack sound. Returns whether anything changed.
+    pub fn drop_custom_sound(&mut self, id: &str) -> bool {
+        let mut changed = false;
+        let mut fix = |m: &mut BTreeMap<String, Pick>| {
+            for p in m.values_mut() {
+                if matches!(p, Pick::Custom(c) if c == id) {
+                    *p = Pick::Pack(DEFAULT_PACK.into());
+                    changed = true;
+                }
+            }
+        };
+        fix(&mut self.sound.mix);
+        for d in self.sound.per_dm.values_mut() {
+            if let DmSound::Mix(m) = d {
+                fix(&mut m.mix);
+            }
+        }
+        changed
     }
 
     /// Apply `patch` (an object of top-level keys) and return the result.
@@ -256,10 +458,35 @@ impl Prefs {
             return Err(PrefsError("the preferences are too large".into()));
         }
         let defaults = Sound::default();
-        for e in EVENTS {
+        for e in SOUND_EVENTS {
             if !self.sound.per_event.contains_key(e) {
                 if let Some(d) = defaults.per_event.get(e) {
                     self.sound.per_event.insert(e.to_owned(), d.clone());
+                }
+            }
+            if !self.sound.mix.contains_key(e) {
+                if let Some(d) = defaults.mix.get(e) {
+                    self.sound.mix.insert(e.to_owned(), d.clone());
+                }
+            }
+        }
+        let check_mix = |m: &BTreeMap<String, Pick>| -> Result<(), PrefsError> {
+            for (e, p) in m {
+                if !SOUND_EVENTS.contains(&e.as_str()) {
+                    return Err(PrefsError(format!("unknown sound event {e:?}")));
+                }
+                if !p.valid() {
+                    return Err(PrefsError(format!("bad sound id for {e:?}")));
+                }
+            }
+            Ok(())
+        };
+        check_mix(&self.sound.mix)?;
+        for d in self.sound.per_dm.values() {
+            if let DmSound::Mix(m) = d {
+                check_mix(&m.mix)?;
+                if m.pack.as_deref().is_some_and(|p| !valid_sound_id(p)) {
+                    return Err(PrefsError("bad pack id in a DM sound".into()));
                 }
             }
         }
@@ -339,7 +566,8 @@ mod tests {
             .unwrap();
         assert!(p.sound.enabled);
         assert!((p.sound.volume - 0.2).abs() < 1e-9);
-        assert_eq!(p.sound.per_event.len(), 5);
+        assert_eq!(p.sound.per_event.len(), 8);
+        assert_eq!(p.sound.mix.len(), 8);
         assert_eq!(p.notify, Notify::default());
     }
 
@@ -407,6 +635,91 @@ mod tests {
             (p.base.as_str(), p.cable_preset.as_str()),
             ("patchbay", "copper")
         );
+    }
+
+    #[test]
+    fn p3_prefs_load_as_patch_tones_with_all_eight_events() {
+        let old = r#"{"sound":{"enabled":true,"volume":0.4,
+            "perEvent":{"needs":{"on":true,"sound":"needs"},"done":{"on":false,"sound":"done"}},
+            "perDm":{"a":"mute","b":"default"},"hookPolicy":{}}}"#;
+        let p = Prefs::from_stored(old);
+        assert_eq!(p.sound.per_event.len(), 8);
+        assert!(!p.sound.per_event["done"].on, "stored choices survive");
+        for e in SOUND_EVENTS {
+            assert_eq!(p.sound.mix[e], Pick::Pack("patchtones".into()), "{e}");
+        }
+        assert_eq!(p.sound.per_dm["a"], DmSound::Mute);
+        assert_eq!(p.sound.per_dm["b"], DmSound::Default);
+        let v = serde_json::to_value(&p).unwrap();
+        assert_eq!(v["sound"]["perDm"], json!({"a":"mute","b":"default"}));
+        assert_eq!(v["sound"]["mix"]["done"], json!({"pack":"patchtones"}));
+    }
+
+    #[test]
+    fn mix_and_per_dm_overrides_round_trip() {
+        let p = Prefs::default()
+            .patched(&json!({"sound":{"mix":{
+                "done":{"pack":"lab-glass"},"error":{"custom":"01J0000000000000000000000A"},
+                "bell":"off"},
+              "perDm":{"x":{"pack":"telegraph","mix":{"needs":"off","done":{"pack":"modular"}}},
+                       "y":"mute"}}}))
+            .unwrap();
+        assert_eq!(p.sound.mix["done"], Pick::Pack("lab-glass".into()));
+        assert_eq!(p.sound.mix["bell"], Pick::Off);
+        assert_eq!(p.sound.mix["needs"], Pick::Pack("patchtones".into()));
+        let DmSound::Mix(m) = &p.sound.per_dm["x"] else {
+            panic!("override expected");
+        };
+        assert_eq!(m.pack.as_deref(), Some("telegraph"));
+        assert_eq!(m.mix["needs"], Pick::Off);
+        assert_eq!(p.sound.per_dm["y"], DmSound::Mute);
+        let back = Prefs::from_stored(&serde_json::to_string(&p).unwrap());
+        assert_eq!(back, p);
+        assert_eq!(p.custom_sound_ids().len(), 1);
+    }
+
+    #[test]
+    fn bad_mixes_are_refused() {
+        let base = Prefs::default();
+        for bad in [
+            json!({"sound":{"mix":{"nope":"off"}}}),
+            json!({"sound":{"mix":{"done":"loud"}}}),
+            json!({"sound":{"mix":{"done":{"pack":"../x"}}}}),
+            json!({"sound":{"mix":{"done":{"custom":""}}}}),
+            json!({"sound":{"perDm":{"a":"loud"}}}),
+            json!({"sound":{"perDm":{"a":{"pack":"a/b"}}}}),
+            json!({"sound":{"perDm":{"a":{"mix":{"zzz":"off"}}}}}),
+        ] {
+            assert!(base.patched(&bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn session_starts_off_only_with_a_session_start_hook_and_message_is_off() {
+        let none = Prefs::from_stored_with("{}", false);
+        assert!(none.sound.per_event["session"].on);
+        assert!(!none.sound.per_event["message"].on);
+        let hooked = Prefs::from_stored_with("{}", true);
+        assert!(!hooked.sound.per_event["session"].on);
+        // A stored session row is the user's choice and is never overridden.
+        let mine = r#"{"sound":{"perEvent":{"session":{"on":true,"sound":"session"}}}}"#;
+        assert!(Prefs::from_stored_with(mine, true).sound.per_event["session"].on);
+        let mut p = Prefs::default();
+        p.apply_session_default(true);
+        assert!(!p.sound.per_event["session"].on);
+    }
+
+    #[test]
+    fn dropping_a_custom_sound_falls_back_to_patch_tones() {
+        let id = "01J0000000000000000000000A";
+        let mut p = Prefs::default()
+            .patched(&json!({"sound":{"mix":{"done":{"custom":id}},
+              "perDm":{"x":{"mix":{"needs":{"custom":id}}}}}}))
+            .unwrap();
+        assert!(p.drop_custom_sound(id));
+        assert_eq!(p.sound.mix["done"], Pick::Pack("patchtones".into()));
+        assert!(p.custom_sound_ids().is_empty());
+        assert!(!p.drop_custom_sound(id));
     }
 
     #[test]

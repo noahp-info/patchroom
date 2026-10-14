@@ -2620,6 +2620,7 @@ dependencies = [
  "patchroom-prefs",
  "patchroom-pty",
  "patchroom-search",
+ "patchroom-sounds",
  "patchroom-store",
  "serde",
  "serde_json",
@@ -2708,6 +2709,18 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "patchroom-sounds"
+version = "0.0.1"
+dependencies = [
+ "base64 0.22.1",
+ "patchroom-prefs",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ulid",
 ]
 
 [[package]]
