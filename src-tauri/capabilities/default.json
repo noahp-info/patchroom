@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Minimum capability for the main window. Add permissions per feature, never wildcards.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-fullscreen"
+  ]
 }
