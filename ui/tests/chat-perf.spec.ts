@@ -55,10 +55,18 @@ test.describe('virtualized log', () => {
     expect(Number(await log.getAttribute('data-rows'))).toBeGreaterThanOrEqual(N);
     expect(Number(await log.getAttribute('data-rendered'))).toBeLessThan(80);
 
-    // Scroll from the bottom up through the log for 3 s, one wheel-sized step per frame.
-    const frames = await log.evaluate(
+    // Scroll from the bottom up through the log for 3 s, one wheel-sized step per frame. Long
+    // tasks count main-thread work over 50 ms, so they catch a slow render on any machine. Frame
+    // gaps also measure the compositor clock, which a throttled CI runner pins at 50 ms whatever
+    // the app does, so the frame-rate check only runs where that clock is real.
+    const { frames, longTasks } = await log.evaluate(
       (el) =>
-        new Promise<number[]>((resolve) => {
+        new Promise<{ frames: number[]; longTasks: number[] }>((resolve) => {
+          const longTasks: number[] = [];
+          const obs = new PerformanceObserver((list) => {
+            for (const e of list.getEntries()) longTasks.push(e.duration);
+          });
+          obs.observe({ type: 'longtask', buffered: false });
           const deltas: number[] = [];
           let last = performance.now();
           const t0 = last;
@@ -67,7 +75,10 @@ test.describe('virtualized log', () => {
             last = now;
             el.scrollTop = Math.max(0, el.scrollTop - 90);
             if (now - t0 < 3000 && el.scrollTop > 0) requestAnimationFrame(step);
-            else resolve(deltas);
+            else {
+              obs.disconnect();
+              resolve({ frames: deltas, longTasks });
+            }
           };
           requestAnimationFrame(step);
         }),
@@ -76,9 +87,16 @@ test.describe('virtualized log', () => {
     const sorted = [...frames].sort((a, b) => a - b);
     const p95 = sorted[Math.floor(sorted.length * 0.95)];
     const slow = frames.filter((d) => d > 50).length / frames.length;
-    // 60 fps is 16.7 ms. Headless CI is noisy, so the bar is a p95 under two frames.
-    expect(p95, `p95 frame ${p95.toFixed(1)} ms`).toBeLessThan(34);
-    expect(slow, `share of frames over 50 ms: ${slow.toFixed(3)}`).toBeLessThan(0.03);
+    const worst = Math.max(0, ...longTasks);
+    expect(longTasks.length, `long tasks while scrolling: ${longTasks.length}`).toBeLessThanOrEqual(
+      2,
+    );
+    expect(worst, `worst long task ${worst.toFixed(1)} ms`).toBeLessThan(100);
+    if (!process.env.CI) {
+      // 60 fps is 16.7 ms. The bar is a p95 under two frames.
+      expect(p95, `p95 frame ${p95.toFixed(1)} ms`).toBeLessThan(34);
+      expect(slow, `share of frames over 50 ms: ${slow.toFixed(3)}`).toBeLessThan(0.03);
+    }
     expect(await log.evaluate((el) => el.querySelectorAll('.vrow').length)).toBeLessThan(80);
     expect(errs).toEqual([]);
   });
