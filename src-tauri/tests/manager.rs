@@ -434,7 +434,15 @@ fn send_permission_hook(sock: &Path, key: &str) -> std::os::unix::net::UnixStrea
 
 fn read_reply(s: &std::os::unix::net::UnixStream, timeout: Duration) -> Option<String> {
     use std::io::BufRead;
-    s.set_read_timeout(Some(timeout)).unwrap();
+    // macOS rejects a read timeout (EINVAL) once the peer has closed. A closed socket cannot
+    // block, so the read below still returns the buffered reply or end of file at once.
+    if let Err(e) = s.set_read_timeout(Some(timeout)) {
+        assert_eq!(
+            e.kind(),
+            std::io::ErrorKind::InvalidInput,
+            "set_read_timeout: {e}"
+        );
+    }
     let mut line = String::new();
     match std::io::BufReader::new(s).read_line(&mut line) {
         Ok(n) if n > 0 => Some(line),
