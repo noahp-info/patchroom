@@ -45,6 +45,10 @@ export interface MockControl {
   takeoverArms: { id: string; enabled: boolean }[];
   /** Every `session_mirror_reveal` call. */
   reveals: string[];
+  /** Every `link_open_external` URL. */
+  external: string[];
+  /** Every viewer call, in order: `show <url>`, `place`, `hide`, `go <action>`. */
+  viewer: string[];
   /** Every `session_mirror_end` call that signaled the other copy. */
   mirrorEnds: string[];
   /** Processes the mock "spawned": session_create, session_resume, and non-mirror folder opens. */
@@ -399,6 +403,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     takeovers: [],
     takeoverArms: [],
     reveals: [],
+    external: [],
+    viewer: [],
     mirrorEnds: [],
     spawns: [],
     repaintOnSlash: true,
@@ -734,6 +740,27 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       const s = sessions.get(id);
       if (!s?.mirror) return;
       control.setMirror(id, { ...s.mirror, takeoverWhenClosed: enabled });
+    },
+    async linkOpenExternal(url) {
+      if (!/^https?:\/\//.test(url)) throw new Error('only http and https links open');
+      control.external.push(url);
+    },
+    async viewerShow(url) {
+      if (!/^https?:\/\//.test(url)) throw new Error('only http and https links open');
+      control.viewer.push(`show ${url}`);
+      window.setTimeout(() => {
+        emit('viewer:changed', { url, loading: false });
+        emit('viewer:title', { title: `Page at ${new URL(url).host}` });
+      }, 10);
+    },
+    async viewerPlace() {
+      if (control.viewer.at(-1) !== 'place') control.viewer.push('place');
+    },
+    async viewerHide() {
+      control.viewer.push('hide');
+    },
+    async viewerGo(action) {
+      control.viewer.push(`go ${action}`);
     },
     async sessionMirrorReveal(id) {
       const s = sessions.get(id);

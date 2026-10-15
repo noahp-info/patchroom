@@ -774,3 +774,37 @@ pub async fn session_mirror_end(
     let m = state.inner().clone();
     blocking(move || m.mirror_end(&id, cols, rows)).await
 }
+
+// ---- links: the in-app viewer and the system browser ----
+
+/// `link_open_external {url}`: open an http(s) link in the system default browser.
+#[tauri::command]
+pub async fn link_open_external(url: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::viewer::open_external(&url))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// `viewer_show {url, rect}`: show an http(s) link in the in-app viewer over `rect`.
+#[tauri::command]
+pub async fn viewer_show(app: AppHandle, url: String, rect: crate::viewer::Rect) -> CmdResult<()> {
+    crate::viewer::show(&app, &url, rect)
+}
+
+/// `viewer_place {rect}`: move the viewer with its pane.
+#[tauri::command]
+pub async fn viewer_place(app: AppHandle, rect: crate::viewer::Rect) -> CmdResult<()> {
+    crate::viewer::place(&app, rect)
+}
+
+/// `viewer_hide {}`: hide the viewer. Emits nothing.
+#[tauri::command]
+pub async fn viewer_hide(app: AppHandle) -> CmdResult<()> {
+    crate::viewer::hide(&app)
+}
+
+/// `viewer_go {action}`: `back`, `forward` or `reload`.
+#[tauri::command]
+pub async fn viewer_go(app: AppHandle, action: String) -> CmdResult<()> {
+    crate::viewer::go(&app, &action)
+}

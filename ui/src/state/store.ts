@@ -69,8 +69,18 @@ export interface FolderListing {
   error: string | null;
 }
 
+/** The in-app link viewer. `req` bumps on every open, so the pane navigates once per click. */
+export interface ViewerState {
+  url: string;
+  title: string;
+  loading: boolean;
+  req: number;
+}
+
 export interface AppState {
   ready: boolean;
+  /** The in-app link viewer, or null when closed. */
+  viewer: ViewerState | null;
   sessions: SessionInfo[];
   /** Stored sidebar sections, in position order. DMs with no section sit in the default group. */
   sections: SectionInfo[];
@@ -204,6 +214,7 @@ export class AppStore {
     activity: [],
     prefs: null,
     panel: null,
+    viewer: null,
     prefsTarget: null,
     searchScope: 'all',
     searchSeed: '',
@@ -537,6 +548,14 @@ export class AppStore {
         this.patchSession(e.id, { terminalWait: null });
         // The dialog is gone: its "not sent" notice no longer applies.
         this.chat(e.id).clearNotice('blocked');
+      }),
+      this.ipc.on('viewer:changed', (e) => {
+        const v = this.state.viewer;
+        if (v) this.set({ viewer: { ...v, url: e.url, loading: e.loading } });
+      }),
+      this.ipc.on('viewer:title', (e) => {
+        const v = this.state.viewer;
+        if (v) this.set({ viewer: { ...v, title: e.title } });
       }),
       this.ipc.on('session:working', (e) =>
         this.patchSession(e.id, {
@@ -1032,6 +1051,40 @@ export class AppStore {
     const recent = [id, ...this.state.recent.filter((x) => x !== id)].slice(0, 12);
     writeRecent(recent);
     this.state = { ...this.state, recent };
+  }
+
+  /**
+   * Open an http(s) link where the Links preference says: the in-app viewer or the browser.
+   * `invert` (Cmd-click) picks the other one; `target` forces one.
+   */
+  openLink(url: string, opts: { invert?: boolean; target?: 'patchroom' | 'browser' } = {}): void {
+    if (!/^https?:\/\//i.test(url)) return;
+    let where = opts.target ?? this.state.prefs?.links?.open ?? 'patchroom';
+    if (opts.invert && !opts.target) where = where === 'patchroom' ? 'browser' : 'patchroom';
+    if (where === 'browser') {
+      void this.ipc
+        .linkOpenExternal(url)
+        .catch((err: unknown) => this.set({ error: `Could not open the link: ${String(err)}` }));
+      return;
+    }
+    const req = (this.state.viewer?.req ?? 0) + 1;
+    this.set({ viewer: { url, title: '', loading: true, req } });
+  }
+
+  /** Show an error in the app's error line. */
+  reportError(message: string): void {
+    this.set({ error: message });
+  }
+
+  /** The viewer's page, in the system browser. */
+  viewerToBrowser(): void {
+    if (this.state.viewer) this.openLink(this.state.viewer.url, { target: 'browser' });
+  }
+
+  closeViewer(): void {
+    if (!this.state.viewer) return;
+    this.set({ viewer: null });
+    void this.ipc.viewerHide().catch(() => undefined);
   }
 
   setPanel(panel: Panel, searchScope?: 'dm' | 'all'): void {

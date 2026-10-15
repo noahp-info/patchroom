@@ -43,6 +43,7 @@ function picked(): Picked | null {
  */
 export function SelectionMenu({ store, activeId }: { store: AppStore; activeId: string | null }) {
   const [menu, setMenu] = useState<{ x: number; y: number; pick: Picked } | null>(null);
+  const [link, setLink] = useState<{ x: number; y: number; href: string } | null>(null);
   const [chip, setChip] = useState<{ x: number; y: number; pick: Picked } | null>(null);
   const chipRef = useRef<HTMLDivElement>(null);
 
@@ -58,6 +59,14 @@ export function SelectionMenu({ store, activeId }: { store: AppStore; activeId: 
       const target = e.target as Element | null;
       if (target?.closest(NATIVE)) return;
       const pick = picked();
+      const a = target?.closest('a[href]');
+      const href = a?.getAttribute('href') ?? '';
+      if (!pick && /^https?:\/\//i.test(href)) {
+        e.preventDefault();
+        setChip(null);
+        setLink({ x: e.clientX, y: e.clientY, href });
+        return;
+      }
       if (!pick) return;
       e.preventDefault();
       setChip(null);
@@ -114,6 +123,24 @@ export function SelectionMenu({ store, activeId }: { store: AppStore; activeId: 
 
   return (
     <>
+      {link && (
+        <ContextMenu
+          anchor={{ x: link.x, y: link.y }}
+          items={[
+            {
+              label: 'Open in Patchroom',
+              onSelect: () => store.openLink(link.href, { target: 'patchroom' }),
+            },
+            {
+              label: 'Open in browser',
+              onSelect: () => store.openLink(link.href, { target: 'browser' }),
+            },
+            { label: 'Copy link', onSelect: () => void copyText(link.href), separator: true },
+          ]}
+          label="Link"
+          onClose={() => setLink(null)}
+        />
+      )}
       {menu && (
         <ContextMenu
           anchor={{ x: menu.x, y: menu.y }}

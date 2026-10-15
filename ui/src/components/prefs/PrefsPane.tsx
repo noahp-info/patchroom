@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import './prefs.css';
 import { DndSection } from './DndSection.tsx';
 import { HooksSection } from './HooksSection.tsx';
+import { LinksSection } from './LinksSection.tsx';
 import { NotificationsSection } from './NotificationsSection.tsx';
 import { StatusBarSection } from './StatusBarSection.tsx';
 import { SoundsSection } from './SoundsSection.tsx';
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'sounds', label: 'Sounds' },
   { id: 'dnd', label: 'Do Not Disturb' },
   { id: 'hooks', label: 'Sound hooks' },
+  { id: 'links', label: 'Links' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
@@ -84,6 +86,7 @@ export function PrefsPane({ onClose, dms = [], initialTab = 'themes', targetDm }
           {tab === 'sounds' && <SoundsSection dms={dms} openDm={targetDm} />}
           {tab === 'dnd' && <DndSection />}
           {tab === 'hooks' && <HooksSection />}
+          {tab === 'links' && <LinksSection />}
         </div>
       </div>
     </dialog>

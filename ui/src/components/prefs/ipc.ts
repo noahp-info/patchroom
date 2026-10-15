@@ -113,7 +113,11 @@ export interface Prefs {
   searchAllSessions: boolean;
   statusBar?: { default: string[] | null; perDm: Record<string, string[]> };
   sidebarWidth: number;
+  /** Where a plain click opens a link. Cmd-click opens it in the other place. */
+  links: { open: LinkTarget };
 }
+
+export type LinkTarget = 'patchroom' | 'browser';
 
 /** One row of `sound_hooks_detect`: a command hook of the user's that plays audio. */
 export interface HookDetect {
@@ -154,6 +158,7 @@ export const DEFAULT_PREFS: Prefs = {
   searchAllSessions: false,
   statusBar: { default: null, perDm: {} },
   sidebarWidth: 264,
+  links: { open: 'patchroom' },
 };
 
 /** A stored gain, clamped to 0 to 1.5. Anything that is not a finite number is dropped. */
@@ -213,6 +218,9 @@ export function normalizePrefs(raw: unknown): Prefs {
     base: typeof r.base === 'string' && getBase(r.base) ? (r.base as BaseId) : d.base,
     cablePreset: typeof r.cablePreset === 'string' ? r.cablePreset : d.cablePreset,
     notify: { ...d.notify, ...(notify as Partial<Prefs['notify']>) },
+    links: {
+      open: isRecord(r.links) && r.links.open === 'browser' ? 'browser' : 'patchroom',
+    },
     sound: {
       ...d.sound,
       ...(sound as Partial<Prefs['sound']>),
