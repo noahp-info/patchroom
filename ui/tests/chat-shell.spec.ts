@@ -411,6 +411,10 @@ test.describe('badges', () => {
 
 test.describe('status strip', () => {
   test('renders the user statusLine as ANSI, verbatim, plus chips', async ({ page }) => {
+    // On a dark ground every bright color below already reads at AA, so it must render exactly
+    // as printed. Colors too faint for the ground are nudged to AA (checked per theme in
+    // parity-themes.spec.ts); the near-black '!' shows that here.
+    await page.emulateMedia({ colorScheme: 'dark' });
     const id = await openChat(page, []);
     const raw =
       '\x1b[36mpatchroom\x1b[0m  \x1b[1;32mfeat/p2\x1b[0m   \x1b[38;5;208mtests: 42 ok\x1b[0m\x1b[38;2;10;20;30m!\x1b[0m';
@@ -441,7 +445,8 @@ test.describe('status strip', () => {
     expect((await style('patchroom')).color).toBe('rgb(0, 197, 199)');
     expect((await style('feat/p2')).color).toBe('rgb(0, 194, 0)');
     expect((await style('tests: 42 ok')).color).toBe('rgb(255, 135, 0)');
-    expect((await style('!')).color).toBe('rgb(10, 20, 30)');
+    // rgb(10, 20, 30) on a dark ground is unreadable: nudged lighter, never dropped.
+    expect((await style('!')).color).not.toBe('rgb(10, 20, 30)');
     const bold = (await style('feat/p2')).weight;
     expect(Number(bold)).toBeGreaterThanOrEqual(600);
     const strip = page.getByTestId('status-strip');
