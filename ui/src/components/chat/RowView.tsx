@@ -32,6 +32,8 @@ export interface RowActions {
 export interface Decor {
   /** A search or jump landed here. */
   hit: boolean;
+  /** A comment line in the composer quotes this row. */
+  commented?: boolean;
   pinned: boolean;
   saved: boolean;
   /** Reaction emoji on this item. A reaction is a label only. */
@@ -420,6 +422,7 @@ function RowViewInner({ row, expanded, actions, decor }: RowViewProps) {
       data-kind={item.kind}
       data-key={item.key}
       data-hit={decor?.hit ? 'true' : undefined}
+      data-commented={decor?.commented ? 'true' : undefined}
     >
       {row.head && author !== 'none' && <Who author={author} ms={row.ms} />}
       <ItemBody item={item} expanded={expanded} prompt={row.prompt} actions={actions} />

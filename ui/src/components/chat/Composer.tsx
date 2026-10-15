@@ -4,11 +4,13 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ClipboardEvent,
   type KeyboardEvent,
 } from 'react';
 import type { ChatModel, ChatNotice } from '../../state/chat';
 import type { SendResultKind } from '../../state/store';
+import { composeMessage, type DraftComment } from '../../lib/comments';
 import { Icon } from '../Icon';
 
 export interface ComposerProps {
@@ -52,6 +54,7 @@ export function Composer({
   onPasteImage,
 }: ComposerProps) {
   const [text, setText] = useState(model.draft);
+  const { comments } = useSyncExternalStore(model.subscribe, model.getSnapshot);
   const box = useRef<HTMLTextAreaElement>(null);
   const mirror = useRef<HTMLTextAreaElement>(null);
 
@@ -76,24 +79,29 @@ export function Composer({
 
   const off = ended || !!readOnly;
 
+  const empty = text.trim() === '' && comments.length === 0;
+
   const send = useCallback(() => {
-    if (off || text.trim() === '') return;
+    if (off || empty) return;
     // A dialog only the terminal can answer is up: writing now would answer it by accident.
     if (blocked) {
       onBlocked?.();
       return;
     }
     const sent = text;
+    const lines = model.takeComments();
     setText('');
     model.setDraft('');
-    void Promise.resolve(onSend(sent)).then((r) => {
+    void Promise.resolve(onSend(composeMessage(lines, sent))).then((r) => {
       if (r !== 'blocked_dialog' && r !== 'mirror_readonly' && r !== 'error') return;
-      // Not sent: the draft comes back, ahead of anything typed meanwhile.
+      // Not sent: the draft and its comment lines come back, ahead of anything added meanwhile.
+      model.restoreComments(lines);
+      if (sent.trim() === '') return;
       const next = model.draft ? `${sent}\n${model.draft}` : sent;
       setText(next);
       model.setDraft(next);
     });
-  }, [off, text, blocked, onBlocked, onSend, model]);
+  }, [off, empty, text, blocked, onBlocked, onSend, model]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
@@ -149,6 +157,19 @@ export function Composer({
         </div>
       )}
       <div className="box" data-readonly={readOnly ? 'true' : undefined}>
+        {comments.length > 0 && (
+          <ul className="clines" aria-label="Comments to send" data-testid="comment-lines">
+            {comments.map((c) => (
+              <CommentLine
+                key={c.id}
+                comment={c}
+                model={model}
+                onSubmit={send}
+                onDone={() => box.current?.focus()}
+              />
+            ))}
+          </ul>
+        )}
         <textarea
           ref={box}
           className="input"
@@ -210,7 +231,7 @@ export function Composer({
             className="send"
             aria-label="Send"
             title="Send (Enter)"
-            disabled={off || text.trim() === ''}
+            disabled={off || empty}
             onClick={send}
           >
             <Icon name="send" />
@@ -218,5 +239,71 @@ export function Composer({
         </div>
       </div>
     </div>
+  );
+}
+
+/** One comment line: the quote (click to jump back), the note, and a remove button. */
+function CommentLine({
+  comment,
+  model,
+  onSubmit,
+  onDone,
+}: {
+  comment: DraftComment;
+  model: ChatModel;
+  onSubmit(): void;
+  onDone(): void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (model.claimCommentFocus(comment.id)) input.current?.focus();
+  }, [model, comment.id]);
+  const first = comment.quote.split('\n')[0];
+  return (
+    <li className="cline" data-testid="comment-line" data-key={comment.key ?? undefined}>
+      <button
+        type="button"
+        className="cline__quote"
+        title={comment.key ? `${comment.quote}\n\nClick to jump to it` : comment.quote}
+        disabled={!comment.key}
+        onClick={() => comment.key && model.jumpTo(comment.key)}
+      >
+        <Icon name="chat" />
+        <span>{first}</span>
+      </button>
+      <input
+        ref={input}
+        className="cline__note"
+        value={comment.text}
+        placeholder="Add a comment"
+        aria-label={`Comment on "${first.slice(0, 40)}"`}
+        data-testid="comment-note"
+        onChange={(e) => model.updateComment(comment.id, e.target.value)}
+        onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            onSubmit();
+          } else if (e.key === 'Enter' || e.key === 'Escape') {
+            // Enter finishes the note; the message box takes over, nothing is sent.
+            e.preventDefault();
+            onDone();
+          } else if (e.key === 'Backspace' && comment.text === '') {
+            e.preventDefault();
+            model.removeComment(comment.id);
+            onDone();
+          }
+        }}
+      />
+      <button
+        type="button"
+        className="ib cline__x"
+        aria-label="Remove comment"
+        title="Remove comment"
+        onClick={() => model.removeComment(comment.id)}
+      >
+        <Icon name="x" />
+      </button>
+    </li>
   );
 }

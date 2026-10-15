@@ -1,3 +1,4 @@
+import type { DraftComment } from '../lib/comments';
 import type {
   ChatItem,
   Ipc,
@@ -45,6 +46,8 @@ export interface ChatNotice {
 }
 
 export interface ChatSnapshot {
+  /** Highlight-to-comment lines waiting in the composer. Nothing sends before Send. */
+  comments: DraftComment[];
   /** Main-log items in order. Subagent children are excluded. */
   items: ChatItem[];
   prompts: PromptState[];
@@ -96,6 +99,16 @@ export class ChatModel {
   private threadListeners = new Map<string, Set<() => void>>();
   private loadingMore: Promise<void> | null = null;
   private loadGen = 0;
+  private comments: DraftComment[] = [];
+  private commentSeq = 0;
+  /** The comment whose note box should take focus once it renders. */
+  private focusCommentId: string | null = null;
+  /** True once for the comment just added: its note box takes focus. */
+  claimCommentFocus(id: string): boolean {
+    if (this.focusCommentId !== id) return false;
+    this.focusCommentId = null;
+    return true;
+  }
 
   /** UI state that survives the view unmounting. */
   scroll: { top: number; atBottom: boolean } = { top: 0, atBottom: true };
@@ -138,6 +151,44 @@ export class ChatModel {
     this.draftListeners.add(fn);
     return () => this.draftListeners.delete(fn);
   }
+  // ---- highlight-to-comment ----------------------------------------------------------------
+
+  /** Add a comment line for a highlighted quote. Returns its id. */
+  addComment(key: string | null, quote: string): string {
+    this.commentSeq += 1;
+    const id = `c${this.commentSeq}`;
+    this.comments = [...this.comments, { id, key, quote, text: '' }];
+    this.focusCommentId = id;
+    this.commit();
+    return id;
+  }
+  updateComment(id: string, text: string): void {
+    this.comments = this.comments.map((c) => (c.id === id ? { ...c, text } : c));
+    this.commit();
+  }
+  removeComment(id: string): void {
+    this.comments = this.comments.filter((c) => c.id !== id);
+    this.commit();
+  }
+  /** Take every comment line out (they are being sent). */
+  takeComments(): DraftComment[] {
+    const out = this.comments;
+    if (out.length === 0) return out;
+    this.comments = [];
+    this.commit();
+    return out;
+  }
+  /** Put comment lines back ahead of any added since (a send was refused). */
+  restoreComments(list: DraftComment[]): void {
+    if (list.length === 0) return;
+    this.comments = [...list, ...this.comments];
+    this.commit();
+  }
+  /** Scroll to a row and mark it, as a search hit does. */
+  jumpTo(key: string): void {
+    if (this.byKey.has(key)) this.setHit(key);
+  }
+
   insertIntoDraft(text: string): void {
     this.setDraft(this.draft + text);
     for (const fn of this.draftListeners) fn();
@@ -163,6 +214,7 @@ export class ChatModel {
       if (it) items.push(it);
     }
     return {
+      comments: this.comments,
       items,
       prompts: this.prompts,
       hasMore: this.hasMore,

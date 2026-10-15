@@ -5,6 +5,7 @@ import { NewDmDialog } from './components/NewDmDialog';
 import { ActivityView, PrefsView, SavedView } from './components/PanelViews';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { SearchPanel } from './components/SearchPanel';
+import { SelectionMenu } from './components/SelectionMenu';
 import { ChatView } from './components/chat/ChatView';
 import { useFullscreen } from './lib/fullscreen';
 import { Sidebar } from './components/Sidebar';
@@ -410,6 +411,7 @@ export function App() {
       {state.panel === 'prefs' && <PrefsView state={state} store={store} />}
       {state.panel === 'switcher' && <QuickSwitcher state={state} store={store} />}
       {state.panel === 'search' && <SearchPanel state={state} store={store} />}
+      <SelectionMenu store={store} activeId={state.panel ? null : state.activeId} />
 
       <NewDmDialog
         open={newDmOpen}

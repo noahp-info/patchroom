@@ -3170,3 +3170,113 @@ body.dragging .sbe__grip {
     flex-wrap: wrap;
   }
 }
+
+/* highlight-to-comment: the lines in the composer, the marked source rows, the selection chip */
+.chat .clines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 8px 0;
+  list-style: none;
+}
+.chat .cline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 2px 2px 0;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--mark) 35%, transparent);
+  box-shadow: inset 3px 0 0 var(--mark-line);
+}
+.chat .cline__quote {
+  flex: 0 1 auto;
+  max-width: 45%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 6px 3px 10px;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  --fs: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.chat .cline__quote:disabled {
+  cursor: default;
+}
+.chat .cline__quote:hover:not(:disabled) span {
+  text-decoration: underline;
+}
+.chat .cline__quote span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-style: italic;
+}
+.chat .cline__quote svg.i {
+  flex: none;
+  color: var(--muted);
+}
+.chat .cline__note {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  outline: 0;
+}
+.chat .cline__note:focus {
+  border-color: var(--link);
+}
+.chat .cline__note::placeholder {
+  color: var(--muted);
+}
+.chat .cline__x {
+  flex: none;
+}
+.pr-app .msg[data-commented]:not([data-hit]) {
+  box-shadow: inset 3px 0 0 var(--mark-line);
+  border-radius: var(--r-sm);
+}
+.selchip {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  transform: translate(-50%, calc(-100% - 6px));
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+  --fs: 12px;
+}
+.selchip button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: calc(var(--r-sm) - 2px);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.selchip button:hover,
+.selchip button:focus-visible {
+  background: var(--hover);
+}
+.selchip svg.i {
+  color: var(--muted);
+}
