@@ -3353,7 +3353,7 @@ body.dragging .sbe__grip {
   margin: 2px var(--gutter) 0;
   padding: 4px 2px;
   min-width: 0;
-  --fs: 12.5px;
+  --fs: 13px;
 }
 .chat .working__spin {
   flex: none;
