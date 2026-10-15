@@ -1199,27 +1199,56 @@ impl Manager {
     /// Update presence and emit on change. An exited session stays exited
     /// until it is launched again (late hooks must not revive it).
     fn set_status(&self, id: &str, status: PresenceStatus, needs: Option<Needs>) {
+        self.set_status_with_needs(id, status, needs, None);
+    }
+
+    /// Set presence and, when `needs_writer` names the writer, persist the derived needs-you
+    /// before `session:status` goes out, so a listener that reads the store sees the new flag.
+    pub(super) fn set_status_with_needs(
+        &self,
+        id: &str,
+        status: PresenceStatus,
+        needs: Option<Needs>,
+        needs_writer: Option<&str>,
+    ) {
+        // With a writer, needs-you is derived on every report, changed or not, as before.
+        let reconcile = |m: &Self| {
+            if let Some(writer) = needs_writer {
+                m.reconcile_needs_you(
+                    id,
+                    writer,
+                    &format!("{status:?}"),
+                    status != PresenceStatus::Waiting,
+                );
+            }
+        };
         let mut presence = lock(&self.presence);
+        let unchanged = match presence.get(id) {
+            None => true,
+            Some(p) => {
+                p.status == PresenceStatus::Exited || (p.status == status && p.needs == needs)
+            }
+        };
+        if unchanged {
+            drop(presence);
+            reconcile(self);
+            return;
+        }
         let Some(p) = presence.get_mut(id) else {
             return;
         };
-        if p.status == PresenceStatus::Exited {
-            return;
-        }
-        if p.status == status && p.needs == needs {
-            return;
-        }
         // A turn that was running and is now idle is a finished turn.
         let finished = p.status == PresenceStatus::Busy && status == PresenceStatus::Idle;
         p.status = status;
         p.needs = needs;
+        self.refresh_active(&presence);
+        drop(presence);
+        reconcile(self);
         self.sink.emit(UiEvent::Status {
             id: id.to_owned(),
             status,
             needs,
         });
-        self.refresh_active(&presence);
-        drop(presence);
         if finished {
             self.notify_event(id, Event::Done, "Finished");
         }
@@ -1311,13 +1340,7 @@ impl Manager {
                     self.note_claude_session(key, sid);
                 }
                 let (status, needs) = map_status(se.status);
-                self.set_status(key, status, needs);
-                self.reconcile_needs_you(
-                    key,
-                    "bridge-status",
-                    &format!("{status:?}"),
-                    status != PresenceStatus::Waiting,
-                );
+                self.set_status_with_needs(key, status, needs, Some("bridge-status"));
             }
             BridgeEvent::Hook(rec) => {
                 if let Some(key) = rec.session.key.as_deref() {

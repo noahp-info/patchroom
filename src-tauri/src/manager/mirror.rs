@@ -346,13 +346,7 @@ impl Manager {
         }
         if let Some(st) = e.to_status() {
             let (s, n) = map_status(st);
-            self.set_status(id, s, n);
-            self.reconcile_needs_you(
-                id,
-                "mirror-status",
-                &format!("{s:?}"),
-                s != PresenceStatus::Waiting,
-            );
+            self.set_status_with_needs(id, s, n, Some("mirror-status"));
         }
     }
 

@@ -540,6 +540,177 @@ fn a_terminal_only_dialog_is_signalled_blocks_the_composer_and_clears() {
     e.m.shutdown();
 }
 
+/// Open a chat permission prompt for DM `key` through the bridge socket, as `patchroom-hook`
+/// would. The returned stream stays open: the reply comes only when the prompt resolves.
+fn open_permission_prompt(sock: &Path, key: &str) -> std::os::unix::net::UnixStream {
+    let mut s = std::os::unix::net::UnixStream::connect(sock).unwrap();
+    let line = json!({"v":1,"type":"hook","session_key":key,"hook_pid":1,"ppid":0,"wait_ms":30000,
+        "payload":{"hook_event_name":"PermissionRequest",
+            "session_id":"00000000-0000-4000-8000-0000000000bb","tool_name":"Bash",
+            "tool_input":{"command":"echo held"},"cwd":"/tmp","permission_suggestions":[]}});
+    s.write_all(format!("{line}\n").as_bytes()).unwrap();
+    s.flush().unwrap();
+    s
+}
+
+fn send_plain_hook(sock: &Path, key: &str, event: &str) {
+    let mut s = std::os::unix::net::UnixStream::connect(sock).unwrap();
+    let line = json!({"v":1,"type":"hook","session_key":key,"hook_pid":1,"ppid":0,"wait_ms":0,
+        "payload":{"hook_event_name":event,"session_id":"00000000-0000-4000-8000-0000000000bb",
+            "tool_name":"Bash","tool_input":{"command":"echo held"},"cwd":"/tmp"}});
+    s.write_all(format!("{line}\n").as_bytes()).unwrap();
+    s.flush().unwrap();
+    read_hook_reply(&s, 5);
+}
+
+/// One reply line from the bridge, or `None` if the stream closed or `secs` passed.
+fn read_hook_reply(s: &std::os::unix::net::UnixStream, secs: u64) -> Option<String> {
+    use std::io::BufRead as _;
+    // macOS rejects a read timeout (EINVAL) once the peer has closed; a closed socket
+    // cannot block, so the read below still returns at once.
+    let _ = s.set_read_timeout(Some(Duration::from_secs(secs)));
+    let mut line = String::new();
+    match io::BufReader::new(s).read_line(&mut line) {
+        Ok(n) if n > 0 => Some(line),
+        _ => None,
+    }
+}
+
+/// The newest `session:badges` needs-you flag the sink saw for `id`.
+fn last_badge_needs_you(sink: &Sink, id: &str) -> Option<bool> {
+    sink.events
+        .lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .filter(|(_, e)| e.name() == "session:badges")
+        .map(|(_, e)| e.payload())
+        .find(|p| p["id"] == id)
+        .map(|p| p["needsYou"].as_bool().unwrap())
+}
+
+/// Real Manager, real PTY, real bridge: a terminal wait cleared while a chat
+/// prompt is open must leave needs-you true (in the store, which `list` reads, and in the
+/// emitted badge) until the prompt resolves. Every step waits on an event or polls to a
+/// deadline; the stub is gated by files, never by sleeps.
+#[test]
+fn a_terminal_wait_clear_keeps_needs_you_while_a_chat_prompt_is_open() {
+    let gate = tempfile::tempdir().unwrap();
+    let g = gate.path().display();
+    let stub = format!(
+        "while [ ! -e '{g}/draw' ]; do sleep 0.05; done\n\
+         printf 'Settings\\r\\n\\r\\n\\342\\235\\257 1. Haiku\\r\\n  2. Sonnet\\r\\n\\r\\nEnter to confirm - Esc to cancel\\r\\n'\n\
+         while [ ! -e '{g}/release' ]; do sleep 0.05; done\n\
+         printf '\\033[2J\\033[H> \\r\\n  ? for shortcuts\\r\\n'\nsleep 60"
+    );
+    let e = env(&stub);
+    let id = dm_in(&e);
+    let sock = e._data.path().join("bridge.sock");
+
+    // 1. A terminal-only dialog draws: the wait rises and needs-you with it. The raise
+    //    reconciles before it emits, so the event is the cue: no sleep, no threshold.
+    std::fs::write(gate.path().join("draw"), "").unwrap();
+    e.sink.wait_for("session:terminal_wait", 0, 15);
+    assert!(e.info(&id).terminal_wait.is_some());
+    assert!(
+        e.info(&id).needs_you,
+        "needs-you was not raised by the wait"
+    );
+
+    // 2. A chat prompt opens while the dialog is still on screen. The chat owns the ask, so
+    //    the terminal wait ends (a clear) while the prompt stays open.
+    let hook = open_permission_prompt(&sock, &id);
+    let p = e.sink.wait_for("prompt:pending", 0, 10);
+    assert_eq!(p["id"], id.as_str());
+    e.sink.wait_for("session:terminal_wait_clear", 0, 15);
+
+    // 3. The clear reconciles before it emits, so the first look after the event must
+    //    already see needs-you true, in the store (`list` reads it) and in the badge.
+    assert!(e.info(&id).terminal_wait.is_none());
+    assert!(
+        e.info(&id).needs_you,
+        "the terminal-wait clear dropped needs-you while a chat prompt is open"
+    );
+    assert_ne!(
+        last_badge_needs_you(&e.sink, &id),
+        Some(false),
+        "a needs-you=false badge was emitted by the clear"
+    );
+    // The dialog going away on screen must not clear it either.
+    std::fs::write(gate.path().join("release"), "").unwrap();
+    wait_until("the stub to repaint", 10, || {
+        e.m.screen_text(&id).unwrap().contains("? for shortcuts")
+    });
+    // It holds over a window of polls (a late writer would show here), without a threshold:
+    // the loop ends after a fixed number of looks, not a timing bound.
+    for _ in 0..25 {
+        assert!(e.info(&id).needs_you, "needs-you dropped after the clear");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    // 4. The prompt resolves: only now does needs-you clear.
+    let pid = p["promptId"].as_str().unwrap().to_owned();
+    e.m.prompt_answer(&id, &pid, patchroom_lib::manager::PromptAnswer::Allow)
+        .unwrap();
+    e.sink.wait_for("prompt:resolved", 0, 10);
+    // claude moves on once the tool is allowed; its hooks end the presence wait too.
+    assert!(
+        read_hook_reply(&hook, 10).is_some(),
+        "the hook was not answered"
+    );
+    send_plain_hook(&sock, &id, "PostToolUse");
+    send_plain_hook(&sock, &id, "Stop");
+    wait_until("needs-you to clear after the prompt resolved", 10, || {
+        !e.info(&id).needs_you && last_badge_needs_you(&e.sink, &id) == Some(false)
+    });
+    drop(hook);
+    e.m.shutdown();
+}
+
+/// Real Manager and bridge: when a prompt puts the DM into Waiting, the persisted needs-you
+/// flag (announced by `session:badges`) lands before `session:status` says Waiting, so a
+/// listener that reacts to the status and reads the store already sees it. Order is read
+/// from the sink's event sequence, never from timings.
+#[test]
+fn needs_you_is_persisted_before_the_waiting_status_goes_out() {
+    let e = env("printf '> \\r\\n  ? for shortcuts\\r\\n'\nsleep 60");
+    let id = dm_in(&e);
+    let sock = e._data.path().join("bridge.sock");
+    let hook = open_permission_prompt(&sock, &id);
+    e.sink.wait_for("prompt:pending", 0, 10);
+    wait_until("the DM to report Waiting", 10, || {
+        e.sink
+            .first_at("session:status", |p| {
+                p["id"] == id.as_str() && p["status"] == "waiting"
+            })
+            .is_some()
+    });
+    let order: Vec<(String, Value)> = e
+        .sink
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, ev)| (ev.name().to_owned(), ev.payload()))
+        .filter(|(_, p)| p["id"] == id.as_str())
+        .collect();
+    let waiting = order
+        .iter()
+        .position(|(n, p)| n == "session:status" && p["status"] == "waiting")
+        .expect("a Waiting status");
+    let badge = order
+        .iter()
+        .position(|(n, p)| n == "session:badges" && p["needsYou"] == true)
+        .expect("a needs-you badge");
+    assert!(
+        badge < waiting,
+        "session:status Waiting (#{waiting}) went out before needs-you was persisted (#{badge})"
+    );
+    assert!(e.info(&id).needs_you);
+    drop(hook);
+    e.m.shutdown();
+}
+
 #[test]
 fn a_send_checks_the_screen_itself_so_a_fresh_dialog_still_blocks() {
     // The dialog is drawn, then the test sends at once: before the debounce could raise.

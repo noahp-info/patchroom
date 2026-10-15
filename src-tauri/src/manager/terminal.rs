@@ -374,11 +374,14 @@ impl Manager {
                     since: *since,
                 });
             }
-            Step::Update { reason, since } => self.sink.emit(UiEvent::TerminalWait {
-                id: id.to_owned(),
-                reason: reason.clone(),
-                since: *since,
-            }),
+            Step::Update { reason, since } => {
+                self.reconcile_needs_you(id, "terminal-update", reason, false);
+                self.sink.emit(UiEvent::TerminalWait {
+                    id: id.to_owned(),
+                    reason: reason.clone(),
+                    since: *since,
+                });
+            }
             Step::Clear => {
                 self.reconcile_needs_you(id, "terminal-clear", "the wait ended", true);
                 self.sink

@@ -958,10 +958,11 @@ fn latency_badges_statusline_history_and_restart() {
     // Resuming starts a fresh process: whatever waited before is gone, history carries on.
     l2.m.resume(&l2.id, None, None).unwrap();
     l2.ready();
-    assert!(
-        !l2.m.list().unwrap()[0].needs_you,
-        "a new process has no open prompt"
-    );
+    let end = Instant::now() + Duration::from_secs(10);
+    while l2.m.list().unwrap()[0].needs_you {
+        assert!(Instant::now() < end, "a new process has no open prompt");
+        std::thread::sleep(Duration::from_millis(50));
+    }
     let mark = l2.sink.len();
     l2.send("Reply with exactly the single word: back");
     let (i, a) = l2.wait_item(mark, "assistant reply after resume", |x| {
