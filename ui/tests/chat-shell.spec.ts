@@ -98,7 +98,7 @@ test.describe('composer', () => {
     const id = await openChat(page, []);
     await page.evaluate((sid) => window.__PR_MOCK__!.exit(sid, 0), id);
     await expect(page.getByTestId('composer-input')).toBeDisabled();
-    await expect(page.getByTestId('composer-input')).toHaveAttribute('placeholder', /has ended/);
+    await expect(page.getByTestId('composer-placeholder')).toHaveText(/has ended/);
   });
 
   test('a pasted image is saved through paste_image and its path lands in the draft', async ({

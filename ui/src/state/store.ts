@@ -154,6 +154,31 @@ function writeLastCwd(cwd: string): void {
   }
 }
 
+const VIEWS_KEY = 'patchroom.views';
+/** Each DM's last view (chat or terminal), so switching DMs or restarting keeps it. */
+function readViews(): Record<string, ViewMode> {
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(VIEWS_KEY) ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    const out: Record<string, ViewMode> = {};
+    for (const [k, v] of Object.entries(raw)) if (v === 'terminal') out[k] = v;
+    return out;
+  } catch {
+    return {};
+  }
+}
+function writeViews(views: Record<string, ViewMode>): void {
+  // Only terminal is stored: chat is the default.
+  const keep = Object.fromEntries(Object.entries(views).filter(([, v]) => v === 'terminal'));
+  try {
+    window.localStorage.setItem(VIEWS_KEY, JSON.stringify(keep));
+  } catch {
+    // Storage can be blocked; the view then lasts until the app quits.
+  }
+}
+
 /** Last path segment, for a default DM name. */
 export function folderName(cwd: string): string {
   return cwd.split('/').filter(Boolean).pop() ?? cwd;
@@ -172,7 +197,7 @@ export class AppStore {
     lastCwd: readLastCwd(),
     error: null,
     checkFailed: null,
-    views: {},
+    views: readViews(),
     badges: {},
     thread: null,
     marks: [],
@@ -276,7 +301,9 @@ export class AppStore {
       this.set({ termNotes: rest });
     }
     if (this.viewOf(id) === view) return;
-    this.set({ views: { ...this.state.views, [id]: view } });
+    const views = { ...this.state.views, [id]: view };
+    this.set({ views });
+    writeViews(views);
     this.hintView(id, view);
   }
 
@@ -1017,11 +1044,14 @@ export class AppStore {
     this.set({ panel: 'prefs', prefsTarget: target });
   }
 
-  /** Open a DM, on its chat, optionally scrolled to an item or a pending prompt. */
+  /**
+   * Open a DM in the view it was left in. A target (an item or a pending prompt) opens the chat,
+   * scrolled to it.
+   */
   openDm(id: string, target: { itemKey?: string; promptId?: string } = {}): void {
     this.set({ panel: null });
     this.select(id);
-    this.setView(id, 'chat');
+    if (target.itemKey || target.promptId) this.setView(id, 'chat');
     const chat = this.chat(id);
     if (target.itemKey) void chat.openAt(target.itemKey);
     else if (target.promptId) chat.focusKey(`prompt:${target.promptId}`);

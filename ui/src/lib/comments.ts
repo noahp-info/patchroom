@@ -5,6 +5,9 @@ export interface DraftComment {
   key: string | null;
   quote: string;
   text: string;
+  /** Where the selection started in the row's text, and its raw length: marks the exact words. */
+  at?: number;
+  len?: number;
 }
 
 /** Longest quote kept on a comment line. The agent gets the head of it and an ellipsis. */

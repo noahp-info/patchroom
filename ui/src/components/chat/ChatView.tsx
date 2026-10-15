@@ -22,6 +22,7 @@ import type { Decor, RowActions } from './RowView';
 import { MirrorBanner, TerminalWaitBanner, mirrorWhere } from './Banners';
 import { StatusStrip } from './StatusStrip';
 import { copyText } from '../../lib/clipboard';
+import { clearComments, paintComments } from '../../lib/commentHighlight';
 import { ThreadPane } from './ThreadPane';
 
 export interface ChatViewProps {
@@ -183,6 +184,36 @@ export function ChatView({ store, session, visible, unread, thread, prefs, marks
   const snap = useSyncExternalStore(model.subscribe, model.getSnapshot);
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const root = useRef<HTMLDivElement>(null);
+
+  // Highlight-to-comment: the quoted words stay marked while their line waits, and the one
+  // being edited stays in view. Rows mount and unmount as the log scrolls, so repaint on change.
+  const revealed = useRef<string | null>(null);
+  useEffect(() => {
+    const el = root.current;
+    if (!visible || !el) return;
+    const { comments, activeComment } = snap;
+    if (comments.length === 0) {
+      clearComments();
+      revealed.current = null;
+      return;
+    }
+    const paint = () => {
+      const active = paintComments(el, comments, activeComment);
+      if (!active || revealed.current === activeComment) return;
+      const scroller = el.querySelector<HTMLElement>('.vlog');
+      if (!scroller) return;
+      const r = active.getBoundingClientRect();
+      const box = scroller.getBoundingClientRect();
+      revealed.current = activeComment;
+      if (r.top >= box.top + 8 && r.bottom <= box.bottom - 8) return;
+      scroller.scrollTop += r.top - box.top - box.height / 3;
+    };
+    paint();
+    if (!activeComment) revealed.current = null;
+    const mo = new MutationObserver(paint);
+    mo.observe(el.querySelector('.vlog') ?? el, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, [visible, snap]);
 
   useEffect(() => {
     void model.ensureLoaded();

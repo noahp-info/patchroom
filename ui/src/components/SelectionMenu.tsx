@@ -13,6 +13,8 @@ interface Picked {
   text: string;
   /** The chat row the selection starts in, when it is one. */
   key: string | null;
+  /** Offset of the selection in the row's text, so the exact words can be marked again. */
+  at?: number;
 }
 
 /** The current page selection, or null when nothing (or only whitespace) is selected. */
@@ -25,7 +27,12 @@ function picked(): Picked | null {
   const el = node instanceof Element ? node : (node?.parentElement ?? null);
   if (el?.closest(NATIVE)) return null;
   const row = el?.closest<HTMLElement>('.chat [data-key]');
-  return { text, key: row?.dataset.key ?? null };
+  if (!row) return { text, key: null };
+  const r = sel.getRangeAt(0);
+  const head = document.createRange();
+  head.setStart(row, 0);
+  head.setEnd(r.startContainer, r.startOffset);
+  return { text, key: row.dataset.key ?? null, at: head.toString().length };
 }
 
 /**
@@ -41,7 +48,7 @@ export function SelectionMenu({ store, activeId }: { store: AppStore; activeId: 
 
   const comment = (pick: Picked) => {
     if (!activeId) return;
-    store.chat(activeId).addComment(pick.key, cleanQuote(pick.text));
+    store.chat(activeId).addComment(pick.key, cleanQuote(pick.text), pick.at, pick.text.length);
     window.getSelection()?.removeAllRanges();
     setChip(null);
   };

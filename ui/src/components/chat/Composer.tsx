@@ -81,6 +81,11 @@ export function Composer({
   }, [text]);
 
   const off = ended || !!readOnly;
+  const placeholder = ended
+    ? 'This session has ended. Resume it to keep talking.'
+    : readOnly
+      ? readOnly
+      : `Message ${name}`;
 
   const empty = text.trim() === '' && comments.length === 0;
 
@@ -185,26 +190,29 @@ export function Composer({
             ))}
           </ul>
         )}
-        <textarea
-          ref={box}
-          className="input"
-          rows={1}
-          value={text}
-          disabled={off}
-          placeholder={
-            ended
-              ? 'This session has ended. Resume it to keep talking.'
-              : readOnly
-                ? readOnly
-                : `Message ${name}`
-          }
-          aria-label={`Message ${name}`}
-          data-testid="composer-input"
-          spellCheck
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-        />
+        <div className="input-wrap">
+          <textarea
+            ref={box}
+            className="input"
+            rows={1}
+            value={text}
+            disabled={off}
+            aria-label={`Message ${name}`}
+            aria-placeholder={placeholder}
+            data-testid="composer-input"
+            spellCheck
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+          />
+          {/* Drawn by us, not the native placeholder: WebKit can repaint a cleared field's
+              placeholder only where the old text was, which shows a clipped "Mes". */}
+          {text === '' && (
+            <span className="input-ph" aria-hidden="true" data-testid="composer-placeholder">
+              {placeholder}
+            </span>
+          )}
+        </div>
         <textarea
           ref={mirror}
           className="input mirror"
@@ -295,6 +303,8 @@ function CommentLine({
         placeholder="Add a comment"
         aria-label={`Comment on "${first.slice(0, 40)}"`}
         data-testid="comment-note"
+        onFocus={() => model.setActiveComment(comment.id)}
+        onBlur={() => model.setActiveComment(null)}
         onChange={(e) => model.updateComment(comment.id, e.target.value)}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return;

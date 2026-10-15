@@ -95,6 +95,8 @@ pub const HIDDEN_LINE_TYPES: &[(&str, &str)] = &[
     ("content-replacement", "bookkeeping: tool result replacement record"),
     ("speculation-accept", "bookkeeping: speculative execution record"),
     ("continued-in", "bookkeeping: this session continues in another session file"),
+    ("api-request", "bookkeeping: API request log (model, params, digests)"),
+    ("api-request-blob", "bookkeeping: API request body log"),
 ];
 
 /// Attachment types that are context injections, not conversation. Each is hidden.
@@ -1604,6 +1606,20 @@ mod tests {
             (acct.lines, acct.items, acct.hidden, acct.fallback),
             (4, 3, 0, 0)
         );
+    }
+
+    #[test]
+    fn api_request_logs_are_bookkeeping_not_fallback_rows() {
+        let mut m = Mapper::new("main", None);
+        let f = feed_all(
+            &mut m,
+            &[
+                json!({"type":"api-request","id":"r","sessionId":"s","params":{"model":"m"},"shapeHash":"h"}),
+                json!({"type":"api-request-blob","hash":"h","sessionId":"s","message":{"role":"user","content":"x"}}),
+            ],
+        );
+        assert!(f.iter().all(|x| matches!(x.outcome, Outcome::Hidden(_))));
+        assert_eq!(m.accounting().fallback, 0);
     }
 
     #[test]

@@ -32,7 +32,7 @@ test.describe('session parity: mirror', () => {
     // The composer is off, with the reason in it.
     const box = page.getByTestId('composer-input');
     await expect(box).toBeDisabled();
-    await expect(box).toHaveAttribute('placeholder', /Read-only: open in iTerm/);
+    await expect(page.getByTestId('composer-placeholder')).toHaveText(/Read-only: open in iTerm/);
     await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
     // There is no terminal to show.
     await expect(page.getByRole('button', { name: 'Terminal' })).toBeDisabled();

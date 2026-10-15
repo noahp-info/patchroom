@@ -155,4 +155,60 @@ test.describe('highlight to comment', () => {
     await page.locator('.msg[data-key="a1"]').click();
     await expect(page.getByTestId('selection-chip')).toHaveCount(0);
   });
+
+  test('the exact quoted words stay marked, stronger while the note is edited', async ({
+    page,
+  }) => {
+    await openChat(page, [
+      { key: 'r1', ts, kind: 'assistant', text: 'Holly is evergreen. Jasmine is evergreen too.' },
+    ]);
+    // The second "evergreen", not the first.
+    await page.evaluate(() => {
+      const row = document.querySelector('.msg[data-key="r1"]')!;
+      const w = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        const at = n.textContent!.lastIndexOf('evergreen');
+        if (at < 0) continue;
+        const r = document.createRange();
+        r.setStart(n, at);
+        r.setEnd(n, at + 9);
+        getSelection()!.removeAllRanges();
+        getSelection()!.addRange(r);
+      }
+      document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+    });
+    await page.getByTestId('selchip-comment').click();
+    await expect(page.getByTestId('comment-note')).toBeFocused();
+    const marked = (name: string) =>
+      page.evaluate((n) => {
+        const h = CSS.highlights.get(n);
+        if (!h) return null;
+        const [r] = [...h] as Range[];
+        if (!r) return null;
+        const pre = document.createRange();
+        pre.setStart(r.startContainer.parentElement!.closest('.msg')!, 0);
+        pre.setEnd(r.startContainer, r.startOffset);
+        return { text: r.toString(), before: pre.toString() };
+      }, name);
+    await expect.poll(() => marked('pr-comment-active')).toMatchObject({ text: 'evergreen' });
+    expect((await marked('pr-comment-active'))!.before).toContain('Jasmine is ');
+    // Leaving the note keeps the mark, at the normal strength.
+    await page.getByTestId('composer-input').focus();
+    await expect.poll(() => marked('pr-comment')).toMatchObject({ text: 'evergreen' });
+    expect(await marked('pr-comment-active')).toBeNull();
+    // Sending clears it.
+    await page.getByTestId('composer-input').press('Enter');
+    await expect.poll(() => marked('pr-comment')).toBeNull();
+  });
+
+  test('a sent comment shows its quote as a quote', async ({ page }) => {
+    await openChat(page, ITEMS);
+    await selectAndRelease(page, 'a1', 'three passes');
+    await page.getByTestId('selchip-comment').click();
+    await page.getByTestId('comment-note').fill('why three?');
+    await page.getByTestId('comment-note').press('Meta+Enter');
+    const sent = page.locator('.msg[data-kind="user"]').last();
+    await expect(sent.locator('blockquote.uq')).toHaveText('three passes');
+    await expect(sent.locator('.usertext > p')).toHaveText('why three?');
+  });
 });
