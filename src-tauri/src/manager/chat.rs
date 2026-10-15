@@ -431,7 +431,7 @@ impl Manager {
             return;
         }
         // The process is gone, so whatever waited on it can no longer be answered.
-        self.clear_needs_you(id);
+        self.force_clear_needs_you(id, "session-exit", "the process is gone");
         if let Some(chat) = self.chat_of(id) {
             chat.watcher.set_interval(IDLE_POLL);
         }
@@ -807,7 +807,7 @@ impl Manager {
         });
     }
 
-    /// Set the persisted needs-you flag from presence (`waiting` means needs you).
+    /// Write the persisted needs-you flag. Only `needs.rs` calls this, with the derived value.
     pub(super) fn note_needs_you(&self, id: &str, needs: bool) {
         let Ok(conv) = parse_id(id) else { return };
         let store = lock(&self.store);
@@ -824,10 +824,6 @@ impl Manager {
                 self.notify_event(id, patchroom_prefs::Event::Needs, self.needs_body(id));
             }
         }
-    }
-
-    pub(super) fn clear_needs_you(&self, id: &str) {
-        self.note_needs_you(id, false);
     }
 
     // ---- prompts ----
@@ -893,6 +889,7 @@ impl Manager {
                 at_ms: now_ms(),
             },
         );
+        self.reconcile_needs_you(key, "prompt-open", "permission held", false);
         // Look now, then once more after the grace period (the tool_use line trails the
         // hook by about 100 ms).
         chat.watcher.kick();
@@ -988,6 +985,8 @@ impl Manager {
         if release_now {
             // The DM shows the terminal: let the TUI draw its picker right away.
             self.bridge.release_to_terminal(q.id);
+        } else {
+            self.reconcile_needs_you(key, "prompt-open", "question held", false);
         }
     }
 
@@ -1030,6 +1029,8 @@ impl Manager {
         };
         if release_now {
             self.bridge.release_to_terminal(p.id);
+        } else {
+            self.reconcile_needs_you(key, "prompt-open", "plan held", false);
         }
     }
 
@@ -1140,6 +1141,7 @@ impl Manager {
         let Some(p) = lock(&chat.state).prompts.remove(&r.id) else {
             return;
         };
+        self.reconcile_needs_you(key, "prompt-resolved", "prompt resolved", true);
         if !p.emitted {
             // The UI never saw it (answered at once in the terminal): stay silent.
             return;

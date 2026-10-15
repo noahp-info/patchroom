@@ -204,6 +204,8 @@ run_scenario() {
   done
   cat "$sb"/app-*.log >"$sb/app-all.log" 2>/dev/null
   cp "$sb/data/notify-decisions.log" "$sb/notify-decisions.log" 2>/dev/null
+  cp "$sb/data/needs-you-trace.log" "$sb/needs-you-trace.log" 2>/dev/null
+  cp "$sb/data/needs-you-trace.log" "$sb/report/needs-you-trace.log" 2>/dev/null
   echo "$idx $(basename "$script") $phase_n" >>"$BASE/manifest.txt"
   sleep 2  # let hook and claude processes notice the exit
 }
@@ -312,6 +314,14 @@ for script, facts in facts_all.items():
     if facts.get("probe") or facts.get("visibilityStateReal"):
         print(f"{script}: visibilityState={facts.get('visibilityStateReal')} hasFocus={facts.get('hasFocus')} probe={json.dumps(facts.get('probe'))}")
 for idx, script, phases in manifest:
-    print(f"scenario {idx} ({script}): {base}/s{idx}/report/report.json  app log: {base}/s{idx}/app-all.log  decisions: {base}/s{idx}/notify-decisions.log")
+    print(f"scenario {idx} ({script}): {base}/s{idx}/report/report.json  app log: {base}/s{idx}/app-all.log  decisions: {base}/s{idx}/notify-decisions.log  needs-you trace: {base}/s{idx}/needs-you-trace.log")
+    # The needs-you trace (writer, old, new, reason): a count always, the lines when anything failed.
+    trace = [l for l in read(f"{base}/s{idx}/needs-you-trace.log").splitlines() if l.strip()]
+    cleared = [l for l in trace if "old=true new=false" in l]
+    kept = [l for l in trace if "reason=kept:" in l]
+    print(f"  needs-you trace: {len(trace)} lines, {len(cleared)} clears, {len(kept)} clears blocked by another source")
+    if passed != len(rows):
+        for l in trace[-60:]:
+            print("    " + l)
 sys.exit(0 if passed == len(rows) else 1)
 PY

@@ -42,12 +42,14 @@ use serde::{Deserialize, Serialize};
 mod chat;
 mod folder;
 mod mirror;
+mod needs;
 mod paste;
 mod slack;
 mod terminal;
 
 pub use chat::{ImageData, PromptAnswer};
 pub use mirror::MirrorInfo;
+pub use needs::TRACE_LOG as NEEDS_TRACE_LOG;
 pub use slack::{ActivityRow, Located, MarkInfo, Reindexed, DECISION_LOG};
 pub use terminal::{SendOutcome, TerminalWaitInfo};
 
@@ -354,6 +356,8 @@ pub struct Manager {
     mirror_monitor: AtomicBool,
     /// Terminal-only waits per DM.
     waits: Mutex<HashMap<String, terminal::WaitTrack>>,
+    /// Serializes the needs-you derivation (gather the sources, then write the flag).
+    needs_gate: Mutex<()>,
 }
 
 /// Forwards every event and adds `activity:changed` after the ones that change the Activity
@@ -435,6 +439,7 @@ impl Manager {
             mirrors: Mutex::new(HashMap::new()),
             mirror_monitor: AtomicBool::new(false),
             waits: Mutex::new(HashMap::new()),
+            needs_gate: Mutex::new(()),
         });
         // The app always has a chat client, so blocking hooks are answered through it.
         manager.bridge.set_chat_attached(true);
@@ -1062,7 +1067,7 @@ impl Manager {
 
         if spec.is_claude() {
             // A new process has no open prompts: whatever waited before is gone.
-            self.clear_needs_you(id);
+            self.force_clear_needs_you(id, "session-start", "a new process has no open prompts");
             self.start_chat(id, cwd, claude_sid);
         }
         let writer_pty = Arc::clone(&pty);
@@ -1307,7 +1312,12 @@ impl Manager {
                 }
                 let (status, needs) = map_status(se.status);
                 self.set_status(key, status, needs);
-                self.note_needs_you(key, status == PresenceStatus::Waiting);
+                self.reconcile_needs_you(
+                    key,
+                    "bridge-status",
+                    &format!("{status:?}"),
+                    status != PresenceStatus::Waiting,
+                );
             }
             BridgeEvent::Hook(rec) => {
                 if let Some(key) = rec.session.key.as_deref() {

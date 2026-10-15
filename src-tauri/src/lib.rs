@@ -163,6 +163,7 @@ macro_rules! app_handler {
             e2e::e2e_quit,
             e2e::e2e_restart,
             e2e::e2e_decision_log,
+            e2e::e2e_needs_trace,
             e2e::e2e_screen_text,
             e2e::e2e_outside_session,
             e2e::e2e_outside_done,

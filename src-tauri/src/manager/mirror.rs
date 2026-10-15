@@ -227,7 +227,7 @@ impl Manager {
             chat.watcher.set_interval(super::chat::IDLE_POLL);
         }
         self.set_status(id, PresenceStatus::Exited, None);
-        self.note_needs_you(id, false);
+        self.force_clear_needs_you(id, "mirror-end", "the other process is gone");
         true
     }
 
@@ -347,7 +347,12 @@ impl Manager {
         if let Some(st) = e.to_status() {
             let (s, n) = map_status(st);
             self.set_status(id, s, n);
-            self.note_needs_you(id, s == PresenceStatus::Waiting);
+            self.reconcile_needs_you(
+                id,
+                "mirror-status",
+                &format!("{s:?}"),
+                s != PresenceStatus::Waiting,
+            );
         }
     }
 

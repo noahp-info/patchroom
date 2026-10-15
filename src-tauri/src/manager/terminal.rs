@@ -310,7 +310,7 @@ impl Manager {
                 .entry(id.clone())
                 .or_default()
                 .step(now, now_ms, &inputs);
-            self.apply_wait_step(id, &step, &inputs);
+            self.apply_wait_step(id, &step);
         }
         // Sessions that ended or were deleted: whatever they waited on is gone.
         let gone: Vec<String> = lock(&self.waits)
@@ -362,19 +362,17 @@ impl Manager {
         }
     }
 
-    fn apply_wait_step(&self, id: &str, step: &Step, inputs: &Inputs) {
+    fn apply_wait_step(&self, id: &str, step: &Step) {
         match step {
+            // Persist needs-you before announcing the wait, so anything that reacts to the
+            // event already reads the new flag.
             Step::Raise { reason, since } => {
+                self.reconcile_needs_you(id, "terminal-raise", reason, false);
                 self.sink.emit(UiEvent::TerminalWait {
                     id: id.to_owned(),
                     reason: reason.clone(),
                     since: *since,
                 });
-                // Presence `waiting` already carries needs-you; a dialog the hooks never
-                // reported needs the flag set here.
-                if !inputs.presence_waiting {
-                    self.note_needs_you(id, true);
-                }
             }
             Step::Update { reason, since } => self.sink.emit(UiEvent::TerminalWait {
                 id: id.to_owned(),
@@ -382,29 +380,24 @@ impl Manager {
                 since: *since,
             }),
             Step::Clear => {
+                self.reconcile_needs_you(id, "terminal-clear", "the wait ended", true);
                 self.sink
                     .emit(UiEvent::TerminalWaitClear { id: id.to_owned() });
-                if !inputs.presence_waiting {
-                    self.note_needs_you(id, false);
-                }
             }
+            // A hook (Idle, Busy) cannot clear the derived flag while the wait holds. Derive
+            // it again on each tick of an active wait, so the flag follows even if a write
+            // was lost.
             Step::Hold => {
-                // A hook (Idle, Busy) clears the flag while the dialog is still up: put it back.
-                if !inputs.presence_waiting && self.terminal_wait_of(id).is_some() {
-                    self.note_needs_you(id, true);
+                if self.terminal_wait_of(id).is_some() {
+                    self.reconcile_needs_you(id, "terminal-hold", "wait held", false);
                 }
             }
         }
     }
 
-    /// A wait ended because its session is gone: clear the flag unless presence owns it.
+    /// A wait ended because its session is gone.
     fn drop_wait_needs(&self, id: &str) {
-        let waiting = lock(&self.presence)
-            .get(id)
-            .is_some_and(|p| p.status == PresenceStatus::Waiting);
-        if !waiting {
-            self.note_needs_you(id, false);
-        }
+        self.force_clear_needs_you(id, "wait-dropped", "the session is gone");
     }
 
     /// Forget a DM's wait when it is deleted.

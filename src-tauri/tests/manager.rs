@@ -531,3 +531,105 @@ fn held_prompt_of_a_dm_without_a_live_chat_creates_the_chat_and_surfaces() {
     }
     m.shutdown();
 }
+
+/// A non-blocking hook for DM `key` that leaves held prompts alone: a `PostToolUse` of an
+/// unrelated tool is Busy, `SessionStart` is Idle. (`Stop` and `UserPromptSubmit` would end the
+/// turn and resolve the prompt, which is the bridge's own rule.)
+fn send_plain_hook(sock: &Path, key: &str, event: &str) {
+    use std::io::Write;
+    let mut s = std::os::unix::net::UnixStream::connect(sock).unwrap();
+    let line = serde_json::json!({
+        "v": 1,
+        "type": "hook",
+        "session_key": key,
+        "hook_pid": 1,
+        "ppid": 0,
+        "wait_ms": 0,
+        "payload": {
+            "hook_event_name": event,
+            "session_id": "00000000-0000-4000-8000-000000000001",
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/tmp/unrelated"},
+            "cwd": "/tmp"
+        }
+    });
+    s.write_all(format!("{line}\n").as_bytes()).unwrap();
+    s.flush().unwrap();
+    let _ = read_reply(&s, Duration::from_secs(2));
+}
+
+fn needs_you_of(m: &SessionManager, id: &str) -> bool {
+    m.list()
+        .unwrap()
+        .into_iter()
+        .find(|s| s.id == id)
+        .unwrap()
+        .needs_you
+}
+
+#[test]
+fn needs_you_survives_hook_busy_and_idle_while_a_prompt_is_open() {
+    let dir = data_dir();
+    let cfg_dir = tempfile::tempdir().unwrap();
+    let (m, sink, id) = restarted_claude_dm(dir.path(), Some(cfg_dir.path()));
+    let sock = dir.path().join("bridge.sock");
+    let hook = send_permission_hook(&sock, &id);
+    let p = sink
+        .wait_prompt(Duration::from_secs(5))
+        .expect("the prompt reaches the chat");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !needs_you_of(&m, &id) {
+        assert!(
+            Instant::now() < deadline,
+            "needs-you never rose for an open prompt"
+        );
+        std::thread::sleep(Duration::from_millis(40));
+    }
+    // Hooks that say Busy and Idle must not clear it while the prompt is open.
+    for event in ["PostToolUse", "SessionStart", "PostToolUse", "SessionStart"] {
+        send_plain_hook(&sock, &id, event);
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(
+            needs_you_of(&m, &id),
+            "needs-you cleared by {event} while a prompt is open"
+        );
+    }
+    // The prompt resolves: needs-you clears.
+    let pid = p["promptId"].as_str().unwrap().to_owned();
+    m.prompt_answer(&id, &pid, patchroom_lib::manager::PromptAnswer::Allow)
+        .unwrap();
+    let _ = read_reply(&hook, Duration::from_secs(5));
+    send_plain_hook(&sock, &id, "SessionStart");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while needs_you_of(&m, &id) {
+        assert!(
+            Instant::now() < deadline,
+            "needs-you stuck after the prompt resolved"
+        );
+        std::thread::sleep(Duration::from_millis(40));
+    }
+    // The trace names the writers: the open, and the kept clears. Lines land as the writers
+    // run, so read until all three are there or the deadline passes.
+    let trace_path = dir.path().join(patchroom_lib::manager::NEEDS_TRACE_LOG);
+    let complete = |t: &str| {
+        (t.contains("writer=prompt-open") || t.contains("writer=bridge-status"))
+            && t.contains("kept:")
+            && t.contains("old=true new=false")
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut trace = std::fs::read_to_string(&trace_path).unwrap_or_default();
+    while !complete(&trace) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(40));
+        trace = std::fs::read_to_string(&trace_path).unwrap_or_default();
+    }
+    assert!(
+        trace.contains("writer=prompt-open") || trace.contains("writer=bridge-status"),
+        "{trace}"
+    );
+    assert!(
+        trace.contains("kept:"),
+        "no blocked clear was traced: {trace}"
+    );
+    assert!(trace.contains("old=true new=false"), "{trace}");
+    m.shutdown();
+}
