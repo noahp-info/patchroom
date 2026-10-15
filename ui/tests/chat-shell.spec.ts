@@ -397,6 +397,8 @@ test.describe('badges', () => {
 
   test('the title bar Needs you button counts DMs with prompts', async ({ page }) => {
     const { a } = await two(page);
+    // Hidden until something waits on the user.
+    await expect(page.locator('.tb-act')).toHaveCount(0);
     await page.evaluate((sid) => {
       window.__PR_MOCK__!.emitPrompt(sid, {
         promptId: 'p1',
@@ -406,6 +408,9 @@ test.describe('badges', () => {
       });
     }, a);
     await expect(page.locator('.tb-act b')).toHaveText('1');
+    await expect(page.locator('.tb-act')).toBeEnabled();
+    await page.evaluate((sid) => window.__PR_MOCK__!.resolvePrompt(sid, 'p1', 'chat'), a);
+    await expect(page.locator('.tb-act')).toHaveCount(0);
   });
 });
 

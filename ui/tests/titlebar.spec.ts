@@ -55,7 +55,8 @@ for (const width of WIDTHS) {
       await expect(page.getByRole('dialog')).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog')).toBeHidden();
-      await expect(page.locator('.tb-act')).toBeVisible();
+      // Nothing waits on the user in the plain mock, so the Needs you button stays hidden.
+      await expect(page.locator('.tb-act')).toHaveCount(0);
     });
 
     test('full screen collapses the inset and keeps the height', async ({ page }) => {

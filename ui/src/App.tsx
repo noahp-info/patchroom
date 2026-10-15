@@ -168,16 +168,18 @@ export function App() {
           <kbd>{'\u2318K'}</kbd>
         </button>
         <span className="tb-spacer" data-tauri-drag-region />
-        <button
-          type="button"
-          className="tb-act"
-          disabled={needsCount === 0}
-          title={'Oldest DM that needs you (\u2318\u21E7A)'}
-          onClick={() => void store.jumpOldestNeeds()}
-        >
-          <Icon name="inbox" />
-          Needs you {needsCount > 0 && <b>{needsCount}</b>}
-        </button>
+        {/* Shown only while something waits on the user: a dim, disabled label read as broken. */}
+        {needsCount > 0 && (
+          <button
+            type="button"
+            className="tb-act"
+            title={'Oldest DM that needs you (\u2318\u21E7A)'}
+            onClick={() => void store.jumpOldestNeeds()}
+          >
+            <Icon name="inbox" />
+            Needs you <b>{needsCount}</b>
+          </button>
+        )}
       </div>
 
       <Sidebar
