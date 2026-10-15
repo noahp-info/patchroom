@@ -5,8 +5,10 @@ import {
   type SoundEvent,
 } from '../components/prefs/ipc.ts';
 import { dndActive } from './dnd.ts';
+import { isOff, resolveChoice } from './mix.ts';
 
-export type SoundSkip = 'disabled' | 'event-off' | 'volume-zero' | 'dnd' | 'dm-muted' | 'hook-keep';
+export type SoundSkip =
+  'disabled' | 'event-off' | 'volume-zero' | 'dnd' | 'dm-muted' | 'mix-off' | 'hook-keep';
 
 export type SoundDecision = { play: true } | { play: false; reason: SoundSkip };
 
@@ -18,6 +20,7 @@ const HOOK_TO_EVENTS: Record<string, SoundEvent[]> = {
   Notification: ['needs'],
   PermissionRequest: ['needs'],
   StopFailure: ['error'],
+  SessionStart: ['session'],
   PostToolUseFailure: ['error'],
 };
 
@@ -59,6 +62,7 @@ export function decideSound(
   if (s.volume <= 0) return { play: false, reason: 'volume-zero' };
   if (dndActive(prefs.dnd, ctx.now)) return { play: false, reason: 'dnd' };
   if (ctx.dmId && s.perDm[ctx.dmId] === 'mute') return { play: false, reason: 'dm-muted' };
+  if (isOff(resolveChoice(event, s, ctx.dmId))) return { play: false, reason: 'mix-off' };
   if (hookKeepsEvent(event, detected, s.hookPolicy)) return { play: false, reason: 'hook-keep' };
   return { play: true };
 }

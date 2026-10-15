@@ -438,6 +438,10 @@ export function Sidebar({
       separator: true,
       onSelect: () => store.openPrefs({ tab: 'terminal', dmId: s.id }),
     });
+    items.push({
+      label: 'Sounds...',
+      onSelect: () => store.openPrefs({ tab: 'sounds', dmId: s.id }),
+    });
     return items;
   }
 

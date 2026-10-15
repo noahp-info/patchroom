@@ -29,6 +29,7 @@ patchroom-claude = { path = "../crates/patchroom-claude" }
 patchroom-search = { path = "../crates/patchroom-search" }
 patchroom-prefs = { path = "../crates/patchroom-prefs" }
 patchroom-folders = { path = "../crates/patchroom-folders" }
+patchroom-sounds = { path = "../crates/patchroom-sounds" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 base64 = "0.22"
 vt100 = "0.16"

@@ -6,7 +6,8 @@ import { PrefsPane } from './index.ts';
 import { createMockPrefsApi, type HookDetect } from './ipc.ts';
 import { setPrefsApi } from './store.ts';
 import { decideSound } from '../../sound/decide.ts';
-import { playSound, soundLog } from '../../sound/index.ts';
+import { effectiveGain, playSound, soundLog } from '../../sound/index.ts';
+import { GENERATED, notesPeak } from '../../sound/pack.ts';
 import { dndActive, dndSummary } from '../../sound/dnd.ts';
 import { useThemeRuntime } from '../../theme/runtime.ts';
 import { bindTerminalTheme, termStyleFor } from '../../theme/terminal.ts';
@@ -47,6 +48,9 @@ Object.assign(window, {
     playSound,
     decideSound,
     soundLog,
+    effectiveGain,
+    generated: GENERATED,
+    notesPeak,
     dndActive,
     dndSummary,
     termStyleFor,
@@ -54,6 +58,14 @@ Object.assign(window, {
     applied: () => applied,
   },
 });
+
+// ?theme=<id>&mode=light|dark picks the look before first paint (inspection runs).
+if (q.has('theme') || q.has('mode')) {
+  void store.update({
+    ...(q.has('theme') ? { themeId: q.get('theme')! } : {}),
+    ...(q.has('mode') ? { mode: q.get('mode') as 'light' | 'dark' } : {}),
+  });
+}
 
 function Shell() {
   const { base, theme, mode, style } = useThemeRuntime();
@@ -76,7 +88,13 @@ function Shell() {
       <main className="conv" data-testid="app-main">
         <p style={{ padding: 18 }}>Harness app surface</p>
       </main>
-      {open && <PrefsPane dms={DMS} onClose={() => setOpen(false)} />}
+      {open && (
+        <PrefsPane
+          dms={DMS}
+          onClose={() => setOpen(false)}
+          initialTab={q.get('tab') === 'sounds' ? 'sounds' : undefined}
+        />
+      )}
     </div>
   );
 }

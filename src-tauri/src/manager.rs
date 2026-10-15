@@ -43,6 +43,7 @@ mod chat;
 mod folder;
 mod paste;
 mod slack;
+pub mod sound;
 
 pub use chat::{ImageData, PromptAnswer};
 pub use slack::{ActivityRow, Located, MarkInfo, Reindexed, DECISION_LOG};
@@ -134,6 +135,12 @@ pub struct ManagerConfig {
     /// Empty in the app; debug runs fill it from `PATCHROOM_E2E_EXTRA_PROJECTS` so a live
     /// check can show a fixture session without writing under `~/.claude`.
     pub extra_projects_dirs: Vec<PathBuf>,
+    /// The bundled `sounds` resource dir (`generated-packs.json` and one folder per file
+    /// pack). `None`: only imported packs are listed.
+    pub sounds_dir: Option<PathBuf>,
+    /// The home dir that `$HOME` and `~` mean inside the user's Claude sound profiles.
+    /// Defaults to `$HOME`; tests point it at a temp dir.
+    pub home_dir: Option<PathBuf>,
 }
 
 impl ManagerConfig {
@@ -150,6 +157,8 @@ impl ManagerConfig {
             claude_config_dir: None,
             terminal_hold: TERMINAL_HOLD,
             extra_projects_dirs: Vec::new(),
+            sounds_dir: None,
+            home_dir: std::env::var_os("HOME").map(PathBuf::from),
         }
         .with_default_claude_paths()
     }
@@ -364,8 +373,10 @@ impl Manager {
         };
         let defaults = store.ensure_default_sections(&me, workspace)?;
         let default_section = defaults.dm;
-        let slack =
-            slack::SlackState::open(&cfg.data_dir, store.setting_value("prefs")?.as_deref());
+        let stored_prefs = store.setting_value("prefs")?;
+        let session_hook = sound::session_start_hook(&cfg, &store, workspace);
+        let slack = slack::SlackState::open(&cfg.data_dir, stored_prefs.as_deref(), session_hook);
+        sound::prune_unreferenced(&cfg.data_dir, stored_prefs.as_deref());
         let bridge = Bridge::start(BridgeConfig::new(socket_path_for(&cfg.data_dir)))?;
         let events = bridge.subscribe();
         let active = Arc::new(AtomicBool::new(false));

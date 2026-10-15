@@ -35,7 +35,7 @@ export interface OpenThread {
 
 /** The overlay views over the conversation. */
 export interface PrefsTarget {
-  tab: 'terminal';
+  tab: 'terminal' | 'sounds';
   dmId?: string;
 }
 

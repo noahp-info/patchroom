@@ -23,6 +23,7 @@ import type {
   SessionStatus,
   Unlisten,
 } from './types';
+import { createMockSoundBackend, type MockSoundControl } from './mockSounds';
 
 /** Test and browser-dev handle, exposed as `window.__PR_MOCK__`. */
 export interface MockControl {
@@ -108,6 +109,8 @@ export interface MockControl {
   prefs(): Prefs;
   /** What `sound_hooks_detect` returns. */
   soundHooks: DetectedHook[];
+  /** The sound-pack backend: next picked file, files on the "disk", Claude profiles, calls. */
+  sound: MockSoundControl;
   /** Emit `notify:fire`, as the backend does after its own decision. */
   fireNotify(e: NotifyFireEvent): void;
   /** Emit `activity:changed`. */
@@ -157,6 +160,13 @@ type Handler = (payload: never) => void;
  */
 const PERSIST_KEY = 'patchroom.mock.state';
 
+const DEFAULT_MIX = Object.fromEntries(
+  ['needs', 'done', 'message', 'error', 'bell', 'decision', 'due', 'session'].map((e) => [
+    e,
+    { pack: 'patchtones' },
+  ]),
+);
+
 const DEFAULT_PREFS: Prefs = {
   themeId: 'homeroom',
   mode: 'system',
@@ -164,7 +174,7 @@ const DEFAULT_PREFS: Prefs = {
   base: 'homeroom',
   cablePreset: 'theme',
   notify: { default: 'all', perDm: {} },
-  sound: { enabled: true, volume: 0.6, perEvent: {}, perDm: {}, hookPolicy: {} },
+  sound: { enabled: true, volume: 0.6, perEvent: {}, mix: DEFAULT_MIX, perDm: {}, hookPolicy: {} },
   dnd: { manual: false, schedule: null },
   termPerDm: {},
   searchAllSessions: false,
@@ -232,6 +242,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
   const hideOverride = new Map<string, boolean>();
   let marks: MarkInfo[] = [];
   let prefs: Prefs = structuredClone(DEFAULT_PREFS);
+  const soundBackend = createMockSoundBackend();
   let counter = 0;
 
   // ---- persistence: `?persist` keeps the backend across page reloads, like a restart ----
@@ -381,6 +392,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     focusCalls: [],
     notifyTests: 0,
     soundHooks: [],
+    sound: soundBackend.control,
     storedMarks: () => marks.map((m) => ({ ...m })),
     prefs: () => structuredClone(prefs),
     fireNotify: (e) => emit('notify:fire', e),
@@ -837,6 +849,15 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       emit('prefs:changed', { prefs: structuredClone(prefs) });
       return structuredClone(prefs);
     },
+    soundPacks: soundBackend.soundPacks,
+    soundFile: soundBackend.soundFile,
+    soundCustomList: soundBackend.soundCustomList,
+    soundCustomFile: soundBackend.soundCustomFile,
+    soundPickFile: soundBackend.soundPickFile,
+    soundImportFile: soundBackend.soundImportFile,
+    soundCustomRemove: soundBackend.soundCustomRemove,
+    soundClaudeProfiles: soundBackend.soundClaudeProfiles,
+    soundImportClaudeProfile: soundBackend.soundImportClaudeProfile,
     async soundHooksDetect() {
       return control.soundHooks.map((h) => ({ ...h }));
     },

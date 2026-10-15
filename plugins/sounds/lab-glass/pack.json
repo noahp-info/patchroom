@@ -1,0 +1,29 @@
+{
+  "id": "lab-glass",
+  "name": "Lab Glass",
+  "description": "Clean, bright and quiet. Beakers and chimes; close to a native macOS feel.",
+  "kind": "files",
+  "license": "CC0-1.0",
+  "author": "Kenney (kenney.nl)",
+  "source": "Kenney Interface Sounds (CC0)",
+  "originals": {
+    "needs": "question_002.ogg",
+    "done": "confirmation_002.ogg",
+    "message": "glass_002.ogg",
+    "error": "error_006.ogg",
+    "bell": "bong_001.ogg",
+    "decision": "question_004.ogg",
+    "due": "glass_004.ogg",
+    "session": "open_002.ogg"
+  },
+  "sounds": {
+    "needs": "sounds/needs.m4a",
+    "done": "sounds/done.m4a",
+    "message": "sounds/message.m4a",
+    "error": "sounds/error.m4a",
+    "bell": "sounds/bell.m4a",
+    "decision": "sounds/decision.m4a",
+    "due": "sounds/due.m4a",
+    "session": "sounds/session.m4a"
+  }
+}

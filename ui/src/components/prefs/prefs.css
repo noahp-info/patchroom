@@ -192,6 +192,9 @@
   text-decoration: underline;
   cursor: pointer;
 }
+.prefs input[type='range'] {
+  accent-color: var(--accent);
+}
 .chk {
   display: flex;
   align-items: center;

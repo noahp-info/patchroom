@@ -10,6 +10,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::manager::sound::{ImportedPack, SoundFile};
 use crate::manager::{
     ActivityRow, CreateRequest, ImageData, Located, MarkInfo, PromptAnswer, Reindexed, SectionInfo,
     SessionInfo, SessionManager,
@@ -18,6 +19,9 @@ use patchroom_claude::{ChatItem, Cursor, Page};
 use patchroom_folders::Listing;
 use patchroom_prefs::{DetectedHook, Prefs};
 use patchroom_search::SearchResult;
+use patchroom_sounds::claude::ClaudeProfile;
+use patchroom_sounds::custom::CustomSound;
+use patchroom_sounds::packs::PackInfo;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -504,6 +508,86 @@ pub async fn sound_hooks_detect(state: State<'_, SessionManager>) -> CmdResult<V
     tauri::async_runtime::spawn_blocking(move || m.sound_hooks_detect())
         .await
         .map_err(|e| e.to_string())
+}
+
+/// `sound_packs {} -> [{id, name, description, kind, license, author, events, norm?}]` (plus `source`
+/// and, for generated packs, `notes`).
+#[tauri::command]
+pub async fn sound_packs(state: State<'_, SessionManager>) -> CmdResult<Vec<PackInfo>> {
+    let m = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || m.sound_packs())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// `sound_file {packId, event} -> {dataUrl}`: a file pack's sound, fetched on demand.
+#[tauri::command]
+pub async fn sound_file(
+    state: State<'_, SessionManager>,
+    pack_id: String,
+    event: String,
+) -> CmdResult<SoundFile> {
+    let m = state.inner().clone();
+    blocking(move || m.sound_file(&pack_id, &event)).await
+}
+
+/// `sound_import_file {path} -> {id, name, durationMs, norm}`: copy the user's file into the data
+/// dir after the type, size and duration checks.
+#[tauri::command]
+pub async fn sound_import_file(
+    state: State<'_, SessionManager>,
+    path: String,
+) -> CmdResult<CustomSound> {
+    let m = state.inner().clone();
+    blocking(move || m.sound_import_file(&path)).await
+}
+
+/// `sound_custom_list {} -> [{id, name, durationMs, norm}]`: the user's own sounds, newest first.
+#[tauri::command]
+pub async fn sound_custom_list(state: State<'_, SessionManager>) -> CmdResult<Vec<CustomSound>> {
+    let m = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || m.sound_custom_list())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// `sound_custom_file {id} -> {dataUrl}`: one of the user's own sounds.
+#[tauri::command]
+pub async fn sound_custom_file(
+    state: State<'_, SessionManager>,
+    id: String,
+) -> CmdResult<SoundFile> {
+    let m = state.inner().clone();
+    blocking(move || m.sound_custom_file(&id)).await
+}
+
+/// `sound_custom_remove {id}`: delete a custom sound; mixes that used it fall back.
+#[tauri::command]
+pub async fn sound_custom_remove(state: State<'_, SessionManager>, id: String) -> CmdResult<()> {
+    let m = state.inner().clone();
+    blocking(move || m.sound_custom_remove(&id)).await
+}
+
+/// `sound_claude_profiles {} -> [{id, name, events}]`: the user's Claude sound profiles, read
+/// only.
+#[tauri::command]
+pub async fn sound_claude_profiles(
+    state: State<'_, SessionManager>,
+) -> CmdResult<Vec<ClaudeProfile>> {
+    let m = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || m.sound_claude_profiles())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// `sound_import_claude_profile {id} -> {packId}`: copy a profile's sounds into a pack.
+#[tauri::command]
+pub async fn sound_import_claude_profile(
+    state: State<'_, SessionManager>,
+    id: String,
+) -> CmdResult<ImportedPack> {
+    let m = state.inner().clone();
+    blocking(move || m.sound_import_claude_profile(&id)).await
 }
 
 /// `notify_test {}`: post a test notification and emit `notify:fire` for it.

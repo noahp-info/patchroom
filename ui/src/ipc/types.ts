@@ -1,3 +1,11 @@
+import type {
+  ClaudeProfile,
+  DmSoundPref,
+  ImportedFile,
+  MixChoice,
+  PackInfo,
+  SoundFileData,
+} from '../components/prefs/ipc.ts';
 import type { Theme } from '../theme/types.ts';
 
 /** Session status as reported by the backend (`session:status` and `session_list`). */
@@ -166,6 +174,17 @@ export interface Ipc {
   prefsSet(patch: Partial<Prefs>): Promise<Prefs>;
   soundHooksDetect(): Promise<DetectedHook[]>;
   notifyTest(): Promise<void>;
+  /** Sound packs (docs/gauntlet/SOUND-PACKS-BAR.md). */
+  soundPacks(): Promise<PackInfo[]>;
+  soundFile(packId: string, event: string): Promise<SoundFileData>;
+  soundCustomList(): Promise<ImportedFile[]>;
+  soundCustomFile(id: string): Promise<SoundFileData>;
+  /** Native file picker for the user's own sound. Resolves null when cancelled. */
+  soundPickFile(): Promise<string | null>;
+  soundImportFile(path: string): Promise<ImportedFile>;
+  soundCustomRemove(id: string): Promise<void>;
+  soundClaudeProfiles(): Promise<ClaudeProfile[]>;
+  soundImportClaudeProfile(id: string): Promise<{ packId: string }>;
   /** The DM the user is looking at (null: none), so it does not notify while focused. */
   sessionFocus(id: string | null): Promise<void>;
   /** P3 folder sections. */
@@ -405,6 +424,15 @@ export type NotifyLevel = 'all' | 'needs' | 'mute';
 export type NotifyEventName = 'needs' | 'done' | 'message' | 'error' | 'bell';
 export type SoundEventName = 'needs' | 'done' | 'message' | 'error';
 
+export type {
+  ClaudeProfile,
+  DmSoundPref,
+  ImportedFile,
+  MixChoice,
+  PackInfo,
+  SoundFileData,
+} from '../components/prefs/ipc.ts';
+
 export interface Prefs {
   themeId: string;
   mode: 'light' | 'dark' | 'system';
@@ -418,7 +446,9 @@ export interface Prefs {
     enabled: boolean;
     volume: number;
     perEvent: Record<string, { on: boolean; sound: string }>;
-    perDm: Record<string, 'default' | 'mute'>;
+    /** Per event: a pack's sound, the user's own file or off. */
+    mix: Record<string, MixChoice>;
+    perDm: Record<string, DmSoundPref>;
     hookPolicy: Record<string, 'keep' | 'both'>;
   };
   dnd: {
