@@ -19,7 +19,10 @@
         "minHeight": 520,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "trafficLightPosition": { "x": 16, "y": 22 }
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 22
+        }
       }
     ],
     "security": {
@@ -45,6 +48,11 @@
     "externalBin": [
       "binaries/patchroom-hook",
       "binaries/patchroom-statusline"
-    ]
+    ],
+    "macOS": {
+      "hardenedRuntime": true,
+      "entitlements": "Entitlements.plist",
+      "minimumSystemVersion": "13.0"
+    }
   }
 }

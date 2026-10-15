@@ -154,6 +154,7 @@ Phases are ordered by dependency. Each phase is a gauntlet loop: parallel builde
 
 - **D1** GitHub repo owner (personal account vs an org). Domains: patchroom.dev registered by Noah on 2026-10-14. patchroom.app registration failed; Noah is following up. patchroom.com is taken.
 - **D2** Gauntlet budget per phase (iterations cap and model tier for builders vs judges).
+- **D3** Auto-update check: on by default, or opt-in. It only fetches (GitHub Releases), never listens. Waiting on Noah.
 
 ## 10. Business model
 
@@ -175,3 +176,18 @@ Open core. Decided by Noah, 2026-10-14.
   - A contributor license agreement is required for outside code, from the first contribution.
   - Releases up to commit 09fce45 were also published under MIT and stay so.
   - Licensing does not stop a rebuild. The defense is pricing below rebuild-and-maintain cost, and charging for what is expensive to run: CLI parity upkeep, hosted sync, compliance and the ecosystem.
+
+## 11. Distribution and the host/client split
+
+Decided by Noah, 2026-10-15: **A now, C later.**
+
+- **A. Developer ID, outside the Mac App Store (now).** Signed with a Developer ID certificate, hardened runtime, notarized and stapled. Shipped as a DMG on GitHub Releases, then a Homebrew cask, with a signed in-app updater (see D3). This is how Warp, iTerm, Cursor and VS Code ship.
+- **Why not the Mac App Store for this app:** the store requires the App Sandbox, and a sandboxed app's child processes inherit it. The real CLI in a login shell (principle 1) could then not use the user's toolchain, project folders or `~/.claude`. Controlling iTerm and ending another terminal's process are also outside the sandbox.
+- **C. A sandboxed client (later).** A client app with no session host connects to a Patchroom host: the user's own Mac running the A app, a remote machine, or the team sync server (section 10). It holds no PTYs and runs no CLI, so it fits the App Sandbox and can ship on the Mac App Store, iPhone and iPad.
+
+Rules that keep C possible:
+- **The UI talks to sessions only through the IPC contract** (`src-tauri/src/commands.rs` and the `session:*`/`chat:*` events). No UI code reads files, spawns processes or calls the OS directly.
+- **Host-only work stays in the host:** PTYs, process checks and signals, terminal focus (AppleScript), transcript tailing, hooks and the bridge. A feature that needs one of these exposes a command, so a remote client can call it or hide it.
+- **The contract stays serializable** (plain JSON, no handles or paths the client must open itself), so it can later travel over an authenticated transport instead of in-process IPC. That transport is an opt-in, authenticated connection, never an open listener (principle 5).
+- **Entitlements stay minimal:** today the hardened runtime needs only Apple Events (for "Show in iTerm"). Anything new is justified in `src-tauri/Entitlements.plist`.
+
