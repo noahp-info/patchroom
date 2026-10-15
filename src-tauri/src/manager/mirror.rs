@@ -10,8 +10,8 @@
 //!   typed `check_failed` error, because a wrong guess would start the second process. The UI
 //!   then offers retry, or "Open anyway" (`openAnyway: true`, asked first).
 //!
-//! Patchroom never signals a process it did not start. A mirror ends when the other process
-//! exits. With `takeoverWhenClosed` on, the DM then resumes by itself (through the same
+//! Patchroom never signals a process it did not start, except through the confirmed
+//! "End it there" hand-off (see `handoff`). A mirror ends when the other process exits. With `takeoverWhenClosed` on, the DM then resumes by itself (through the same
 //! re-check). `session_takeover` does the same on demand and refuses while the other
 //! process still runs.
 //!

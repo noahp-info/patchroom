@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 
 use patchroom_bridge::{AgentEntry, AgentsSource};
 use patchroom_lib::events::{EventSink, UiEvent};
-use patchroom_lib::manager::{CreateRequest, Manager, ManagerConfig, SendOutcome, SessionManager};
+use patchroom_lib::manager::{
+    CreateRequest, Manager, ManagerConfig, SendOutcome, SessionManager, TerminalOps,
+};
 use serde_json::{json, Value};
 
 const SID: &str = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -821,4 +823,152 @@ fn live_the_real_recheck_is_bounded_and_lets_a_free_session_start() {
     assert!(dm.mirror.is_none());
     assert!(m.pid_of(&dm.id).is_some());
     m.shutdown();
+}
+
+// ---- the hand-off: "Show in iTerm" and "End it there" ----
+
+/// Records what the hand-off asks of the OS. Never focuses or signals anything real.
+#[derive(Default)]
+struct FakeOps {
+    agents: Mutex<Option<Arc<Agents>>>,
+    command: Mutex<String>,
+    reveals: Mutex<Vec<(u32, String)>>,
+    terms: Mutex<Vec<u32>>,
+    /// The other copy ignores SIGTERM.
+    stubborn: Mutex<bool>,
+}
+
+impl TerminalOps for FakeOps {
+    fn reveal(&self, pid: u32, place: &str) -> Result<(), String> {
+        self.reveals.lock().unwrap().push((pid, place.to_owned()));
+        Ok(())
+    }
+    fn command_of(&self, _pid: u32) -> Option<String> {
+        Some(self.command.lock().unwrap().clone())
+    }
+    fn terminate(&self, pid: u32) -> Result<(), String> {
+        self.terms.lock().unwrap().push(pid);
+        if !*self.stubborn.lock().unwrap() {
+            if let Some(a) = self.agents.lock().unwrap().as_ref() {
+                a.clear();
+            }
+        }
+        Ok(())
+    }
+    fn alive(&self, _pid: u32) -> bool {
+        self.agents
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|a| !a.entries.lock().unwrap().is_empty())
+    }
+}
+
+fn fake_ops(e: &Env) -> Arc<FakeOps> {
+    let ops = Arc::new(FakeOps::default());
+    *ops.agents.lock().unwrap() = Some(Arc::clone(&e.agents));
+    *ops.command.lock().unwrap() = "/Users/x/.local/bin/claude --resume".into();
+    e.m.set_terminal_ops_override(Some(Arc::clone(&ops) as Arc<dyn TerminalOps>));
+    ops
+}
+
+#[test]
+fn reveal_asks_for_the_other_terminal_and_signals_nothing() {
+    let e = env("sleep 60");
+    e.transcript(SID);
+    let sec = e.section();
+    e.agents.run(SID, "busy");
+    let ops = fake_ops(&e);
+    let dm = e.m.folder_session_open(&sec, SID).unwrap();
+    let place = dm.mirror.clone().unwrap().place;
+    e.m.mirror_reveal(&dm.id).unwrap();
+    assert_eq!(
+        *ops.reveals.lock().unwrap(),
+        vec![(std::process::id(), place)]
+    );
+    assert!(ops.terms.lock().unwrap().is_empty());
+    assert!(e.m.mirror_reveal("nope").is_err());
+    e.m.shutdown();
+}
+
+#[test]
+fn ending_the_other_copy_refuses_unless_it_is_idle_claude() {
+    let e = env("sleep 60");
+    e.transcript(SID);
+    let sec = e.section();
+    e.agents.run(SID, "busy");
+    let ops = fake_ops(&e);
+    let dm = e.m.folder_session_open(&sec, SID).unwrap();
+
+    // Busy: refused, nothing signaled, nothing armed.
+    let err = e.m.mirror_end(&dm.id, None, None).unwrap_err().to_string();
+    assert!(err.contains("not idle"), "{err}");
+    // Waiting on the user counts as not idle too.
+    e.agents.clear();
+    e.agents.run(SID, "waiting");
+    assert!(e.m.mirror_end(&dm.id, None, None).is_err());
+    // Idle, but the pid is no longer claude: refused.
+    e.agents.clear();
+    e.agents.run(SID, "idle");
+    *ops.command.lock().unwrap() = "/usr/bin/vim notes.txt".into();
+    let err = e.m.mirror_end(&dm.id, None, None).unwrap_err().to_string();
+    assert!(err.contains("no longer claude"), "{err}");
+    // The check fails: refused.
+    *ops.command.lock().unwrap() = "claude".into();
+    *e.agents.fail.lock().unwrap() = true;
+    let err = e.m.mirror_end(&dm.id, None, None).unwrap_err().to_string();
+    assert!(err.starts_with("check_failed"), "{err}");
+
+    assert!(
+        ops.terms.lock().unwrap().is_empty(),
+        "something was signaled"
+    );
+    assert!(!e.info(&dm.id).mirror.unwrap().takeover_when_closed);
+    assert_eq!(e.starts(), 0);
+    e.m.shutdown();
+}
+
+#[test]
+fn ending_an_idle_copy_signals_it_once_and_resumes_here() {
+    let e = env("sleep 60");
+    e.transcript(SID);
+    let sec = e.section();
+    e.agents.run(SID, "idle");
+    let ops = fake_ops(&e);
+    let dm = e.m.folder_session_open(&sec, SID).unwrap();
+
+    let info = e.m.mirror_end(&dm.id, None, None).unwrap();
+    assert!(info.mirror.is_none());
+    assert_eq!(*ops.terms.lock().unwrap(), vec![std::process::id()]);
+    e.wait_starts(1);
+    assert!(e.m.pid_of(&dm.id).is_some());
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(e.starts(), 1, "resumed more than once");
+    e.m.shutdown();
+}
+
+#[test]
+fn a_copy_that_ignores_the_signal_stays_armed_and_is_never_killed() {
+    let e = env("sleep 60");
+    e.transcript(SID);
+    let sec = e.section();
+    e.agents.run(SID, "idle");
+    let ops = fake_ops(&e);
+    *ops.stubborn.lock().unwrap() = true;
+    let dm = e.m.folder_session_open(&sec, SID).unwrap();
+
+    let err = e.m.mirror_end(&dm.id, None, None).unwrap_err().to_string();
+    assert!(err.contains("still runs"), "{err}");
+    assert_eq!(
+        ops.terms.lock().unwrap().len(),
+        1,
+        "signaled more than once"
+    );
+    assert!(e.info(&dm.id).mirror.unwrap().takeover_when_closed);
+    assert_eq!(e.starts(), 0);
+
+    // It closes later: the armed take-over resumes it here.
+    e.agents.clear();
+    e.wait_starts(1);
+    e.m.shutdown();
 }

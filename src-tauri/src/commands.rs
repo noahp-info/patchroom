@@ -20,6 +20,9 @@
 //! - `session_takeover {id, cols?, rows?} -> SessionInfo`: resume a mirror now; fails with
 //!   "still running in <where> (pid N)" while the other process lives.
 //! - `session_mirror_takeover_when_closed {id, enabled}`: resume by itself when it exits.
+//! - `session_mirror_reveal {id}`: bring the other terminal's window and tab to the front.
+//! - `session_mirror_end {id, cols?, rows?} -> SessionInfo`: the user confirmed "End it
+//!   there": SIGTERM the other copy (only while it is idle and still claude), then resume here.
 //! - `session_kill {id}` on a mirror stops mirroring only. `session_resize` on a mirror is a no-op.
 //!   `session_write` on a mirror fails.
 //!
@@ -750,4 +753,24 @@ pub async fn session_mirror_takeover_when_closed(
     state
         .set_mirror_takeover(&id, enabled)
         .map_err(|e| e.to_string())
+}
+
+/// `session_mirror_reveal {id}`: bring the terminal that runs a mirrored DM to the front.
+#[tauri::command]
+pub async fn session_mirror_reveal(state: State<'_, SessionManager>, id: String) -> CmdResult<()> {
+    let m = state.inner().clone();
+    blocking(move || m.mirror_reveal(&id)).await
+}
+
+/// `session_mirror_end {id, cols?, rows?} -> SessionInfo`: stop the idle copy in the other
+/// terminal (the user confirmed it) and resume the session here.
+#[tauri::command]
+pub async fn session_mirror_end(
+    state: State<'_, SessionManager>,
+    id: String,
+    cols: Option<u16>,
+    rows: Option<u16>,
+) -> CmdResult<SessionInfo> {
+    let m = state.inner().clone();
+    blocking(move || m.mirror_end(&id, cols, rows)).await
 }

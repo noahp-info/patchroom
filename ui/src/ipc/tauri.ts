@@ -151,6 +151,9 @@ export function createTauriIpc(): Ipc {
       wireSession(await invoke<WireSession>('session_takeover', { id, cols, rows })),
     sessionMirrorTakeoverWhenClosed: (id, enabled) =>
       invoke('session_mirror_takeover_when_closed', { id, enabled }),
+    sessionMirrorReveal: (id) => invoke('session_mirror_reveal', { id }),
+    sessionMirrorEnd: async (id, cols, rows) =>
+      wireSession(await invoke<WireSession>('session_mirror_end', { id, cols, rows })),
     pasteImage: (id, data, mediaType) =>
       invoke<{ path: string }>('paste_image', { id, data, mediaType }),
     sessionResize: (id, cols, rows) => invoke('session_resize', { id, cols, rows }),

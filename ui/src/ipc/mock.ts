@@ -43,6 +43,10 @@ export interface MockControl {
   takeovers: string[];
   /** Every `session_mirror_takeover_when_closed` call. */
   takeoverArms: { id: string; enabled: boolean }[];
+  /** Every `session_mirror_reveal` call. */
+  reveals: string[];
+  /** Every `session_mirror_end` call that signaled the other copy. */
+  mirrorEnds: string[];
   /** Processes the mock "spawned": session_create, session_resume, and non-mirror folder opens. */
   spawns: string[];
   /** Put a DM into mirror mode (or out of it with null) and emit `session:mirror`. */
@@ -392,6 +396,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     sends: [],
     takeovers: [],
     takeoverArms: [],
+    reveals: [],
+    mirrorEnds: [],
     spawns: [],
     repaintOnSlash: true,
     setMirror(id, m) {
@@ -721,6 +727,23 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       const s = sessions.get(id);
       if (!s?.mirror) return;
       control.setMirror(id, { ...s.mirror, takeoverWhenClosed: enabled });
+    },
+    async sessionMirrorReveal(id) {
+      const s = sessions.get(id);
+      if (!s?.mirror) throw new Error('this DM is not a read-only mirror');
+      control.reveals.push(id);
+    },
+    async sessionMirrorEnd(id) {
+      const s = sessions.get(id);
+      if (!s?.mirror) throw new Error('this DM is not a read-only mirror');
+      const where = s.mirror.where ?? 'another terminal';
+      if (s.status !== 'idle') {
+        throw new Error(`it's not idle in ${where}; wait until it finishes, or close it there`);
+      }
+      control.mirrorEnds.push(id);
+      control.setMirror(id, { ...s.mirror, takeoverWhenClosed: true });
+      control.closeMirror(id);
+      return { ...sessions.get(id)! };
     },
     async sessionResize(id, cols, rows) {
       control.resizes.push({ id, cols, rows });

@@ -42,6 +42,7 @@ use serde::{Deserialize, Serialize};
 
 mod chat;
 mod folder;
+mod handoff;
 mod mirror;
 mod needs;
 mod paste;
@@ -50,6 +51,7 @@ pub mod sound;
 mod terminal;
 
 pub use chat::{ImageData, PromptAnswer};
+pub use handoff::{SystemTerminalOps, TerminalOps};
 pub use mirror::MirrorInfo;
 pub use needs::TRACE_LOG as NEEDS_TRACE_LOG;
 pub use slack::{ActivityRow, Located, MarkInfo, Reindexed, DECISION_LOG};
@@ -368,6 +370,8 @@ pub struct Manager {
     mirrors: Mutex<HashMap<String, mirror::Mirror>>,
     /// The mirror monitor thread runs.
     mirror_monitor: AtomicBool,
+    /// Test hook: replaces the OS side of the mirror hand-off (focus and signal).
+    terminal_ops: Mutex<Option<Arc<dyn handoff::TerminalOps>>>,
     /// Terminal-only waits per DM.
     waits: Mutex<HashMap<String, terminal::WaitTrack>>,
     /// Serializes the needs-you derivation (gather the sources, then write the flag).
@@ -454,6 +458,7 @@ impl Manager {
             agents_override: Mutex::new(None),
             mirrors: Mutex::new(HashMap::new()),
             mirror_monitor: AtomicBool::new(false),
+            terminal_ops: Mutex::new(None),
             waits: Mutex::new(HashMap::new()),
             needs_gate: Mutex::new(()),
         });
