@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Prefs, StatusChips } from '../../ipc';
 import { ansiCss, parseAnsi } from '../../lib/ansi';
 import { cwdParts } from '../../lib/cwd';
@@ -54,6 +54,27 @@ export function StatusStrip({
   const shown = visibleModules(layout, facts);
   const lines = useMemo(() => (facts.statusText ? parseAnsi(facts.statusText) : []), [facts]);
   const pct = contextPct(chips);
+  // The theme ground the statusLine sits on, read from the live tokens, so ANSI colors stay
+  // readable in light themes.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [ground, setGround] = useState<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const read = () => {
+      const v = getComputedStyle(el).getPropertyValue('--bg').trim();
+      setGround(/^#[0-9a-f]{3,8}$/i.test(v) ? v : undefined);
+    };
+    read();
+    const obs = new MutationObserver(read);
+    const root = el.closest('.pr-app');
+    if (root)
+      obs.observe(root, {
+        attributes: true,
+        attributeFilter: ['style', 'data-theme', 'data-mode'],
+      });
+    return () => obs.disconnect();
+  }, []);
 
   const render = (id: (typeof shown)[number]) => {
     switch (id) {
@@ -141,7 +162,7 @@ export function StatusStrip({
                 {spans.length === 0
                   ? ' '
                   : spans.map((sp, j) => (
-                      <span key={j} style={ansiCss(sp.style)}>
+                      <span key={j} style={ansiCss(sp.style, ground)}>
                         {sp.text}
                       </span>
                     ))}
@@ -154,6 +175,7 @@ export function StatusStrip({
 
   return (
     <div
+      ref={wrapRef}
       className="strip-wrap"
       data-testid="status-strip"
       data-layout={layout.source}

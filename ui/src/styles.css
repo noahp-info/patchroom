@@ -1286,12 +1286,13 @@ body {
 .chat .strip a.sc {
   text-decoration: none;
 }
+/* The user's statusLine sits on the pane itself, no terminal box: plain text takes the theme's
+   ink, and its own ANSI colors still show. */
 .sl {
   margin: 0 var(--gutter);
-  padding: 4px 10px;
-  border-radius: var(--r-sm);
-  background: var(--term-chrome);
-  color: var(--term-chrome-fg);
+  padding: 4px 0;
+  background: transparent;
+  color: var(--fg);
   font-family: var(--f-mono);
   line-height: 1.5;
   overflow: hidden;

@@ -135,3 +135,40 @@ for (const theme of THEMES) {
     });
   }
 }
+
+for (const theme of THEMES) {
+  for (const mode of ['light', 'dark'] as const) {
+    test(`${theme} ${mode}: the statusLine sits on the pane and its ANSI colors stay legible`, async ({
+      page,
+    }) => {
+      const id = await openChat(page, []);
+      await setTheme(page, theme, mode);
+      // Every base ANSI color the iTerm palette has, as a user's statusLine might print them.
+      const line = [30, 31, 32, 33, 34, 35, 36, 37, 90, 91, 92, 93, 94, 95, 96, 97]
+        .map((c) => `\x1b[${c}mc${c}\x1b[0m`)
+        .join(' ');
+      await page.evaluate(([sid, l]) => window.__PR_MOCK__!.setStatusline(sid, l, {}), [
+        id,
+        line,
+      ] as [string, string]);
+      const sl = page.getByTestId('statusline');
+      await expect(sl).toBeVisible();
+      // No terminal box behind it: it shows the pane's own ground.
+      expect(await sl.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(
+        'rgba(0, 0, 0, 0)',
+      );
+      const spans = await sl.locator('.sl-line span').count();
+      expect(spans).toBeGreaterThanOrEqual(16);
+      for (let i = 0; i < spans; i++) {
+        const sel = `[data-testid="statusline"] .sl-line span:nth-of-type(${i + 1})`;
+        const text = (await page.locator(sel).textContent()) ?? '';
+        if (!text.trim()) continue;
+        const c = await contrastOf(page, sel);
+        expect(
+          c,
+          `${theme} ${mode}: statusLine "${text}" contrast ${c.toFixed(2)}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+  }
+}

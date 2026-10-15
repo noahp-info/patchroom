@@ -515,15 +515,15 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
   });
 
   await t.step(
-    'P3: the + menu offers New DM, New section and New section from folder',
+    'P3: the + menu offers New DM, New section, New divider and New section from folder',
     async () => {
       const plus = document.querySelector('aside.side button[aria-label="Create new"]');
       plus.click();
       const items = await t.waitFor('+ menu items', () => {
         const list = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')];
-        return list.length === 3 ? list.map((b) => (b.textContent || '').trim()) : null;
+        return list.length === 4 ? list.map((b) => (b.textContent || '').trim()) : null;
       });
-      const want = ['New DM', 'New section', 'New section from folder...'];
+      const want = ['New DM', 'New section', 'New divider', 'New section from folder...'];
       if (items.join('|') !== want.join('|')) throw new Error(`menu items: ${items.join(' | ')}`);
       await t.waitFor('focus in the menu', () => document.activeElement?.closest('[role="menu"]'));
       t.chord('ArrowDown');
