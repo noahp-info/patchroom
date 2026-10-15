@@ -1,5 +1,10 @@
 /** Minimal SGR parser for the status strip: the user's statusLine output, rendered as written. */
 
+import { ensureContrast } from '../theme/color.ts';
+
+const hex = (r: number, g: number, b: number) =>
+  '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+
 export interface AnsiStyle {
   fg?: string;
   bg?: string;
@@ -40,11 +45,11 @@ function color256(n: number): string | undefined {
   if (n < 16) return BASE16[n];
   if (n >= 232) {
     const v = 8 + (n - 232) * 10;
-    return `rgb(${v},${v},${v})`;
+    return hex(v, v, v);
   }
   const i = n - 16;
   const lv = (x: number) => (x === 0 ? 0 : 55 + x * 40);
-  return `rgb(${lv(Math.floor(i / 36))},${lv(Math.floor(i / 6) % 6)},${lv(i % 6)})`;
+  return hex(lv(Math.floor(i / 36)), lv(Math.floor(i / 6) % 6), lv(i % 6));
 }
 
 function applySgr(style: AnsiStyle, params: number[]): AnsiStyle {
@@ -77,7 +82,7 @@ function applySgr(style: AnsiStyle, params: number[]): AnsiStyle {
         i += 2;
       } else if (list[i + 1] === 2) {
         const [r, g, b] = [list[i + 2], list[i + 3], list[i + 4]];
-        s[target] = `rgb(${r & 255},${g & 255},${b & 255})`;
+        s[target] = hex(r & 255, g & 255, b & 255);
         i += 4;
       }
     }
@@ -144,13 +149,21 @@ export function parseAnsi(input: string): AnsiSpan[][] {
 }
 
 /** CSS for a span's style. Inverse swaps the colors, using the terminal defaults. */
-export function ansiCss(style: AnsiStyle): Record<string, string> {
+/**
+ * Inline CSS for one span. With `ground` (the hex color the text sits on), a foreground with no
+ * background of its own is nudged until it reads at 4.5:1: terminal palettes are tuned for dark
+ * grounds, and the strip sits on the theme's own ground.
+ */
+export function ansiCss(style: AnsiStyle, ground?: string): Record<string, string> {
   const css: Record<string, string> = {};
   let fg = style.fg;
   let bg = style.bg;
+  if (ground && fg && !bg && !style.inverse && fg.startsWith('#')) {
+    fg = ensureContrast(fg, ground);
+  }
   if (style.inverse) {
-    const f = fg ?? 'var(--term-chrome-fg)';
-    fg = bg ?? 'var(--term-chrome)';
+    const f = fg ?? 'var(--fg)';
+    fg = bg ?? 'var(--bg)';
     bg = f;
   }
   if (fg) css.color = fg;

@@ -7,7 +7,8 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
 } from 'react';
-import type { ChatModel } from '../../state/chat';
+import type { ChatModel, ChatNotice } from '../../state/chat';
+import type { SendResultKind } from '../../state/store';
 import { Icon } from '../Icon';
 
 export interface ComposerProps {
@@ -17,7 +18,17 @@ export interface ComposerProps {
   busy: boolean;
   /** The process ended: the box is disabled. */
   ended: boolean;
-  onSend(text: string): void;
+  /** Why the box is read-only (a mirror of a session open elsewhere); null when it is not. */
+  readOnly?: string | null;
+  /** A terminal-only dialog is up: Enter keeps the draft and shows why instead of sending. */
+  blocked?: boolean;
+  /** The line under the log about the last send. */
+  notice?: ChatNotice | null;
+  onSend(text: string): Promise<SendResultKind> | void;
+  /** Show the terminal (the notice's "Open terminal"). */
+  onOpenTerminal?(): void;
+  /** Enter was pressed while `blocked`. */
+  onBlocked?(): void;
   onStop(): void;
   /** Save a pasted image; its absolute path lands in the draft. */
   onPasteImage(file: Blob): Promise<void> | void;
@@ -31,7 +42,12 @@ export function Composer({
   name,
   busy,
   ended,
+  readOnly = null,
+  blocked = false,
+  notice = null,
   onSend,
+  onOpenTerminal,
+  onBlocked,
   onStop,
   onPasteImage,
 }: ComposerProps) {
@@ -58,12 +74,26 @@ export function Composer({
     el.style.height = `${Math.min(MAX_HEIGHT, twin.scrollHeight)}px`;
   }, [text]);
 
+  const off = ended || !!readOnly;
+
   const send = useCallback(() => {
-    if (ended || text.trim() === '') return;
-    onSend(text);
+    if (off || text.trim() === '') return;
+    // A dialog only the terminal can answer is up: writing now would answer it by accident.
+    if (blocked) {
+      onBlocked?.();
+      return;
+    }
+    const sent = text;
     setText('');
     model.setDraft('');
-  }, [ended, text, onSend, model]);
+    void Promise.resolve(onSend(sent)).then((r) => {
+      if (r !== 'blocked_dialog' && r !== 'mirror_readonly' && r !== 'error') return;
+      // Not sent: the draft comes back, ahead of anything typed meanwhile.
+      const next = model.draft ? `${sent}\n${model.draft}` : sent;
+      setText(next);
+      model.setDraft(next);
+    });
+  }, [off, text, blocked, onBlocked, onSend, model]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
@@ -92,15 +122,45 @@ export function Composer({
 
   return (
     <div className="composer" data-testid="composer">
-      <div className="box">
+      {notice && (
+        <div
+          className="cnotice"
+          role="status"
+          data-testid="composer-notice"
+          data-kind={notice.kind}
+        >
+          <span>{notice.text}</span>
+          {(notice.kind === 'blocked' || notice.kind === 'no-echo') && onOpenTerminal && (
+            <button type="button" className="cnotice__btn" onClick={onOpenTerminal}>
+              Open terminal
+            </button>
+          )}
+        </div>
+      )}
+      {(readOnly || ended) && (
+        <div className="cnotice cnotice--reason" role="status" data-testid="composer-reason">
+          <span>
+            {readOnly
+              ? text.trim() !== ''
+                ? `${readOnly}. Your draft stays here and is not sent.`
+                : `${readOnly}. Nothing you type here is sent.`
+              : 'This session has ended. Resume it to send.'}
+          </span>
+        </div>
+      )}
+      <div className="box" data-readonly={readOnly ? 'true' : undefined}>
         <textarea
           ref={box}
           className="input"
           rows={1}
           value={text}
-          disabled={ended}
+          disabled={off}
           placeholder={
-            ended ? 'This session has ended. Resume it to keep talking.' : `Message ${name}`
+            ended
+              ? 'This session has ended. Resume it to keep talking.'
+              : readOnly
+                ? readOnly
+                : `Message ${name}`
           }
           aria-label={`Message ${name}`}
           data-testid="composer-input"
@@ -124,12 +184,20 @@ export function Composer({
             className="ib"
             aria-label="Slash commands"
             title="Slash commands"
-            disabled={ended}
+            disabled={off}
             onClick={slash}
           >
             <Icon name="slash" />
           </button>
-          <span className="hint-keys">Enter sends. Shift+Enter adds a line.</span>
+          <span className="hint-keys" data-testid="composer-hint">
+            {readOnly
+              ? 'Read-only. Sending is off.'
+              : ended
+                ? 'Ended. Sending is off.'
+                : blocked
+                  ? 'Enter keeps your message here while the terminal is open. Shift+Enter adds a line.'
+                  : 'Enter sends. Shift+Enter adds a line.'}
+          </span>
           <span className="sp" />
           {busy && (
             <button type="button" className="stop" onClick={onStop} data-testid="stop">
@@ -142,7 +210,7 @@ export function Composer({
             className="send"
             aria-label="Send"
             title="Send (Enter)"
-            disabled={ended || text.trim() === ''}
+            disabled={off || text.trim() === ''}
             onClick={send}
           >
             <Icon name="send" />

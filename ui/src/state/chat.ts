@@ -38,6 +38,12 @@ export interface Statusline {
   chips: StatuslineUpdateEvent['chips'];
 }
 
+/** A line under the log about the last send: why it did not go through, or that it waits. */
+export interface ChatNotice {
+  kind: 'blocked' | 'mirror' | 'queued' | 'no-echo';
+  text: string;
+}
+
 export interface ChatSnapshot {
   /** Main-log items in order. Subagent children are excluded. */
   items: ChatItem[];
@@ -57,6 +63,7 @@ export interface ChatSnapshot {
   detached: boolean;
   /** Only rows carrying this reaction show. */
   reactionFilter: string | null;
+  notice: ChatNotice | null;
 }
 
 /**
@@ -81,6 +88,8 @@ export class ChatModel {
   private focusSeq = 0;
   private detached = false;
   private reactionFilter: string | null = null;
+  private notice: ChatNotice | null = null;
+  private noticeTimer = 0;
   private hitTimer = 0;
   private snap: ChatSnapshot;
   private readonly listeners = new Set<() => void>();
@@ -166,6 +175,7 @@ export class ChatModel {
       focus: this.focus,
       detached: this.detached,
       reactionFilter: this.reactionFilter,
+      notice: this.notice,
     };
   }
 
@@ -189,6 +199,11 @@ export class ChatModel {
       if (!this.byKey.has(it.key) && !this.detached) this.order.push(it.key);
       if (this.detached && !this.order.includes(it.key)) continue;
       this.byKey.set(it.key, it);
+      touched = true;
+    }
+    // The message the send was waiting on arrived.
+    if (this.notice?.kind === 'no-echo' && items.some((i) => i.kind === 'user')) {
+      this.notice = null;
       touched = true;
     }
     if (touched) this.commit();
@@ -283,6 +298,29 @@ export class ChatModel {
     if (this.focus?.nonce !== nonce) return;
     this.focus = null;
     this.commit();
+  }
+
+  /** Show a send notice. `ttl` ms clears it again; omit it to hold it until cleared. */
+  setNotice(notice: ChatNotice | null, ttl?: number): void {
+    window.clearTimeout(this.noticeTimer);
+    if (this.notice?.kind === notice?.kind && this.notice?.text === notice?.text && !ttl) return;
+    this.notice = notice;
+    if (notice && ttl) this.noticeTimer = window.setTimeout(() => this.setNotice(null), ttl);
+    this.commit();
+  }
+  clearNotice(kind?: ChatNotice['kind']): void {
+    if (this.notice && (!kind || this.notice.kind === kind)) this.setNotice(null);
+  }
+
+  /** Main-log user messages held so far, to tell whether a send produced one. */
+  userItemKeys(): Set<string> {
+    const out = new Set<string>();
+    for (const [k, it] of this.byKey) if (it.kind === 'user') out.add(k);
+    return out;
+  }
+  /** Main-log items held so far. */
+  itemCount(): number {
+    return this.byKey.size;
   }
 
   setReactionFilter(emoji: string | null): void {

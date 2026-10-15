@@ -72,6 +72,19 @@ export function App() {
         fn();
       };
       const snap = store.getSnapshot();
+      // A terminal opened as a fallback (a TUI panel or dialog): Esc reaches the TUI, which
+      // closes the panel, and the view returns to chat right after.
+      if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        const id = snap.activeId;
+        if (
+          id &&
+          !snap.panel &&
+          store.viewOf(id) === 'terminal' &&
+          snap.termNotes[id] !== undefined
+        ) {
+          window.setTimeout(() => store.setView(id, 'chat'), 0);
+        }
+      }
       if (e.metaKey && !e.ctrlKey && !e.altKey) {
         if (key === 'j' && !e.shiftKey) {
           const id = snap.activeId;
@@ -219,8 +232,9 @@ export function App() {
                 <button
                   type="button"
                   aria-label="Terminal"
-                  title="Terminal (\u2318J)"
+                  title={active.mirror ? 'Runs in another terminal' : 'Terminal (\u2318J)'}
                   aria-pressed={view === 'terminal'}
+                  disabled={!!active.mirror}
                   onClick={() => store.setView(active.id, 'terminal')}
                 >
                   <Icon name="term" />
@@ -270,6 +284,36 @@ export function App() {
           </div>
         )}
 
+        {state.checkFailed && (
+          <div
+            className="cfbar"
+            role="alertdialog"
+            aria-label="Could not check"
+            data-testid="check-failed"
+          >
+            <Icon name="lock" />
+            <div className="cfbar__text">
+              <b>Could not check whether {state.checkFailed.name} is open in another terminal</b>
+              <span data-testid="check-failed-reason">{state.checkFailed.reason}</span>
+              <span className="cfbar__warn" data-testid="check-failed-warning">
+                Warning: if it is running elsewhere, opening it now starts a second process on the
+                same session. Two processes can overwrite each other&apos;s history.
+              </span>
+            </div>
+            <button type="button" className="cfbar__btn" onClick={() => store.dismissCheckFailed()}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="cfbar__btn cfbar__btn--warn"
+              data-testid="open-anyway"
+              onClick={() => void store.openAnyway()}
+            >
+              Open anyway
+            </button>
+          </div>
+        )}
+
         {active?.status === 'exited' && (
           <div className="exitbar" role="status" data-testid="exit-bar">
             <span>
@@ -300,6 +344,15 @@ export function App() {
               <span className="termbar__title" title={active.title || undefined}>
                 {active.title}
               </span>
+            </div>
+          )}
+
+          {active && view === 'terminal' && state.termNotes[active.id] !== undefined && (
+            <div className="tnote" role="status" data-testid="term-note">
+              <span>{state.termNotes[active.id]}</span>
+              <button type="button" onClick={() => store.setView(active.id, 'chat')}>
+                Back to chat
+              </button>
             </div>
           )}
 
@@ -339,6 +392,7 @@ export function App() {
               visible={view === 'chat'}
               unread={state.badges[active.id]?.unread ?? 0}
               thread={state.thread}
+              prefs={state.prefs}
               marks={state.marks}
             />
           )}

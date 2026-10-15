@@ -8,10 +8,14 @@ import type {
   NotifyFireEvent,
   Prefs,
   SectionInfo,
+  SendOutcome,
   SessionInfo,
   SessionStatus,
+  StatusBarPrefs,
 } from '../ipc';
+import { isInteractiveSlash, slashName, SLASH_QUIET_MS } from '../lib/slashCommands';
 import { visibleOrder } from '../lib/groups';
+import { isCheckFailed } from '../ipc/types';
 import { bindTerminalStyle } from '../lib/prefsModule';
 import { toMillis } from '../lib/time';
 import { bytesToBase64, utf8ToBase64 } from '../lib/base64';
@@ -48,6 +52,13 @@ export type DropDest =
   | { kind: 'default' }
   | { kind: 'section'; sectionId: string };
 
+/** The open that `check_failed` stopped, kept so "Open anyway" can repeat it. */
+export interface PendingCheck {
+  name: string;
+  reason: string;
+  target: { kind: 'resume'; id: string } | { kind: 'folder'; sectionId: string; sessionId: string };
+}
+
 /** What `folder_sessions` last returned for one folder section. */
 export interface FolderListing {
   sessions: FolderSession[];
@@ -66,6 +77,8 @@ export interface AppState {
   activeId: string | null;
   lastCwd: string;
   error: string | null;
+  /** An open or resume the live check could not clear. The user may open anyway. */
+  checkFailed: PendingCheck | null;
   /** Chat or terminal per DM. A DM opens as chat. */
   views: Record<string, ViewMode>;
   badges: Record<string, Badges>;
@@ -86,7 +99,23 @@ export interface AppState {
   folders: Record<string, FolderListing>;
   /** Terminal background per DM from its palette, for the stage behind the terminal. */
   termBg: Record<string, string>;
+  /**
+   * DMs whose terminal view is a fallback (a TUI panel or dialog), with the note shown over it.
+   * Esc or Cmd+J on such a terminal returns to chat.
+   */
+  termNotes: Record<string, string>;
 }
+
+/** What `sendText` resolved to. `error` means the call itself failed. */
+export type SendResultKind = SendOutcome | 'error';
+
+/** A DM's claude waits on a dialog only the terminal can show. */
+export function inTerminalDialog(s: Pick<SessionInfo, 'terminalWait'> | undefined): boolean {
+  return !!s?.terminalWait;
+}
+
+/** How long a sent message gets to show up as a user item before the chat says why not. */
+export const ECHO_WAIT_MS = 3000;
 
 const LAST_CWD_KEY = 'patchroom.lastCwd';
 const RECENT_KEY = 'patchroom.recentDms';
@@ -140,6 +169,7 @@ export class AppStore {
     activeId: null,
     lastCwd: readLastCwd(),
     error: null,
+    checkFailed: null,
     views: {},
     badges: {},
     thread: null,
@@ -152,6 +182,7 @@ export class AppStore {
     recent: readRecent(),
     folders: {},
     termBg: {},
+    termNotes: {},
   };
   private readonly listeners = new Set<() => void>();
   private readonly terminals = new Map<string, SessionTerminal>();
@@ -234,9 +265,23 @@ export class AppStore {
   }
 
   setView(id: string, view: ViewMode): void {
+    // A mirror has no process of its own: there is no terminal to show.
+    if (view === 'terminal' && this.state.sessions.find((s) => s.id === id)?.mirror) return;
+    if (view === 'chat' && this.state.termNotes[id] !== undefined) {
+      const rest = { ...this.state.termNotes };
+      delete rest[id];
+      this.set({ termNotes: rest });
+    }
     if (this.viewOf(id) === view) return;
     this.set({ views: { ...this.state.views, [id]: view } });
     this.hintView(id, view);
+  }
+
+  /** Show the terminal because the chat cannot render what claude is doing. Esc or Cmd+J returns. */
+  openFallback(id: string, note: string): void {
+    if (this.state.sessions.find((s) => s.id === id)?.mirror) return;
+    this.set({ termNotes: { ...this.state.termNotes, [id]: note } });
+    this.setView(id, 'terminal');
   }
 
   /** Tell the backend which view shows, so a hidden picker goes to the TUI while it is on screen. */
@@ -286,13 +331,79 @@ export class AppStore {
     });
   }
 
-  /** Send composer text to claude exactly as typed. */
-  async sendText(id: string, text: string): Promise<void> {
+  /** PTY bytes seen per DM: a slash command that repaints the terminal moves this. */
+  private readonly ptyBytes = new Map<string, number>();
+
+  /**
+   * Send composer text to claude exactly as typed. Every outcome is visible: a send that did
+   * not go through leaves a notice under the log and the caller keeps the draft.
+   */
+  async sendText(id: string, text: string): Promise<SendResultKind> {
+    const chat = this.chat(id);
+    const before = chat.userItemKeys();
+    const items0 = chat.itemCount();
+    const pty0 = this.ptyBytes.get(id) ?? 0;
+    let outcome: SendOutcome;
     try {
-      await this.ipc.sessionSendText(id, text);
+      const r = await this.ipc.sessionSendText(id, text);
+      outcome = r ? r.outcome : 'sent';
     } catch (err) {
       this.set({ error: `Could not send the message: ${String(err)}` });
+      return 'error';
     }
+    if (outcome === 'blocked_dialog') {
+      chat.setNotice({
+        kind: 'blocked',
+        text: 'Claude is showing something in the terminal. Your message was not sent. It stays in the box.',
+      });
+    } else if (outcome === 'mirror_readonly') {
+      chat.setNotice({
+        kind: 'mirror',
+        text: 'This session is open in another terminal. Your message was not sent. It stays in the box.',
+      });
+    } else if (outcome === 'queued') {
+      chat.setNotice({ kind: 'queued', text: 'Queued. Claude reads it after this turn.' }, 4000);
+    } else {
+      chat.clearNotice();
+      const name = slashName(text);
+      if (name && isInteractiveSlash(text)) {
+        this.openFallback(id, `/${name} opens in the terminal. Esc or \u2318J returns to chat.`);
+      } else if (name) {
+        this.watchSlash(id, name, items0, pty0);
+      } else {
+        this.watchEcho(id, before);
+      }
+    }
+    return outcome;
+  }
+
+  /** A plain message must show up as a user item soon; if not, say so. */
+  private watchEcho(id: string, before: Set<string>): void {
+    window.setTimeout(() => {
+      const chat = this.chat(id);
+      for (const k of chat.userItemKeys()) if (!before.has(k)) return;
+      if (chat.getSnapshot().notice) return;
+      chat.setNotice({
+        kind: 'no-echo',
+        text: 'Claude has not shown your message yet. It may be busy or waiting in the terminal.',
+      });
+    }, ECHO_WAIT_MS);
+  }
+
+  /**
+   * An unknown slash command: if no transcript item follows while the PTY repaints, claude opened
+   * a panel the chat cannot show. Flip to the terminal with a note.
+   */
+  private watchSlash(id: string, name: string, items0: number, pty0: number): void {
+    window.setTimeout(() => {
+      if (this.viewOf(id) !== 'chat') return;
+      if (this.chat(id).itemCount() !== items0) return;
+      if ((this.ptyBytes.get(id) ?? 0) === pty0) return;
+      this.openFallback(
+        id,
+        `Claude did not answer /${name} in chat, so the terminal shows it. Esc or \u2318J returns to chat.`,
+      );
+    }, SLASH_QUIET_MS);
   }
 
   /** Save a pasted image and insert its absolute path into the draft. Nothing reaches the PTY. */
@@ -306,6 +417,47 @@ export class AppStore {
     }
   }
 
+  /** Arm or disarm "Take over when it closes". */
+  async takeoverWhenClosed(id: string, enabled: boolean): Promise<void> {
+    try {
+      await this.ipc.sessionMirrorTakeoverWhenClosed(id, enabled);
+    } catch (err) {
+      this.set({ error: `Could not change take over: ${String(err)}` });
+    }
+  }
+
+  /** Resume a mirrored DM now. Resolves to the backend's refusal text, or null on success. */
+  async takeoverNow(id: string): Promise<string | null> {
+    try {
+      const { cols, rows } = this.terminal(id).term;
+      const info = await this.ipc.sessionTakeover(id, cols, rows);
+      this.patchSession(id, { ...info, mirror: null });
+      await this.refresh();
+      return null;
+    } catch (err) {
+      return String(err).replace(/^Error: /, '');
+    }
+  }
+
+  /**
+   * Save a status strip layout: for one DM, or as the global default when `dmId` is omitted.
+   * `null` removes the override (or resets the default to the built-in layout).
+   */
+  async setStatusBar(dmId: string | null, list: string[] | null): Promise<void> {
+    const cur = this.state.prefs?.statusBar ?? { default: null, perDm: {} };
+    let next: StatusBarPrefs;
+    if (dmId) {
+      const perDm = { ...cur.perDm };
+      if (list) perDm[dmId] = list;
+      else delete perDm[dmId];
+      next = { ...cur, perDm };
+    } else {
+      next = { ...cur, default: list };
+    }
+    if (this.state.prefs) this.set({ prefs: { ...this.state.prefs, statusBar: next } });
+    await this.setPrefs({ statusBar: next });
+  }
+
   /** Esc to the PTY: interrupts the running turn. */
   stopTurn(id: string): void {
     void this.ipc.sessionWrite(id, utf8ToBase64('\x1b')).catch(() => undefined);
@@ -317,9 +469,13 @@ export class AppStore {
     if (this.started) return;
     this.started = true;
     this.unlisten = await Promise.all([
-      this.ipc.on('pty:output', (e) => this.terminal(e.id).writeBase64(e.data)),
+      this.ipc.on('pty:output', (e) => {
+        this.ptyBytes.set(e.id, (this.ptyBytes.get(e.id) ?? 0) + e.data.length);
+        this.terminal(e.id).writeBase64(e.data);
+      }),
       this.ipc.on('pty:exit', (e) => {
         this.patchSession(e.id, { status: 'exited', exitCode: e.code });
+        this.chat(e.id).clearNotice('queued');
       }),
       this.ipc.on('session:title', (e) => this.patchSession(e.id, { title: e.title })),
       this.ipc.on('session:status', (e) => {
@@ -327,6 +483,18 @@ export class AppStore {
           status: e.status,
           needs: e.status === 'waiting' ? e.needs : undefined,
         });
+      }),
+      this.ipc.on('session:terminal_wait', (e) =>
+        this.patchSession(e.id, { terminalWait: { reason: e.reason, since: e.since } }),
+      ),
+      this.ipc.on('session:terminal_wait_clear', (e) => {
+        this.patchSession(e.id, { terminalWait: null });
+        // The dialog is gone: its "not sent" notice no longer applies.
+        this.chat(e.id).clearNotice('blocked');
+      }),
+      this.ipc.on('session:mirror', (e) => {
+        this.patchSession(e.id, { mirror: e.mirror });
+        if (!e.mirror) this.chat(e.id).clearNotice('mirror');
       }),
       this.ipc.on('chat:items', (e) => this.chat(e.id).apply(e.items)),
       this.ipc.on('prompt:pending', (e) => this.chat(e.id).addPrompt(e)),
@@ -435,16 +603,44 @@ export class AppStore {
    * Restart an exited DM through the backend's `session_resume`. The DM keeps its id, so the
    * sidebar row, terminal and stored history stay the same. Never creates a second DM.
    */
-  async resume(session: SessionInfo): Promise<void> {
+  async resume(session: SessionInfo, openAnyway = false): Promise<void> {
     try {
       const { cols, rows } = this.terminal(session.id).term;
-      await this.ipc.sessionResume(session.id, cols, rows);
+      const r = await this.ipc.sessionResume(session.id, cols, rows, { openAnyway });
+      if (isCheckFailed(r)) {
+        this.set({
+          checkFailed: {
+            name: session.name,
+            reason: r.reason,
+            target: { kind: 'resume', id: session.id },
+          },
+        });
+        return;
+      }
+      this.set({ checkFailed: null });
       this.patchSession(session.id, { status: 'busy', needs: undefined, exitCode: undefined });
       this.set({ activeId: session.id, error: null });
       await this.refresh();
     } catch (err) {
       this.set({ error: `Could not resume: ${String(err)}` });
     }
+  }
+
+  /** Repeat the stopped open without the live check. The dialog warns about two processes. */
+  async openAnyway(): Promise<void> {
+    const p = this.state.checkFailed;
+    if (!p) return;
+    if (p.target.kind === 'folder') {
+      await this.openFolderSession(p.target.sectionId, p.target.sessionId, true);
+    } else {
+      const s = this.state.sessions.find((x) => x.id === (p.target as { id: string }).id);
+      if (s) await this.resume(s, true);
+      else this.set({ checkFailed: null });
+    }
+  }
+
+  dismissCheckFailed(): void {
+    if (this.state.checkFailed) this.set({ checkFailed: null });
   }
 
   /** Re-read DMs and sections from the backend, which owns names, titles and sections. */
@@ -750,9 +946,21 @@ export class AppStore {
   }
 
   /** Turn a listed session into a normal DM in its section (spawns `claude --resume`). */
-  async openFolderSession(sectionId: string, sessionId: string): Promise<void> {
+  async openFolderSession(sectionId: string, sessionId: string, openAnyway = false): Promise<void> {
     try {
-      const info = await this.ipc.folderSessionOpen(sectionId, sessionId);
+      const info = await this.ipc.folderSessionOpen(sectionId, sessionId, { openAnyway });
+      if (isCheckFailed(info)) {
+        const row = this.state.folders[sectionId]?.sessions.find((s) => s.sessionId === sessionId);
+        this.set({
+          checkFailed: {
+            name: row?.name || 'this session',
+            reason: info.reason,
+            target: { kind: 'folder', sectionId, sessionId },
+          },
+        });
+        return;
+      }
+      this.set({ checkFailed: null });
       const known = this.state.sessions.some((s) => s.id === info.id);
       this.set({
         sessions: known

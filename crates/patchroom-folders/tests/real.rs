@@ -36,6 +36,7 @@ fn real_folder_lists_read_only() {
         dms: &dms,
         hidden: &hidden,
         live: &live,
+        live_checked: true,
     };
     let t0 = Instant::now();
     let l = d.list(&q);

@@ -38,6 +38,18 @@ pub enum NameSource {
     Prompt,
 }
 
+/// Whether a session runs in another terminal, as far as the last check knows.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LiveState {
+    /// No answer yet (or the last one is stale): do not call the session free.
+    Checking,
+    /// A process outside this app runs it.
+    Live,
+    /// Checked: nothing outside this app runs it.
+    Free,
+}
+
 /// One resumable session, as `folder_sessions` reports it.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +82,10 @@ pub struct FolderSession {
     pub user_turns: u32,
     /// Running in another terminal (`claude agents --json`).
     pub live_elsewhere: bool,
+    /// Whether `live_elsewhere` is known: `checking` until the first `claude agents --json`
+    /// answer (and again when the last answer is stale), then `live` or `free`. A row is
+    /// never `free` from an empty cache.
+    pub live_state: LiveState,
     /// Noise or hidden by the user.
     pub hidden: bool,
     /// The Patchroom DM that runs this session, once opened.
@@ -101,6 +117,9 @@ pub struct Query<'a> {
     pub hidden: &'a HashSet<String>,
     /// Session ids running in another terminal.
     pub live: &'a HashSet<String>,
+    /// `live` comes from a fresh check. False reports every session not in `live` as
+    /// `checking` instead of `free`.
+    pub live_checked: bool,
 }
 
 /// A folder whose sessions belong to the section: the home folder or a linked worktree.
@@ -225,6 +244,13 @@ impl Discovery {
                     last_prompt: scan.last_prompt.clone(),
                     user_turns: scan.user_turns,
                     live_elsewhere: q.live.contains(&session_id),
+                    live_state: if q.live.contains(&session_id) {
+                        LiveState::Live
+                    } else if q.live_checked {
+                        LiveState::Free
+                    } else {
+                        LiveState::Checking
+                    },
                     hidden: noise || q.hidden.contains(&session_id),
                     dm_id: q.dms.get(&session_id).map(|d| d.0.clone()),
                     session_id: session_id.clone(),
@@ -457,6 +483,7 @@ mod tests {
             dms,
             hidden,
             live,
+            live_checked: true,
         }
     }
 
@@ -586,6 +613,36 @@ mod tests {
         seen.sort();
         assert_eq!(seen, [("empty", true), ("pmode", true), ("real", false)]);
         assert_eq!(l.hidden_count, 2);
+    }
+
+    #[test]
+    fn an_unchecked_cache_reports_checking_never_free() {
+        let fx = fx();
+        let h = fx.home.clone();
+        transcript(&fx, &h, "one", &[user("one", &h, "2026-03-01T10:00:00Z")]);
+        transcript(&fx, &h, "two", &[user("two", &h, "2026-03-02T10:00:00Z")]);
+        let (dms, hidden) = Default::default();
+        let live = HashSet::from(["two".to_owned()]);
+        let d = Discovery::new();
+        let mut query = q(&fx, &dms, &hidden, &live);
+        query.live_checked = false;
+        let state = |l: &Listing, id: &str| {
+            l.sessions
+                .iter()
+                .find(|s| s.session_id == id)
+                .map(|s| s.live_state)
+        };
+        let l = d.list(&query);
+        assert_eq!(state(&l, "one"), Some(LiveState::Checking));
+        assert_eq!(state(&l, "two"), Some(LiveState::Live));
+        query.live_checked = true;
+        let l = d.list(&query);
+        assert_eq!(state(&l, "one"), Some(LiveState::Free));
+        assert_eq!(state(&l, "two"), Some(LiveState::Live));
+        assert_eq!(
+            serde_json::to_value(LiveState::Checking).unwrap(),
+            "checking"
+        );
     }
 
     #[test]

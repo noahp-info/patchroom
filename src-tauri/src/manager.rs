@@ -30,7 +30,8 @@ use std::time::{Duration, Instant};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use patchroom_bridge::{
-    Bridge, BridgeConfig, BridgeEvent, HookSettings, NeedsKind, Reconciler, Status as BridgeStatus,
+    AgentsSource, Bridge, BridgeConfig, BridgeEvent, HookSettings, NeedsKind, Reconciler,
+    Status as BridgeStatus,
 };
 use patchroom_pty::{Command, PtyEvent, Session as PtySession, SpawnConfig, TitleKind};
 use patchroom_store::{
@@ -41,14 +42,20 @@ use serde::{Deserialize, Serialize};
 
 mod chat;
 mod folder;
+mod mirror;
+mod needs;
 mod paste;
 mod slack;
 pub mod sound;
+mod terminal;
 
 pub use chat::{ImageData, PromptAnswer};
+pub use mirror::MirrorInfo;
+pub use needs::TRACE_LOG as NEEDS_TRACE_LOG;
 pub use slack::{ActivityRow, Located, MarkInfo, Reindexed, DECISION_LOG};
+pub use terminal::{SendOutcome, TerminalWaitInfo};
 
-use crate::agents::LoginShellAgents;
+use crate::agents::{AgentsTap, LoginShellAgents, TappedAgents};
 use crate::events::{EventSink, Needs, PresenceStatus, UiEvent};
 use patchroom_prefs::Event;
 
@@ -60,6 +67,11 @@ const RECONCILE_INTERVAL: Duration = Duration::from_secs(15);
 /// Reconcile kicks after Esc or Ctrl+C: claude needs a moment to redraw and
 /// update `claude agents`, so check early and once more later.
 const INTERRUPT_KICKS: [Duration; 2] = [Duration::from_millis(900), Duration::from_secs(3)];
+
+/// Default period of the mirror monitor (see [`mirror`]).
+const MIRROR_POLL: Duration = Duration::from_secs(2);
+/// Period of the terminal-wait evaluation (see [`terminal`]).
+const WAIT_TICK: Duration = Duration::from_millis(150);
 
 /// Unix socket paths are limited to about 104 bytes on macOS.
 const MAX_SOCKET_PATH: usize = 100;
@@ -100,6 +112,9 @@ pub enum Error {
     /// Bridge failure.
     #[error("bridge: {0}")]
     Bridge(#[from] patchroom_bridge::BridgeError),
+    /// The pre-spawn live check could not finish. The UI offers retry or "Open anyway".
+    #[error("check_failed: could not check whether this session already runs in another terminal ({0}); not starting it, to avoid a second process")]
+    CheckFailed(String),
     /// Other I/O failure.
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
@@ -135,6 +150,8 @@ pub struct ManagerConfig {
     /// Empty in the app; debug runs fill it from `PATCHROOM_E2E_EXTRA_PROJECTS` so a live
     /// check can show a fixture session without writing under `~/.claude`.
     pub extra_projects_dirs: Vec<PathBuf>,
+    /// How often a read-only mirror checks whether the other process is still there.
+    pub mirror_poll: Duration,
     /// The bundled `sounds` resource dir (`generated-packs.json` and one folder per file
     /// pack). `None`: only imported packs are listed.
     pub sounds_dir: Option<PathBuf>,
@@ -157,6 +174,7 @@ impl ManagerConfig {
             claude_config_dir: None,
             terminal_hold: TERMINAL_HOLD,
             extra_projects_dirs: Vec::new(),
+            mirror_poll: MIRROR_POLL,
             sounds_dir: None,
             home_dir: std::env::var_os("HOME").map(PathBuf::from),
         }
@@ -232,6 +250,12 @@ pub struct SessionInfo {
     /// another project): the folder's name, so it is clear the DM does not run there.
     #[serde(rename = "folderChip")]
     pub folder_chip: Option<String>,
+    /// Set when the session runs in another terminal and this DM only mirrors its transcript.
+    /// Nothing runs for this DM; the composer is read only.
+    pub mirror: Option<MirrorInfo>,
+    /// Set while claude waits on something only the terminal can show (no chat prompt).
+    #[serde(rename = "terminalWait")]
+    pub terminal_wait: Option<TerminalWaitInfo>,
 }
 
 /// One section of the sidebar.
@@ -336,6 +360,18 @@ pub struct Manager {
     folders: folder::FolderState,
     /// DMs the user killed or deleted, so their exit is not reported as a failure.
     killed: Mutex<HashSet<String>>,
+    /// The reconciler's newest `claude agents --json` answer (the `waitingFor` text).
+    agents_tap: Arc<AgentsTap>,
+    /// Test hook: replaces `claude agents --json` for the re-check, mirrors and the listing.
+    agents_override: Mutex<Option<Arc<dyn AgentsSource>>>,
+    /// DMs that only mirror a session running in another terminal.
+    mirrors: Mutex<HashMap<String, mirror::Mirror>>,
+    /// The mirror monitor thread runs.
+    mirror_monitor: AtomicBool,
+    /// Terminal-only waits per DM.
+    waits: Mutex<HashMap<String, terminal::WaitTrack>>,
+    /// Serializes the needs-you derivation (gather the sources, then write the flag).
+    needs_gate: Mutex<()>,
 }
 
 /// Forwards every event and adds `activity:changed` after the ones that change the Activity
@@ -349,6 +385,8 @@ impl EventSink for ActivitySink {
             UiEvent::Badges { .. }
                 | UiEvent::PromptPending { .. }
                 | UiEvent::PromptResolved { .. }
+                | UiEvent::TerminalWait { .. }
+                | UiEvent::TerminalWaitClear { .. }
                 | UiEvent::Exit { .. }
         );
         self.0.emit(event);
@@ -380,9 +418,17 @@ impl Manager {
         let bridge = Bridge::start(BridgeConfig::new(socket_path_for(&cfg.data_dir)))?;
         let events = bridge.subscribe();
         let active = Arc::new(AtomicBool::new(false));
+        let agents_tap = Arc::new(AgentsTap::default());
+        if cfg.reconcile {
+            crate::agents::warm_up();
+        }
         let reconciler = cfg.reconcile.then(|| {
             Arc::new(bridge.spawn_reconciler(
-                Arc::new(LoginShellAgents::new(Arc::clone(&active))),
+                Arc::new(TappedAgents {
+                    inner: LoginShellAgents::new(Arc::clone(&active)),
+                    tap: Arc::clone(&agents_tap),
+                    gate: Some(Arc::clone(&active)),
+                }),
                 RECONCILE_INTERVAL,
             ))
         });
@@ -404,6 +450,12 @@ impl Manager {
             slack,
             folders: folder::FolderState::new(),
             killed: Mutex::new(HashSet::new()),
+            agents_tap,
+            agents_override: Mutex::new(None),
+            mirrors: Mutex::new(HashMap::new()),
+            mirror_monitor: AtomicBool::new(false),
+            waits: Mutex::new(HashMap::new()),
+            needs_gate: Mutex::new(()),
         });
         // The app always has a chat client, so blocking hooks are answered through it.
         manager.bridge.set_chat_attached(true);
@@ -451,12 +503,41 @@ impl Manager {
         Ok(id)
     }
 
-    /// `session_resume`: start an exited DM again, with `claude --resume <id>`
-    /// for claude DMs.
+    /// `session_resume`: start an exited DM again, with `claude --resume <id>` for claude
+    /// DMs. First re-checks `claude agents --json` (see [`mirror`]): when another terminal
+    /// runs the session, nothing is spawned and the DM becomes a read-only mirror.
     ///
     /// # Errors
-    /// Unknown id, session still running, no stored claude session id.
+    /// Unknown id, session still running, no stored claude session id, or a re-check that
+    /// did not finish.
     pub fn resume(self: &Arc<Self>, id: &str, cols: Option<u16>, rows: Option<u16>) -> Result<()> {
+        self.resume_with(id, cols, rows, false, false)
+    }
+
+    /// [`Manager::resume`] with `open_anyway`: skip the live check. Only after the user
+    /// confirmed a `check_failed` error; it can start a second process on one session.
+    ///
+    /// # Errors
+    /// As [`Manager::resume`], without the check error.
+    pub fn resume_anyway(
+        self: &Arc<Self>,
+        id: &str,
+        cols: Option<u16>,
+        rows: Option<u16>,
+    ) -> Result<()> {
+        self.resume_with(id, cols, rows, false, true)
+    }
+
+    /// The one resume path. `strict` refuses (instead of mirroring) while another process
+    /// runs the session.
+    pub(super) fn resume_with(
+        self: &Arc<Self>,
+        id: &str,
+        cols: Option<u16>,
+        rows: Option<u16>,
+        strict: bool,
+        skip_check: bool,
+    ) -> Result<()> {
         let conv = self.conversation(id)?;
         if let Some(live) = lock(&self.live).get(id) {
             if live.pty.exit_info().is_none() {
@@ -471,6 +552,26 @@ impl Manager {
         } else {
             None
         };
+        if let Some(sid) = sid.as_deref().filter(|_| !skip_check) {
+            // Never two processes on one session: look again, right now, before spawning.
+            match self.live_check(sid) {
+                mirror::LiveCheck::Free => {
+                    self.end_mirror(id);
+                }
+                mirror::LiveCheck::Live { pid, place, status } => {
+                    if strict {
+                        return Err(Error::Invalid(format!(
+                            "still running in {place} (pid {pid}); close it there first"
+                        )));
+                    }
+                    self.start_mirror(id, sid, pid, &place, status);
+                    return Ok(());
+                }
+                mirror::LiveCheck::Unknown(why) => {
+                    return Err(Error::CheckFailed(why));
+                }
+            }
+        }
         self.launch(
             id,
             conv.cwd.as_deref().unwrap_or("."),
@@ -523,20 +624,15 @@ impl Manager {
             });
     }
 
-    /// `session_send_text`: bracketed paste, then Enter after the PTY crate's
-    /// delay. Queued behind earlier writes.
-    ///
-    /// # Errors
-    /// Unknown id or exited session.
-    pub fn send_text(&self, id: &str, text: String) -> Result<()> {
-        self.enqueue(id, WriteJob::Text(text))
-    }
-
     /// `session_resize`.
     ///
     /// # Errors
     /// Unknown id or resize failure.
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<()> {
+        if self.mirror_of(id).is_some() {
+            // Nothing runs here to resize.
+            return Ok(());
+        }
         let live = self.live_of(id)?;
         live.pty.resize(rows, cols)?;
         if let Some(screen) = &live.screen {
@@ -546,11 +642,15 @@ impl Manager {
     }
 
     /// `session_kill`: SIGTERM the process group, SIGKILL after the grace.
-    /// Blocks up to the grace period. Idempotent.
+    /// Blocks up to the grace period. Idempotent. On a mirror it only stops mirroring.
     ///
     /// # Errors
     /// Unknown id or signal failure.
     pub fn kill(&self, id: &str) -> Result<()> {
+        // A mirror has no process of ours: stop mirroring, never signal the other one.
+        if self.end_mirror(id) {
+            return Ok(());
+        }
         let live = self.live_of(id)?;
         lock(&self.killed).insert(id.to_owned());
         live.pty.kill()?;
@@ -581,6 +681,10 @@ impl Manager {
             .into_iter()
             .map(|b| (b.conversation_id.to_string(), b))
             .collect();
+        let mirrors: HashMap<String, mirror::MirrorInfo> = lock(&self.mirrors)
+            .iter()
+            .map(|(k, m)| (k.clone(), m.info.clone()))
+            .collect();
         let presence = lock(&self.presence);
         Ok(convs
             .into_iter()
@@ -595,6 +699,8 @@ impl Manager {
                         None,
                     ),
                 };
+                let mirror = mirrors.get(&id).cloned();
+                let terminal_wait = self.terminal_wait_of(&id);
                 let (unread, needs_you) = badges
                     .get(&id)
                     .map_or((0, false), |b| (b.unread, b.needs_you));
@@ -621,6 +727,8 @@ impl Manager {
                     archived: c.archived,
                     has_draft: drafts.contains(&c.id),
                     folder_chip,
+                    mirror,
+                    terminal_wait,
                 }
             })
             .collect())
@@ -642,6 +750,8 @@ impl Manager {
     pub fn delete(&self, id: &str) -> Result<()> {
         let conv_id = parse_id(id)?;
         lock(&self.killed).insert(id.to_owned());
+        self.drop_mirror(id);
+        self.drop_wait(id);
         let live = lock(&self.live).remove(id);
         if let Some(live) = live {
             let _ = live.pty.kill();
@@ -753,6 +863,17 @@ impl Manager {
         lock(&self.live)
             .get(id)
             .is_some_and(|l| l.pty.exit_info().is_some())
+    }
+
+    /// The emulated terminal screen of `id` as text (what the user would see), if the DM has
+    /// a live claude screen. Used by the tests and the debug e2e hooks to prove what did and
+    /// did not reach the terminal.
+    #[must_use]
+    pub fn screen_text(&self, id: &str) -> Option<String> {
+        let live = lock(&self.live);
+        let screen = live.get(id)?.screen.as_ref()?;
+        let text = lock(screen).text();
+        Some(text)
     }
 
     /// Pid of the session's child, if it is known.
@@ -876,6 +997,12 @@ impl Manager {
     }
 
     fn enqueue(&self, id: &str, job: WriteJob) -> Result<()> {
+        if let Some(m) = self.mirror_of(id) {
+            return Err(Error::Invalid(format!(
+                "this session runs in {} (pid {}); Patchroom shows it read only",
+                m.place, m.pid
+            )));
+        }
         let live = self.live_of(id)?;
         if live.pty.exit_info().is_some() {
             return Err(Error::Invalid("session has exited".into()));
@@ -993,7 +1120,7 @@ impl Manager {
 
         if spec.is_claude() {
             // A new process has no open prompts: whatever waited before is gone.
-            self.clear_needs_you(id);
+            self.force_clear_needs_you(id, "session-start", "a new process has no open prompts");
             self.start_chat(id, cwd, claude_sid);
         }
         let writer_pty = Arc::clone(&pty);
@@ -1125,27 +1252,56 @@ impl Manager {
     /// Update presence and emit on change. An exited session stays exited
     /// until it is launched again (late hooks must not revive it).
     fn set_status(&self, id: &str, status: PresenceStatus, needs: Option<Needs>) {
+        self.set_status_with_needs(id, status, needs, None);
+    }
+
+    /// Set presence and, when `needs_writer` names the writer, persist the derived needs-you
+    /// before `session:status` goes out, so a listener that reads the store sees the new flag.
+    pub(super) fn set_status_with_needs(
+        &self,
+        id: &str,
+        status: PresenceStatus,
+        needs: Option<Needs>,
+        needs_writer: Option<&str>,
+    ) {
+        // With a writer, needs-you is derived on every report, changed or not, as before.
+        let reconcile = |m: &Self| {
+            if let Some(writer) = needs_writer {
+                m.reconcile_needs_you(
+                    id,
+                    writer,
+                    &format!("{status:?}"),
+                    status != PresenceStatus::Waiting,
+                );
+            }
+        };
         let mut presence = lock(&self.presence);
+        let unchanged = match presence.get(id) {
+            None => true,
+            Some(p) => {
+                p.status == PresenceStatus::Exited || (p.status == status && p.needs == needs)
+            }
+        };
+        if unchanged {
+            drop(presence);
+            reconcile(self);
+            return;
+        }
         let Some(p) = presence.get_mut(id) else {
             return;
         };
-        if p.status == PresenceStatus::Exited {
-            return;
-        }
-        if p.status == status && p.needs == needs {
-            return;
-        }
         // A turn that was running and is now idle is a finished turn.
         let finished = p.status == PresenceStatus::Busy && status == PresenceStatus::Idle;
         p.status = status;
         p.needs = needs;
+        self.refresh_active(&presence);
+        drop(presence);
+        reconcile(self);
         self.sink.emit(UiEvent::Status {
             id: id.to_owned(),
             status,
             needs,
         });
-        self.refresh_active(&presence);
-        drop(presence);
         if finished {
             self.notify_event(id, Event::Done, "Finished");
         }
@@ -1191,6 +1347,7 @@ impl Manager {
             .name("patchroom-bridge-events".into())
             .spawn(move || {
                 let mut last_sweep = Instant::now();
+                let mut last_wait = Instant::now();
                 loop {
                     if me.shutting_down.load(Ordering::SeqCst) {
                         break;
@@ -1199,6 +1356,10 @@ impl Manager {
                         Ok(ev) => me.on_bridge_event(&ev),
                         Err(RecvTimeoutError::Timeout) => {}
                         Err(RecvTimeoutError::Disconnected) => break,
+                    }
+                    if last_wait.elapsed() >= WAIT_TICK {
+                        last_wait = Instant::now();
+                        me.terminal_wait_tick();
                     }
                     if last_sweep.elapsed() >= PROMPT_SWEEP {
                         last_sweep = Instant::now();
@@ -1232,8 +1393,7 @@ impl Manager {
                     self.note_claude_session(key, sid);
                 }
                 let (status, needs) = map_status(se.status);
-                self.set_status(key, status, needs);
-                self.note_needs_you(key, status == PresenceStatus::Waiting);
+                self.set_status_with_needs(key, status, needs, Some("bridge-status"));
             }
             BridgeEvent::Hook(rec) => {
                 if let Some(key) = rec.session.key.as_deref() {

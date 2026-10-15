@@ -11,7 +11,7 @@ import type { ChatItem, MarkInfo, PromptAnswer, SessionInfo, SubagentItem } from
 import { emojiName } from '../../lib/emoji';
 import { itemText } from '../../lib/itemText';
 import { buildRows } from '../../lib/rows';
-import type { AppStore } from '../../state/store';
+import { inTerminalDialog, type AppStore } from '../../state/store';
 import { ChatContext } from './ChatContext';
 import { ChatLog, type ScrollState } from './ChatLog';
 import { Composer } from './Composer';
@@ -19,6 +19,7 @@ import { Floating } from '../Floating';
 import { Icon } from '../Icon';
 import { MarkList } from '../MarkList';
 import type { Decor, RowActions } from './RowView';
+import { MirrorBanner, TerminalWaitBanner, mirrorWhere } from './Banners';
 import { StatusStrip } from './StatusStrip';
 import { ThreadPane } from './ThreadPane';
 
@@ -29,6 +30,8 @@ export interface ChatViewProps {
   visible: boolean;
   unread: number;
   thread: ReturnType<AppStore['getSnapshot']>['thread'];
+  /** The global prefs, for the status strip layout. */
+  prefs: ReturnType<AppStore['getSnapshot']>['prefs'];
   /** Every pin, saved item and reaction; this view reads the ones for its DM. */
   marks: MarkInfo[];
 }
@@ -195,7 +198,7 @@ function ChatBar({
 }
 
 /** The chat for one DM: log, composer and status strip, plus the subagent thread pane. */
-export function ChatView({ store, session, visible, unread, thread, marks }: ChatViewProps) {
+export function ChatView({ store, session, visible, unread, thread, prefs, marks }: ChatViewProps) {
   const id = session.id;
   const model = store.chat(id);
   const snap = useSyncExternalStore(model.subscribe, model.getSnapshot);
@@ -294,6 +297,8 @@ export function ChatView({ store, session, visible, unread, thread, marks }: Cha
   );
   const onLoadOlder = useCallback(() => void model.loadOlder(), [model]);
   const ended = session.status === 'exited';
+  const mirrored = !!session.mirror;
+  const dialog = !mirrored && inTerminalDialog(session);
 
   const ctx = useMemo(() => ({ store, sessionId: id }), [store, id]);
 
@@ -315,6 +320,21 @@ export function ChatView({ store, session, visible, unread, thread, marks }: Cha
             filter={filter}
             onFilter={(e) => model.setReactionFilter(e)}
           />
+          {mirrored && (
+            <MirrorBanner
+              session={session}
+              onArm={(on) => void store.takeoverWhenClosed(id, on)}
+              onTakeoverNow={() => store.takeoverNow(id)}
+            />
+          )}
+          {dialog && (
+            <TerminalWaitBanner
+              wait={session.terminalWait!}
+              onShowTerminal={() =>
+                store.openFallback(id, 'Answer it here. Esc or \u2318J returns to chat.')
+              }
+            />
+          )}
           {snap.error && (
             <div className="banner" role="alert">
               <span>{snap.error}</span>
@@ -344,9 +364,16 @@ export function ChatView({ store, session, visible, unread, thread, marks }: Cha
                 {snap.loaded ? (
                   <>
                     <b>No messages yet.</b>
-                    <span>
-                      Say something below. <kbd>&#8984;J</kbd> shows the terminal.
-                    </span>
+                    {mirrored ? (
+                      <span>
+                        Nothing has been said in this session yet. It is read-only here. Messages
+                        appear as they are sent from {mirrorWhere(session) || 'the other terminal'}.
+                      </span>
+                    ) : (
+                      <span>
+                        Say something below. <kbd>&#8984;J</kbd> shows the terminal.
+                      </span>
+                    )}
                   </>
                 ) : (
                   <span>Loading the conversation</span>
@@ -364,11 +391,28 @@ export function ChatView({ store, session, visible, unread, thread, marks }: Cha
             name={session.name}
             busy={session.status === 'busy'}
             ended={ended}
-            onSend={(t) => void store.sendText(id, t)}
+            readOnly={
+              mirrored ? `Read-only: open in ${mirrorWhere(session) || 'another terminal'}` : null
+            }
+            blocked={dialog}
+            notice={snap.notice}
+            onBlocked={() =>
+              model.setNotice({
+                kind: 'blocked',
+                text: 'Claude is showing something in the terminal. Nothing was sent. Your message stays in the box.',
+              })
+            }
+            onOpenTerminal={() =>
+              store.openFallback(id, 'Answer it here. Esc or \u2318J returns to chat.')
+            }
+            onSend={(t) => store.sendText(id, t)}
             onStop={() => store.stopTurn(id)}
             onPasteImage={(f) => store.pasteImage(id, f)}
           />
           <StatusStrip
+            store={store}
+            sessionId={id}
+            prefs={prefs}
             statusline={snap.statusline}
             cwd={session.cwd}
             onCycleMode={() => store.cycleMode(id)}

@@ -7,7 +7,10 @@
 // and the resulting "Keep yours" suppression, a needs-you notification for an unfocused DM, a
 // folder section over a git repo with live haiku sessions (names, /rename, an older-than-X
 // fixture, resume with history, a session started outside Patchroom, a dragged-in DM keeping
-// its process) and a restart in the middle. Folders and fixtures come from the environment:
+// its process), session parity (an outside session opened from the folder section is a read
+// only mirror with no second process, and is taken over once it closes; a terminal-only dialog
+// raises session:terminal_wait, refuses composer text and clears when answered) and a restart in
+// the middle. Folders and fixtures come from the environment:
 // PATCHROOM_E2E_DIR_A (alpha, the --open-dm folder), _B (beta), _FOLD (a git repo for the
 // folder section), PATCHROOM_E2E_EXPECT_HOOKS (audio hook events the real settings should
 // report, comma separated).
@@ -79,6 +82,29 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
   const onFire = window.__TAURI_INTERNALS__.transformCallback((e) => fires.push(e.payload));
   await invoke('plugin:event|listen', { event: 'notify:fire', target: { kind: 'Any' }, handler: onFire });
 
+  // Terminal-only dialog signals and mirror changes, as the UI receives them.
+  const waitEvents = [];
+  const clearEvents = [];
+  const mirrorEvents = [];
+  for (const [name, sink] of [
+    ['session:terminal_wait', waitEvents],
+    ['session:terminal_wait_clear', clearEvents],
+    ['session:mirror', mirrorEvents],
+  ]) {
+    // Stamp each event when the webview receives it, so a step can time one against another.
+    const cb = window.__TAURI_INTERNALS__.transformCallback((e) =>
+      sink.push({ ...e.payload, __at: performance.now() }),
+    );
+    await invoke('plugin:event|listen', { event: name, target: { kind: 'Any' }, handler: cb });
+  }
+
+  // Raw PTY output per DM, decoded, with the time each chunk arrived (`pty:output`).
+  const ptyChunks = [];
+  const onPty = window.__TAURI_INTERNALS__.transformCallback((e) =>
+    ptyChunks.push({ id: e.payload.id, at: performance.now(), text: atob(e.payload.data) }),
+  );
+  await invoke('plugin:event|listen', { event: 'pty:output', target: { kind: 'Any' }, handler: onPty });
+
   t.startLogTrace();
   const phase = await t.param('phase');
 
@@ -98,8 +124,13 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
         () => (snap().folders[sec.id]?.sessions.length ?? 0) >= 3,
         20_000,
       );
-      const linked = snap().folders[sec.id].sessions.filter((x) => x.dmId);
-      if (linked.length < 1) throw new Error('no listed session is linked to its DM');
+      // The folder-opened DM is the one archived before the restart. Other linked DMs (the
+      // "dialog" DM filed under Direct messages) are not it.
+      const archived = new Set(
+        (await invoke('session_list', {})).filter((r) => r.archived).map((r) => r.id),
+      );
+      const linked = snap().folders[sec.id].sessions.filter((x) => x.dmId && archived.has(x.dmId));
+      if (linked.length < 1) throw new Error('the folder-opened DM is not linked to its row');
       const dm = snap().sessions.find((s) => s.id === linked[0].dmId);
       if (!dm || dm.sectionId !== sec.id) throw new Error('the DM left its section');
     });
@@ -476,10 +507,127 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     await t.waitFor('outside session exited', () => invoke('e2e_outside_done', {}), 120_000);
   });
 
+  // ---- 4b. session parity: never two processes, mirrors, terminal-only dialogs ----------------------
+  // A second outside session that stays open (E2E hold) so the folder section can meet it live.
+  const outside = { sid: '', dm: '' };
+  const listRow = async (sid) =>
+    (await invoke('folder_sessions', { sectionId: sec })).sessions.find((x) => x.sessionId === sid);
+
+  await t.step('parity: a session started outside is opened as a read-only mirror, with no second process', async () => {
+    const known = new Set((await invoke('folder_sessions', { sectionId: sec })).sessions.map((x) => x.sessionId));
+    await invoke('e2e_outside_session', { dir: FOLD, holdSecs: 40 });
+    const row = await t.waitFor(
+      'the outside session is listed as live',
+      async () => {
+        const r = (await invoke('folder_sessions', { sectionId: sec })).sessions.find(
+          (x) => !known.has(x.sessionId) && x.liveState === 'live',
+        );
+        return r || null;
+      },
+      60_000,
+    );
+    outside.sid = row.sessionId;
+    if (!row.liveElsewhere) throw new Error('liveState is live but liveElsewhere is false');
+    const before = await t.pgrep(`resume ${outside.sid}`);
+    const dm = await invoke('folder_session_open', { sectionId: sec, sessionId: outside.sid });
+    outside.dm = dm.id;
+    if (!dm.mirror) throw new Error(`no mirror on the opened DM: ${JSON.stringify(dm)}`);
+    if (!dm.mirror.pid || typeof dm.mirror.where !== 'string') throw new Error(`bad mirror ${JSON.stringify(dm.mirror)}`);
+    await t.sleep(3000);
+    const after = await t.pgrep(`resume ${outside.sid}`);
+    if (after.length > before.length) throw new Error(`a claude --resume ${outside.sid} process started (${after})`);
+    if (!mirrorEvents.some((e) => e.id === dm.id && e.mirror)) throw new Error('no session:mirror event');
+    const sent = await invoke('session_send_text', { id: dm.id, text: 'must not reach the other terminal' });
+    if (sent.outcome !== 'mirror_readonly') throw new Error(`send outcome ${JSON.stringify(sent)}`);
+    t.fact('mirror', dm.mirror);
+    return `mirror of pid ${dm.mirror.pid} in ${dm.mirror.where}; no resume process; send refused`;
+  });
+
+  await t.step('parity: take over when it closes resumes the session once the other terminal exits', async () => {
+    await invoke('session_mirror_takeover_when_closed', { id: outside.dm, enabled: true });
+    const mid = (await invoke('session_list', {})).find((r) => r.id === outside.dm);
+    if (!mid.mirror || !mid.mirror.takeoverWhenClosed) throw new Error('takeover flag not set');
+    await t.waitFor('outside session exited', () => invoke('e2e_outside_done', {}), 150_000);
+    await t.waitFor(
+      'the DM resumed the session',
+      async () => (await t.pgrep(`resume ${outside.sid}`)).length >= 1,
+      60_000,
+    );
+    await t.sleep(3000);
+    const procs = await t.pgrep(`resume ${outside.sid}`);
+    if (procs.length !== 1) throw new Error(`${procs.length} processes run the session`);
+    const row = (await invoke('session_list', {})).find((r) => r.id === outside.dm);
+    if (row.mirror) throw new Error('the DM is still a mirror');
+    return `one process (${procs[0]}) after the other terminal closed`;
+  });
+
+  await t.step('parity: a terminal-only dialog raises terminal_wait, refuses composer text and clears', async () => {
+    await t.newDm(FOLD, 'dialog');
+    t.activeName = 'dialog';
+    await ready('dialog');
+    const id = t.dm('dialog').id;
+    const waitsBefore = waitEvents.filter((e) => e.id === id).length;
+    const chunksBefore = ptyChunks.length;
+    // /model opens a picker only the terminal can answer.
+    const sentAt = performance.now();
+    const first = await invoke('session_send_text', { id, text: '/model' });
+    if (first.outcome !== 'sent' && first.outcome !== 'queued') throw new Error(`first send ${JSON.stringify(first)}`);
+    const w = await t.waitFor(
+      'session:terminal_wait',
+      () => waitEvents.filter((e) => e.id === id).length > waitsBefore && waitEvents.filter((e) => e.id === id).pop(),
+      15_000,
+    );
+    // The dialog is on screen when the picker's footer reaches the PTY output after the send.
+    const DIALOG = /Esc to (cancel|exit)|Enter to confirm|Select model/i;
+    let acc = '';
+    let dialogAt = null;
+    for (const c of ptyChunks.slice(chunksBefore).filter((c) => c.id === id)) {
+      acc += c.text;
+      if (DIALOG.test(acc)) {
+        dialogAt = c.at;
+        break;
+      }
+    }
+    if (dialogAt === null) throw new Error('the picker never showed in the PTY output');
+    const sendToWait = Math.round(w.__at - sentAt);
+    const dialogToWait = Math.round(w.__at - dialogAt);
+    t.fact('terminalWaitTiming', { sendToWaitMs: sendToWait, dialogToWaitMs: dialogToWait });
+    // The event cannot come before the dialog is on screen, and must follow it within 2 s.
+    if (dialogToWait < 0) throw new Error(`terminal_wait came ${-dialogToWait} ms before the dialog drew`);
+    if (dialogToWait > 2000) throw new Error(`terminal_wait came ${dialogToWait} ms after the dialog drew (limit 2000)`);
+    const listed = (await invoke('session_list', {})).find((r) => r.id === id);
+    if (!listed.terminalWait) throw new Error('SessionInfo.terminalWait is empty');
+    if (!listed.needsYou && !listed.needs_you) throw new Error('needs-you was not raised');
+    const act = await invoke('activity_list', {});
+    if (!act.some((r) => r.id === id)) throw new Error('activity_list has no row for the dialog');
+    const blocked = await invoke('session_send_text', { id, text: 'COMPOSER-TEXT-MUST-NOT-LAND' });
+    if (blocked.outcome !== 'blocked_dialog') throw new Error(`send during the dialog: ${JSON.stringify(blocked)}`);
+    // Nothing was written: the refused text is in neither the PTY output nor the screen, checked
+    // before Esc so a cancelled picker cannot hide it.
+    await t.sleep(500);
+    const seen = ptyChunks.filter((c) => c.id === id).map((c) => c.text).join('');
+    if (seen.includes('COMPOSER-TEXT-MUST-NOT-LAND')) throw new Error('the refused text reached the PTY output');
+    const screen = await invoke('e2e_screen_text', { id });
+    if (typeof screen !== 'string' || !DIALOG.test(screen)) throw new Error('the terminal screen does not show the dialog');
+    if (screen.includes('COMPOSER-TEXT-MUST-NOT-LAND')) throw new Error('the refused text is on the terminal screen');
+    // Esc closes the picker, as the user would in the terminal.
+    await invoke('session_write', { id, data: 'Gw==' });
+    await t.waitFor('session:terminal_wait_clear', () => clearEvents.some((e) => e.id === id), 15_000);
+    const hist = await invoke('chat_history', { id, limit: 200 });
+    if (JSON.stringify(hist).includes('COMPOSER-TEXT-MUST-NOT-LAND')) throw new Error('the refused text reached the transcript');
+    const after = await invoke('session_send_text', { id, text: 'Reply with exactly the single word OK and nothing else.' });
+    if (after.outcome !== 'sent') throw new Error(`send after the dialog: ${JSON.stringify(after)}`);
+    await turnIdle('dialog');
+    t.selectDm(NAME_A);
+    t.activeName = NAME_A;
+    return `terminal_wait "${w.reason}" ${dialogToWait} ms after the dialog drew (${sendToWait} ms after the send), send blocked, PTY and screen clean, cleared by Esc, next send ${after.outcome}`;
+  });
+
   // ---- 5. restart in the middle -------------------------------------------------------------------------
   await t.step('before the restart: star a DM, archive another, change a preference', async () => {
     const beta = t.dm(NAME_B).id;
-    const inFold = snap().sessions.find((x) => x.sectionId === sec && x.name !== NAME_A);
+    // The DM opened from a folder row (by its claude session id), not whichever DM is first.
+    const inFold = snap().sessions.find((x) => x.sectionId === sec && sidOf(x) === sessionIds.one);
     if (!inFold) throw new Error('no DM in the folder section to archive');
     await store().setFlags(beta, { starred: true });
     await store().setFlags(inFold.id, { archived: true });

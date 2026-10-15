@@ -188,7 +188,7 @@ export function Sidebar({
 
   function activateLazy(section: SectionInfo, info: FolderSession) {
     setTip(null);
-    // Two processes on one session corrupt it: a live row asks first, inside the sidebar.
+    // A live row opens as a read-only mirror; it asks first, inside the sidebar.
     if (info.liveElsewhere) setConfirmId(info.sessionId);
     else void store.openFolderSession(section.id, info.sessionId);
   }

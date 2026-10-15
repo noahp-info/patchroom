@@ -1,0 +1,180 @@
+import { expect, test, type Page } from '@playwright/test';
+import { openChat, peekWrites, watchErrors } from './helpers';
+
+// Session parity item 5: slash commands that open TUI panels fall back to the terminal.
+
+// The list in docs/gauntlet/SESSION-PARITY-BAR.md, item 5.
+const INTERACTIVE = [
+  'usage',
+  'config',
+  'model',
+  'status',
+  'agents',
+  'mcp',
+  'resume',
+  'permissions',
+  'hooks',
+  'memory',
+  'doctor',
+  'context',
+  'cost',
+  'login',
+  'logout',
+  'ide',
+  'theme',
+  'vim',
+  'export',
+  'help',
+  'plugin',
+  'bashes',
+  'todos',
+  'output-style',
+  'statusline',
+];
+
+const label = (page: Page) => page.getByTestId('view-label');
+/**
+ * Freeze the page clock after the chat is open, so the 2 s fallback timer moves only when the
+ * test says so. Call before `openChat`.
+ */
+const freeze = async (page: Page) => {
+  await page.clock.install();
+};
+const pause = async (page: Page) => {
+  await page.clock.pauseAt(new Date(Date.now() + 5_000));
+};
+const send = async (page: Page, text: string) => {
+  const box = page.getByTestId('composer-input');
+  await box.fill(text);
+  await page.keyboard.press('Enter');
+};
+
+test.describe('session parity: slash commands fall back to the terminal', () => {
+  test('every interactive command opens the terminal with a note, and Esc returns', async ({
+    page,
+  }) => {
+    const errs = watchErrors(page);
+    await openChat(page, []);
+    for (const name of INTERACTIVE) {
+      await send(page, `/${name}`);
+      await expect(label(page), `/${name} flips to the terminal`).toHaveText('Terminal');
+      await expect(page.getByTestId('term-note')).toContainText(`/${name} opens in the terminal`);
+      await page.keyboard.press('Escape');
+      await expect(label(page), `Esc leaves /${name}`).toHaveText('Chat');
+    }
+    // Every one of them reached claude as text first.
+    expect(await page.evaluate(() => window.__PR_MOCK__!.texts.map((t) => t.text))).toEqual(
+      INTERACTIVE.map((n) => `/${n}`),
+    );
+    expect(errs).toEqual([]);
+  });
+
+  test('a command with arguments still counts, and the case does not matter', async ({ page }) => {
+    await openChat(page, []);
+    await send(page, '/Model opus');
+    await expect(label(page)).toHaveText('Terminal');
+  });
+
+  test('Cmd+J returns from the panel', async ({ page }) => {
+    await openChat(page, []);
+    await send(page, '/usage');
+    await expect(label(page)).toHaveText('Terminal');
+    await page.keyboard.press('Meta+j');
+    await expect(label(page)).toHaveText('Chat');
+    await expect(page.getByTestId('term-note')).toHaveCount(0);
+  });
+
+  test('Esc reaches the TUI as well as leaving', async ({ page }) => {
+    const id = await openChat(page, []);
+    await send(page, '/config');
+    await expect(label(page)).toHaveText('Terminal');
+    await page.keyboard.press('Escape');
+    await expect(label(page)).toHaveText('Chat');
+    expect(await peekWrites(page, id)).toContain('27');
+  });
+
+  test('"Back to chat" on the note returns too', async ({ page }) => {
+    await openChat(page, []);
+    await send(page, '/mcp');
+    await page.getByRole('button', { name: 'Back to chat' }).click();
+    await expect(label(page)).toHaveText('Chat');
+  });
+
+  test('an unknown command with no transcript item flips at 2 s, not before, while the PTY repaints', async ({
+    page,
+  }) => {
+    await freeze(page);
+    await openChat(page, []);
+    await pause(page);
+    await send(page, '/frobnicate now');
+    await page.clock.runFor(1999);
+    await expect(label(page)).toHaveText('Chat');
+    await page.clock.runFor(1);
+    await expect(label(page)).toHaveText('Terminal');
+    await expect(page.getByTestId('term-note')).toContainText('/frobnicate');
+    await page.keyboard.press('Escape');
+    await page.clock.runFor(10); // the view change is deferred by a 0 ms timer
+    await expect(label(page)).toHaveText('Chat');
+  });
+
+  test('an unknown command that produces a transcript item stays in chat', async ({ page }) => {
+    await freeze(page);
+    await openChat(page, []);
+    await pause(page);
+    await send(page, '/review-pr 12');
+    await page.evaluate(() => {
+      const m = window.__PR_MOCK__!;
+      m.pushItems(m.sessions()[0].id, [
+        { key: 'slash-1', ts: Date.now(), kind: 'user', text: '/review-pr 12', images: [] },
+      ]);
+    });
+    await page.clock.runFor(2600);
+    await expect(label(page)).toHaveText('Chat');
+  });
+
+  test('an unknown command while the PTY stays quiet stays in chat', async ({ page }) => {
+    await freeze(page);
+    await openChat(page, []);
+    await pause(page);
+    await page.evaluate(() => {
+      window.__PR_MOCK__!.repaintOnSlash = false;
+    });
+    await send(page, '/quiet');
+    await page.clock.runFor(2600);
+    await expect(label(page)).toHaveText('Chat');
+  });
+
+  test('a plain message and a pasted path never trigger the fallback', async ({ page }) => {
+    await freeze(page);
+    await openChat(page, []);
+    await pause(page);
+    await send(page, 'what does /usage do?');
+    await send(page, '/Users/me/code/x.ts is the file');
+    await page.clock.runFor(2600);
+    await expect(label(page)).toHaveText('Chat');
+  });
+
+  test('a command queued behind a busy turn does not flip the view', async ({ page }) => {
+    await openChat(page, []);
+    await page.evaluate(() => {
+      const m = window.__PR_MOCK__!;
+      m.setStatus(m.sessions()[0].id, 'busy');
+    });
+    await send(page, '/usage');
+    await expect(page.getByTestId('composer-notice')).toContainText('Queued');
+    await expect(label(page)).toHaveText('Chat');
+  });
+
+  test('the Queued notice clears when the session exits', async ({ page }) => {
+    await openChat(page, []);
+    const id = await page.evaluate(() => {
+      const m = window.__PR_MOCK__!;
+      m.setStatus(m.sessions()[0].id, 'busy');
+      return m.sessions()[0].id;
+    });
+    await send(page, '/usage');
+    await expect(page.getByTestId('composer-notice')).toContainText('Queued');
+    await page.evaluate((sid) => window.__PR_MOCK__!.exit(sid, 0), id);
+    await expect(page.getByTestId('composer-notice')).toHaveCount(0);
+  });
+});

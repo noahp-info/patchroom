@@ -143,7 +143,7 @@ export function QuickSwitcher({ state, store }: { state: AppState; store: AppSto
     list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
   }, [at, ranked]);
 
-  // A session live in another terminal asks before it opens: two processes corrupt one session.
+  // A session live in another terminal asks first: it opens as a read-only mirror, never a second copy.
   const [confirm, setConfirm] = useState<LazyHit | null>(null);
   const resume = (l: LazyHit) => void store.openFolderSession(l.sectionId, l.info.sessionId);
   const open = (r: Ranked | undefined) => {
@@ -258,8 +258,8 @@ export function QuickSwitcher({ state, store }: { state: AppState; store: AppSto
         {confirm && (
           <div className="palette__confirm" role="group" aria-label="Confirm open">
             <p>
-              <strong>{confirm.info.name}</strong> is running in another terminal. Two processes on
-              one session can corrupt it.
+              <strong>{confirm.info.name}</strong> is running in another terminal. It opens as a
+              read-only mirror. Patchroom never starts a second copy.
             </p>
             <div>
               <button type="button" className="btn sec" onClick={() => setConfirm(null)}>

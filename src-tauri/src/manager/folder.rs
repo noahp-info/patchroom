@@ -12,6 +12,9 @@
 //! started in another terminal shows up within about two seconds. Who runs a session elsewhere
 //! comes from `claude agents --json` (the same source the presence reconciler uses), cached
 //! for [`LIVE_TTL`] and refreshed in the background, never on the listing's critical path.
+//! Until the first answer (and whenever the last one is older than [`LIVE_STALE`]) every row
+//! reports `liveState: "checking"`, never "free". Opening a row re-checks synchronously and
+//! mirrors a session that runs elsewhere instead of spawning it (see the `mirror` module).
 //!
 //! # Locks
 //! `FolderState` mutexes are leaves: never held across a store, presence or sink call.
@@ -22,7 +25,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Weak;
 use std::time::Instant;
 
-use patchroom_bridge::AgentsSource;
 use patchroom_folders::encode::{is_under, normalize};
 use patchroom_folders::{signature, Discovery, FolderSession, Listing, Query};
 use patchroom_store::{ConversationKind, NewConversation, Section};
@@ -31,12 +33,13 @@ use super::{
     lock, parse_id, AdapterState, Arc, Author, Duration, Error, Manager, Mutex, PresenceStatus,
     Result, SessionInfo, UiEvent, DEFAULT_COLS, DEFAULT_ROWS,
 };
-use crate::agents::LoginShellAgents;
 
 /// Poll period of the transcript watcher.
 const WATCH_PERIOD: Duration = Duration::from_secs(1);
 /// How long a `claude agents --json` answer is reused.
 const LIVE_TTL: Duration = Duration::from_secs(5);
+/// An answer older than this no longer proves a session is free.
+const LIVE_STALE: Duration = Duration::from_secs(30);
 /// Longest name given to a DM created from a discovered session, in characters.
 const MAX_NAME: usize = 80;
 
@@ -48,7 +51,7 @@ pub(super) struct FolderState {
     sigs: Mutex<HashMap<String, u64>>,
     watching: AtomicBool,
     /// Test hook: pretend these session ids run in another terminal.
-    live_override: Mutex<Option<HashSet<String>>>,
+    pub(super) live_override: Mutex<Option<HashSet<String>>>,
 }
 
 #[derive(Default)]
@@ -145,7 +148,7 @@ impl Manager {
             }
             (hidden, dms)
         };
-        let live = self.live_elsewhere(&dms);
+        let (live, live_checked) = self.live_elsewhere(&dms);
         // The watcher compares against the state the list was built from.
         self.prime_folder_sig(&section);
         let projects = self.projects_dirs();
@@ -157,6 +160,7 @@ impl Manager {
             dms: &dms,
             hidden: &hidden,
             live: &live,
+            live_checked,
         });
         self.rank_open_dms(&mut listing.sessions);
         self.start_folder_watch();
@@ -167,12 +171,31 @@ impl Manager {
     /// on first open and started with `claude --resume <id>` from the session's launch folder.
     /// An already-open DM is returned as it is, and restarted only if it had exited.
     ///
+    /// Right before the spawn, `claude agents --json` is read synchronously (bounded at 3 s).
+    /// A session that runs in another terminal is not spawned: the DM comes back as a read-only
+    /// mirror (`SessionInfo.mirror`).
+    ///
     /// # Errors
-    /// Unknown section or session, a launch folder that no longer exists, or a failed spawn.
+    /// Unknown section or session, a launch folder that no longer exists, a failed spawn, or a
+    /// re-check that did not finish.
     pub fn folder_session_open(
         self: &Arc<Self>,
         section_id: &str,
         session_id: &str,
+    ) -> Result<SessionInfo> {
+        self.folder_session_open_with(section_id, session_id, false)
+    }
+
+    /// [`Manager::folder_session_open`]; `open_anyway` skips the live check (only after the
+    /// user confirmed a `check_failed` error).
+    ///
+    /// # Errors
+    /// As [`Manager::folder_session_open`].
+    pub fn folder_session_open_with(
+        self: &Arc<Self>,
+        section_id: &str,
+        session_id: &str,
+        open_anyway: bool,
     ) -> Result<SessionInfo> {
         let section = self.folder_section(section_id)?;
         if !patchroom_folders::discover::is_session_id(session_id) {
@@ -195,7 +218,12 @@ impl Manager {
             .get(&dm_id)
             .is_some_and(|l| l.pty.exit_info().is_none());
         if !running {
-            if let Err(e) = self.resume(&dm_id, Some(DEFAULT_COLS), Some(DEFAULT_ROWS)) {
+            let go = if open_anyway {
+                self.resume_anyway(&dm_id, Some(DEFAULT_COLS), Some(DEFAULT_ROWS))
+            } else {
+                self.resume(&dm_id, Some(DEFAULT_COLS), Some(DEFAULT_ROWS))
+            };
+            if let Err(e) = go {
                 if created {
                     // A DM that never started should not linger in the sidebar.
                     let _ = self.delete(&dm_id);
@@ -314,37 +342,48 @@ impl Manager {
         sessions.sort_by_key(rank);
     }
 
-    /// Session ids running in another terminal, from the cached `claude agents --json`. A
-    /// stale cache is refreshed in the background; the first call may report none.
+    /// Session ids running in another terminal, from the cached `claude agents --json`, and
+    /// whether that cache is fresh enough to call every other session free. A stale cache is
+    /// refreshed in the background; until it answers the listing says "checking".
     fn live_elsewhere(
         self: &Arc<Self>,
         dms: &HashMap<String, (String, String)>,
-    ) -> HashSet<String> {
+    ) -> (HashSet<String>, bool) {
         if let Some(o) = lock(&self.folders.live_override).clone() {
-            return self.minus_own(o, dms);
+            return (self.minus_own(o, dms), true);
         }
-        if !self.cfg.reconcile {
-            return HashSet::new();
+        if self.background_source().is_none() {
+            // This manager never runs the CLI (tests): there is nothing to wait for.
+            return (HashSet::new(), true);
         }
-        let ids = {
-            let mut live = lock(&self.folders.live);
-            let stale = live.at.is_none_or(|t| t.elapsed() > LIVE_TTL);
-            if stale && !live.refreshing {
-                live.refreshing = true;
-                let me = Arc::clone(self);
-                let spawned = std::thread::Builder::new()
-                    .name("patchroom-folder-live".into())
-                    .spawn(move || me.refresh_live());
-                if spawned.is_err() {
-                    live.refreshing = false;
-                }
-            }
-            live.ids.clone()
+        self.refresh_live_if_stale();
+        let (ids, fresh) = {
+            let live = lock(&self.folders.live);
+            (
+                live.ids.clone(),
+                live.at.is_some_and(|t| t.elapsed() <= LIVE_STALE),
+            )
         };
-        self.minus_own(ids, dms)
+        (self.minus_own(ids, dms), fresh)
     }
 
-    /// Sessions this app runs itself are not "elsewhere".
+    /// Start a background refresh when the cache is older than [`LIVE_TTL`] (or empty).
+    pub(super) fn refresh_live_if_stale(self: &Arc<Self>) {
+        let mut live = lock(&self.folders.live);
+        let stale = live.at.is_none_or(|t| t.elapsed() > LIVE_TTL);
+        if stale && !live.refreshing {
+            live.refreshing = true;
+            let me = Arc::clone(self);
+            let spawned = std::thread::Builder::new()
+                .name("patchroom-folder-live".into())
+                .spawn(move || me.refresh_live());
+            if spawned.is_err() {
+                live.refreshing = false;
+            }
+        }
+    }
+
+    /// Sessions this app runs itself are not "elsewhere". A mirror is elsewhere by definition.
     fn minus_own(
         &self,
         mut ids: HashSet<String>,
@@ -356,30 +395,33 @@ impl Manager {
                 presence
                     .get(dm)
                     .is_some_and(|p| p.status != PresenceStatus::Exited)
+                    && self.mirror_of(dm).is_none()
             })
         });
         ids
     }
 
     fn refresh_live(self: &Arc<Self>) {
-        let source = LoginShellAgents::new(Arc::new(AtomicBool::new(true)));
-        let ids: HashSet<String> = source
-            .list()
-            .map(|entries| {
-                entries
+        let answer = self
+            .background_source()
+            .map(|source| source.list())
+            .and_then(|r| r.ok());
+        let changed = {
+            let mut live = lock(&self.folders.live);
+            live.refreshing = false;
+            // A failed call keeps the old ids and the old timestamp: the cache goes stale, and
+            // a stale cache reports "checking", never "free".
+            answer.is_some_and(|entries| {
+                let ids: HashSet<String> = entries
                     .into_iter()
                     .filter(|e| e.kind.is_empty() || e.kind == "interactive")
                     .filter_map(|e| e.session_id)
-                    .collect()
+                    .collect();
+                let changed = live.at.is_none() || live.ids != ids;
+                live.ids = ids;
+                live.at = Some(Instant::now());
+                changed
             })
-            .unwrap_or_default();
-        let changed = {
-            let mut live = lock(&self.folders.live);
-            let changed = live.at.is_some() && live.ids != ids;
-            live.ids = ids;
-            live.at = Some(Instant::now());
-            live.refreshing = false;
-            changed
         };
         if changed {
             self.emit_folder_changed_all();
@@ -440,6 +482,10 @@ impl Manager {
             .is_ok_and(|v| v.iter().any(|s| s.folder.is_some()));
         if any {
             self.start_folder_watch();
+            // Ask `claude agents` now, so the first listing is not stuck on "checking".
+            if self.background_source().is_some() {
+                self.refresh_live_if_stale();
+            }
         }
     }
 

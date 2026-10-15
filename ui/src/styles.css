@@ -1286,12 +1286,13 @@ body {
 .chat .strip a.sc {
   text-decoration: none;
 }
+/* The user's statusLine sits on the pane itself, no terminal box: plain text takes the theme's
+   ink, and its own ANSI colors still show. */
 .sl {
   margin: 0 var(--gutter);
-  padding: 4px 10px;
-  border-radius: var(--r-sm);
-  background: var(--term-chrome);
-  color: var(--term-chrome-fg);
+  padding: 4px 0;
+  background: transparent;
+  color: var(--fg);
   font-family: var(--f-mono);
   line-height: 1.5;
   overflow: hidden;
@@ -2693,4 +2694,438 @@ body.dragging * {
 }
 .pr-app .side :focus-visible.side-resizer {
   outline: none;
+}
+
+/* =========================================================================================
+   Session parity: mirror banner, terminal-wait banner, send notice, fallback note, and the
+   modular status strip. Theme tokens only.
+   ========================================================================================= */
+.chat .mbanner,
+.chat .tbanner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* The floating conversation toolbar sits top right: the banner stops short of it. */
+  margin: 8px calc(var(--gutter) + 120px) 0 var(--gutter);
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg);
+  --fs: 13px;
+}
+.chat .mbanner > svg.i {
+  color: var(--busy);
+}
+.chat .tbanner {
+  border-color: var(--needs);
+}
+.chat .tbanner > svg.i {
+  color: var(--needs);
+}
+.chat .mbanner > svg.i,
+.chat .tbanner > svg.i {
+  flex: none;
+}
+.chat .mbanner__text,
+.chat .tbanner__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.chat .mbanner__text span,
+.chat .tbanner__text span {
+  color: var(--muted);
+  --fs: 11px;
+}
+.chat .mbanner__btn,
+.chat .tbanner__btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.chat .mbanner__btn:hover,
+.chat .tbanner__btn:hover {
+  background: var(--hover);
+}
+.chat .mbanner__btn--quiet {
+  border-color: transparent;
+  background: none;
+}
+.chat .mbanner__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.chat .mbanner__btn[aria-pressed='true'] {
+  border-color: var(--link);
+}
+.chat .tbanner__btn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.chat .tbanner__btn:hover {
+  background: var(--accent-hover);
+}
+.chat .tbanner__btn kbd {
+  --fs: 11px;
+}
+/* A hint inside a button reads as the button's own text, never muted: AA on the button fill. */
+.pr-app button kbd,
+.pr-app .btn kbd {
+  color: inherit;
+  opacity: 1;
+  border-color: currentColor;
+}
+@container chat (max-width: 720px) {
+  .chat .mbanner,
+  .chat .tbanner {
+    flex-wrap: wrap;
+    margin: 44px var(--gutter) 0;
+  }
+  .chat .mbanner__text,
+  .chat .tbanner__text {
+    flex-basis: calc(100% - 40px);
+  }
+}
+
+/* Why the last send did not go through, right above the box. */
+.chat .cnotice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(980px + 2 * var(--gutter));
+  margin: 0 var(--gutter) 6px;
+  padding: 2px 4px;
+  color: var(--fg);
+  --fs: 11px;
+}
+.chat .cnotice::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.chat .cnotice[data-kind='blocked']::before,
+.chat .cnotice[data-kind='mirror']::before,
+.chat .cnotice[data-kind='no-echo']::before {
+  background: var(--needs);
+}
+.chat .cnotice span {
+  flex: 1;
+  min-width: 0;
+}
+.chat .cnotice--reason::before {
+  background: var(--needs);
+}
+.chat .cnotice__btn {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.chat .box[data-readonly='true'] {
+  background: var(--surface);
+}
+
+/* A terminal shown because the chat cannot render what claude is doing. */
+.pane .tnote {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px var(--gutter);
+  border-bottom: 1px solid var(--needs);
+  background: var(--surface);
+  color: var(--fg);
+  --fs: 13px;
+}
+.pane .tnote span {
+  flex: 1;
+  min-width: 0;
+}
+.pane .tnote button {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.pane .tnote :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+/* Status strip modules. The user's statusLine is one more module, a full row of its own. */
+.chat .strip > .sl {
+  flex: 1 0 100%;
+  margin: 0;
+  min-width: 0;
+}
+/* The gear sits in the strip's top-right corner, out of the module flow, so it never takes a
+   row of its own and the user's module order stays exactly as chosen. */
+.chat .strip:has(> .strip__edit) {
+  position: relative;
+  padding-right: calc(var(--gutter) + 28px);
+}
+.chat .strip .strip__edit {
+  position: absolute;
+  top: 5px;
+  right: var(--gutter);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.55;
+}
+.chat .strip-wrap:hover .strip__edit,
+.chat .strip .strip__edit:focus-visible,
+.chat .strip .strip__edit[aria-expanded='true'] {
+  opacity: 1;
+}
+.chat .strip .strip__edit:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+/* Customize menu and the Preferences editor share these rules. */
+.sbmenu {
+  width: 320px;
+}
+.sbmenu__scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 8px;
+}
+.sbmenu__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 4px 2px;
+}
+.sbmenu__note {
+  flex: 1;
+  color: var(--muted);
+  --fs: 11px;
+}
+.sbmenu__reset {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.sbmenu__reset:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sbe {
+  --fs: 13px;
+  color: var(--fg);
+}
+.sbe__list,
+.sbe__tray {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.sbe__tray[data-drop='tray'] {
+  border-color: var(--link);
+}
+.sbe__h {
+  margin: 10px 4px 4px;
+  color: var(--muted);
+  font-weight: 700;
+  --fs: 11px;
+}
+.sbe__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 6px;
+}
+.sbe__row + .sbe__row {
+  border-top: 1px solid var(--line);
+}
+.sbe__row[data-lifted='true'] {
+  opacity: 0.5;
+}
+.sbe__row[data-drop='before']::before,
+.sbe__row[data-drop='after']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--link);
+}
+.sbe__row[data-drop='before']::before {
+  top: -1px;
+}
+.sbe__row[data-drop='after']::after {
+  bottom: -1px;
+}
+.sbe__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbe__row--tray .sbe__name {
+  flex: 0 1 auto;
+}
+.sbe__tag {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  --fs: 11px;
+}
+.sbe__row[data-idle='true'] .sbe__name {
+  flex: 0 1 auto;
+  color: var(--muted);
+}
+.sbe__none {
+  padding: 8px;
+  color: var(--muted);
+  --fs: 11px;
+}
+.sbe__grip,
+.sbe__x,
+.sbe__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.sbe__grip {
+  width: 22px;
+  height: 26px;
+  cursor: grab;
+  touch-action: none;
+}
+.sbe__x {
+  width: 24px;
+  height: 24px;
+}
+.sbe__add {
+  height: 24px;
+  margin-left: auto;
+  padding: 0 8px;
+  color: var(--fg);
+}
+.sbe__grip:hover,
+.sbe__x:hover,
+.sbe__add:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+.sbe :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+body.dragging .sbe__grip {
+  cursor: grabbing;
+}
+
+/* Check failed: the live check could not finish. Opening anyway may start a second process. */
+.cfbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px var(--gutter);
+  border-bottom: 1px solid var(--err);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+}
+.cfbar > svg.i {
+  flex: none;
+  color: var(--err-text);
+}
+.cfbar__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cfbar__text span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.cfbar__text .cfbar__warn {
+  color: var(--err-text);
+}
+.cfbar__btn {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.cfbar__btn:hover {
+  background: var(--hover);
+}
+.cfbar__btn--warn {
+  border-color: var(--err);
+  color: var(--err-text);
+}
+.cfbar :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+@media (max-width: 720px) {
+  .cfbar {
+    flex-wrap: wrap;
+  }
 }

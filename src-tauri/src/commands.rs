@@ -3,6 +3,45 @@
 //! Every command is `async` so it runs on the async runtime, not the main
 //! thread. Calls that can block (spawning, killing) go through
 //! `spawn_blocking`. Writes only enqueue, so they are cheap and ordered.
+//!
+//! # Session parity contract (never two processes, mirrors, terminal-only dialogs)
+//!
+//! Commands:
+//! - `session_resume {id, cols?, rows?, openAnyway?}` and
+//!   `folder_session_open {sectionId, sessionId, openAnyway?}` re-check
+//!   `claude agents --json` synchronously (3 s per attempt, one retry, claude run directly,
+//!   an answer under 2 s old is reused) right before spawning. A session that
+//!   runs in another terminal is not spawned: the DM becomes a read-only mirror. A re-check
+//!   that cannot finish fails the call with a message starting `check_failed:` (a guess could
+//!   start a second process). The UI asks the user, then repeats the call with
+//!   `openAnyway: true`, which skips the check.
+//! - `session_send_text {id, text} -> {outcome: "sent" | "queued" | "blocked_dialog" |
+//!   "mirror_readonly", reason?, where?, pid?}`. The two refusals write nothing.
+//! - `session_takeover {id, cols?, rows?} -> SessionInfo`: resume a mirror now; fails with
+//!   "still running in <where> (pid N)" while the other process lives.
+//! - `session_mirror_takeover_when_closed {id, enabled}`: resume by itself when it exits.
+//! - `session_kill {id}` on a mirror stops mirroring only. `session_resize` on a mirror is a no-op.
+//!   `session_write` on a mirror fails.
+//!
+//! Data:
+//! - `SessionInfo.mirror: {where, pid, takeoverWhenClosed} | null` and
+//!   `SessionInfo.terminalWait: {reason, since} | null` (both default null).
+//! - `folder_sessions` rows carry `liveState: "checking" | "live" | "free"` next to
+//!   `liveElsewhere`. `checking` shows until the first `claude agents --json` answer and again
+//!   when the last one is older than 30 s. A row is never `free` from an empty cache.
+//!
+//! Events:
+//! - `session:mirror {id, mirror}`: the DM became a mirror, its `pid`/`where`/
+//!   `takeoverWhenClosed` changed, or it stopped being one (`mirror: null`; the DM is then
+//!   an exited DM, or running when the takeover resumed it).
+//! - `session:terminal_wait {id, reason, since}`: claude waits on something the chat cannot
+//!   render (no bridge prompt). `reason` is the CLI's `waitingFor` when known, else
+//!   `dialog open`. Sent when it begins within about 0.5 s of the dialog drawing, and again if
+//!   `reason` changes. It sets the DM's needs-you flag, so `session:badges`, the sidebar,
+//!   notifications and `activity_list` ("Claude is showing something in the terminal")
+//!   follow.
+//! - `session:terminal_wait_clear {id}`: the wait ended (answered in the terminal, or the
+//!   process exited).
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -13,7 +52,7 @@ use tauri_plugin_dialog::DialogExt;
 use crate::manager::sound::{ImportedPack, SoundFile};
 use crate::manager::{
     ActivityRow, CreateRequest, ImageData, Located, MarkInfo, PromptAnswer, Reindexed, SectionInfo,
-    SessionInfo, SessionManager,
+    SendOutcome, SessionInfo, SessionManager,
 };
 use patchroom_claude::{ChatItem, Cursor, Page};
 use patchroom_folders::Listing;
@@ -79,13 +118,17 @@ pub async fn session_write(
     state.inner().write(&id, bytes).map_err(|e| e.to_string())
 }
 
-/// `session_send_text {id, text}`.
+/// `session_send_text {id, text} -> SendOutcome`: bracketed paste, then Enter. Never swallows
+/// text: `{outcome: "sent"}`, `{outcome: "queued"}` (claude is busy, it reads it after the
+/// turn), `{outcome: "blocked_dialog", reason}` (a dialog only the terminal can answer is up;
+/// nothing was written, keep the draft) or `{outcome: "mirror_readonly", where, pid}` (the
+/// session runs in another terminal; nothing was written).
 #[tauri::command]
 pub async fn session_send_text(
     state: State<'_, SessionManager>,
     id: String,
     text: String,
-) -> CmdResult<()> {
+) -> CmdResult<SendOutcome> {
     state.send_text(&id, text).map_err(|e| e.to_string())
 }
 
@@ -100,7 +143,8 @@ pub async fn session_resize(
     state.resize(&id, cols, rows).map_err(|e| e.to_string())
 }
 
-/// `session_kill {id}`.
+/// `session_kill {id}`. On a mirror it only stops mirroring; Patchroom never signals a
+/// process it did not start.
 #[tauri::command]
 pub async fn session_kill(state: State<'_, SessionManager>, id: String) -> CmdResult<()> {
     let m = state.inner().clone();
@@ -115,15 +159,24 @@ pub async fn session_list(state: State<'_, SessionManager>) -> CmdResult<Vec<Ses
 }
 
 /// `session_resume {id, cols?, rows?}`: restart an exited DM.
-/// Claude DMs run `claude --resume <stored session id>`.
+/// Claude DMs run `claude --resume <stored session id>` after a synchronous re-check of
+/// `claude agents --json` (3 s bound). When another terminal runs the session nothing is
+/// spawned: the DM becomes a read-only mirror (`session:mirror`, `SessionInfo.mirror`) and
+/// the call returns normally. If the re-check cannot finish (after one retry), the call fails
+/// with a message starting `check_failed:`; the UI asks, then calls again with
+/// `openAnyway: true`, which skips the check.
 #[tauri::command]
 pub async fn session_resume(
     state: State<'_, SessionManager>,
     id: String,
     cols: Option<u16>,
     rows: Option<u16>,
+    open_anyway: Option<bool>,
 ) -> CmdResult<()> {
     let m = state.inner().clone();
+    if open_anyway == Some(true) {
+        return blocking(move || m.resume_anyway(&id, cols, rows)).await;
+    }
     blocking(move || m.resume(&id, cols, rows)).await
 }
 
@@ -650,9 +703,11 @@ pub async fn folder_session_open(
     state: State<'_, SessionManager>,
     section_id: String,
     session_id: String,
+    open_anyway: Option<bool>,
 ) -> CmdResult<SessionInfo> {
     let m = state.inner().clone();
-    blocking(move || m.folder_session_open(&section_id, &session_id)).await
+    let anyway = open_anyway == Some(true);
+    blocking(move || m.folder_session_open_with(&section_id, &session_id, anyway)).await
 }
 
 /// `folder_session_hide {sectionId, sessionId, hidden}`: hide a row from the list; the
@@ -666,5 +721,33 @@ pub async fn folder_session_hide(
 ) -> CmdResult<()> {
     state
         .folder_session_hide(&section_id, &session_id, hidden)
+        .map_err(|e| e.to_string())
+}
+
+// ---- session parity: mirrors and terminal-only dialogs ----
+
+/// `session_takeover {id, cols?, rows?} -> SessionInfo`: resume a mirrored DM now. Fails while
+/// the other process still runs (it is never killed).
+#[tauri::command]
+pub async fn session_takeover(
+    state: State<'_, SessionManager>,
+    id: String,
+    cols: Option<u16>,
+    rows: Option<u16>,
+) -> CmdResult<SessionInfo> {
+    let m = state.inner().clone();
+    blocking(move || m.takeover(&id, cols, rows)).await
+}
+
+/// `session_mirror_takeover_when_closed {id, enabled}`: resume the mirrored DM by itself when
+/// the other process exits ("Take over when it closes"). Emits `session:mirror`.
+#[tauri::command]
+pub async fn session_mirror_takeover_when_closed(
+    state: State<'_, SessionManager>,
+    id: String,
+    enabled: bool,
+) -> CmdResult<()> {
+    state
+        .set_mirror_takeover(&id, enabled)
         .map_err(|e| e.to_string())
 }
