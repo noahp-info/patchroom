@@ -374,6 +374,7 @@ export function ChatView({ store, session, visible, unread, thread, prefs, marks
             name={session.name}
             busy={session.status === 'busy'}
             ended={ended}
+            onResume={() => void store.resume(session)}
             readOnly={
               mirrored ? `Read-only: open in ${mirrorWhere(session) || 'another terminal'}` : null
             }

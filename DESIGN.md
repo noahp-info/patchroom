@@ -150,7 +150,7 @@ Each pair reaches 3:1 on the socket `hole` of every shipped theme in both modes,
 
 **The mark is Branch bay:** two sockets on rails, one cable patching them. The tile is jade, the line work is chalk, the cable is marigold rubber, and the plugs are silver metal. It says what the app does: sessions are agents, and you patch into them.
 
-Sources: `ui/public/brand/patchroom-mark.svg` (master, 1024px) and `ui/public/brand/patchroom-mark-small.svg` (hand-drawn for 16px and 32px). The app icons in `src-tauri/icons/` come from them.
+Sources: `ui/public/brand/patchroom-mark.svg` (master, 1024px) and `ui/public/brand/patchroom-mark-small.svg` (the same mark with heavier strokes for 16px to 64px, on the same macOS grid). The app icons in `src-tauri/icons/` come from them.
 
 ### Palette 6
 
