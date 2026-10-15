@@ -686,9 +686,13 @@ export function Sidebar({
   return (
     <aside className="side" aria-label="Direct messages" ref={root}>
       <div className="ws">
-        <span className="ws-mark" aria-hidden="true">
-          P
-        </span>
+        {/* The app icon stands in for a team avatar until workspaces have their own. */}
+        <img
+          className="ws-mark ws-mark--logo"
+          src={`${import.meta.env.BASE_URL}brand/patchroom-mark.svg`}
+          alt=""
+          draggable={false}
+        />
         <div>
           <strong>Patchroom</strong>
           <small>{state.sessions.length === 1 ? '1 DM' : `${state.sessions.length} DMs`}</small>

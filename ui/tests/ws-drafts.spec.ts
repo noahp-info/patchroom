@@ -64,3 +64,18 @@ test.describe('workspace: drafts (checklist 7)', () => {
     await expect(box(page)).toHaveValue('draft that outlives the app');
   });
 });
+
+test('each DM keeps its own view when you switch away and back', async ({ page }) => {
+  await openSeeded(page, DMS);
+  await page.locator('.side .row', { hasText: 'alpha' }).click();
+  await page.keyboard.press('Meta+j');
+  await expect(page.getByTestId('view-label')).toHaveText('Terminal');
+  await page.locator('.side .row', { hasText: 'beta' }).click();
+  await expect(page.getByTestId('view-label')).toHaveText('Chat');
+  await page.locator('.side .row', { hasText: 'alpha' }).click();
+  await expect(page.getByTestId('view-label')).toHaveText('Terminal');
+  // And across a restart.
+  await page.reload();
+  await page.waitForFunction(() => !!window.__PR_STORE__);
+  expect(await page.evaluate(() => window.__PR_STORE__!.viewOf('a'))).toBe('terminal');
+});

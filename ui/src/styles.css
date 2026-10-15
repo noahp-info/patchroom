@@ -483,7 +483,7 @@ body {
 }
 .vsize {
   width: 100%;
-  max-width: 980px;
+  max-width: var(--chat-max);
 }
 /* Rows are in normal flow between two spacers (the padding of .vsize), so a row's top is the sum
    of the measured heights above it. */
@@ -579,7 +579,7 @@ body {
 }
 .chat .usertext {
   margin: 2px 0 6px;
-  max-width: 72ch;
+  max-width: var(--measure);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -609,7 +609,7 @@ body {
 
 /* markdown */
 .md {
-  max-width: 72ch;
+  max-width: var(--measure);
   overflow-wrap: anywhere;
 }
 .md > :first-child {
@@ -746,7 +746,7 @@ body {
 
 /* tool calls */
 .toolbox {
-  max-width: 620px;
+  max-width: var(--measure);
   margin-top: 4px;
 }
 .toolbox .tool {
@@ -926,7 +926,7 @@ body {
 }
 .think-text {
   margin: 4px 0 4px 17px;
-  max-width: 72ch;
+  max-width: var(--measure);
   --fs: 13px;
   color: var(--muted);
   white-space: pre-wrap;
@@ -950,7 +950,7 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
-  max-width: 720px;
+  max-width: var(--measure);
   padding: 4px 10px;
   border: 1px dashed var(--box-line);
   border-radius: var(--r-sm);
@@ -978,7 +978,7 @@ body {
 /* subagent thread summary */
 .chat button.thread {
   width: 100%;
-  max-width: 720px;
+  max-width: var(--measure);
   margin-top: 4px;
   padding: 6px 10px;
   border: 1px solid var(--line);
@@ -1193,7 +1193,7 @@ body {
 }
 .chat .box {
   position: relative;
-  max-width: 980px;
+  max-width: var(--chat-max);
 }
 /* The hidden twin the composer measures. Same box as the real field, out of the flow. */
 .chat .box textarea.input.mirror {
@@ -1222,6 +1222,20 @@ body {
   font: inherit;
   line-height: 1.45;
   padding: 10px 12px 6px;
+}
+.chat .box .input-wrap {
+  position: relative;
+}
+.chat .box .input-ph {
+  position: absolute;
+  inset: 0 12px auto;
+  padding-top: 10px;
+  overflow: hidden;
+  color: var(--muted);
+  line-height: 1.45;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 .chat .box textarea.input::placeholder {
   color: var(--muted);
@@ -1258,7 +1272,7 @@ body {
 .strip-wrap {
   flex: none;
   /* Same right edge as the composer box: the strip's children carry the gutter as margin. */
-  max-width: calc(980px + 2 * var(--gutter));
+  max-width: calc(var(--chat-max) + 2 * var(--gutter));
   padding: 0 0 8px;
   --fs: 11px;
 }
@@ -2847,7 +2861,7 @@ body.dragging * {
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: calc(980px + 2 * var(--gutter));
+  max-width: calc(var(--chat-max) + 2 * var(--gutter));
   margin: 0 var(--gutter) 6px;
   padding: 2px 4px;
   color: var(--fg);
@@ -3305,4 +3319,26 @@ body.dragging .sbe__grip {
 }
 .selchip svg.i {
   color: var(--muted);
+}
+
+/* The exact words a pending comment quotes. Stronger while its note is being edited. */
+::highlight(pr-comment) {
+  background-color: color-mix(in srgb, var(--mark-line) 30%, transparent);
+}
+::highlight(pr-comment-active) {
+  background-color: color-mix(in srgb, var(--mark-line) 62%, transparent);
+  color: var(--fg);
+}
+.chat .usertext > p {
+  margin: 0;
+}
+.chat .usertext > p:empty {
+  display: none;
+}
+.chat .usertext .uq {
+  margin: 4px 0 2px;
+  padding: 1px 0 1px 10px;
+  border-left: 3px solid var(--mark-line);
+  color: var(--muted);
+  font-style: italic;
 }

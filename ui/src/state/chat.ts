@@ -48,6 +48,8 @@ export interface ChatNotice {
 export interface ChatSnapshot {
   /** Highlight-to-comment lines waiting in the composer. Nothing sends before Send. */
   comments: DraftComment[];
+  /** The comment whose note is being edited: its source stays in view, marked stronger. */
+  activeComment: string | null;
   /** Main-log items in order. Subagent children are excluded. */
   items: ChatItem[];
   prompts: PromptState[];
@@ -100,6 +102,7 @@ export class ChatModel {
   private loadingMore: Promise<void> | null = null;
   private loadGen = 0;
   private comments: DraftComment[] = [];
+  private activeComment: string | null = null;
   private commentSeq = 0;
   /** The comment whose note box should take focus once it renders. */
   private focusCommentId: string | null = null;
@@ -154,10 +157,10 @@ export class ChatModel {
   // ---- highlight-to-comment ----------------------------------------------------------------
 
   /** Add a comment line for a highlighted quote. Returns its id. */
-  addComment(key: string | null, quote: string): string {
+  addComment(key: string | null, quote: string, at?: number, len?: number): string {
     this.commentSeq += 1;
     const id = `c${this.commentSeq}`;
-    this.comments = [...this.comments, { id, key, quote, text: '' }];
+    this.comments = [...this.comments, { id, key, quote, text: '', at, len }];
     this.focusCommentId = id;
     this.commit();
     return id;
@@ -166,7 +169,16 @@ export class ChatModel {
     this.comments = this.comments.map((c) => (c.id === id ? { ...c, text } : c));
     this.commit();
   }
+  /** The note box of `id` took focus (or none has it): keep its source in view. */
+  setActiveComment(id: string | null): void {
+    if (this.activeComment === id) return;
+    this.activeComment = id;
+    const key = id ? this.comments.find((c) => c.id === id)?.key : null;
+    if (key && this.byKey.has(key)) this.focusKey(key);
+    else this.commit();
+  }
   removeComment(id: string): void {
+    if (this.activeComment === id) this.activeComment = null;
     this.comments = this.comments.filter((c) => c.id !== id);
     this.commit();
   }
@@ -175,6 +187,7 @@ export class ChatModel {
     const out = this.comments;
     if (out.length === 0) return out;
     this.comments = [];
+    this.activeComment = null;
     this.commit();
     return out;
   }
@@ -215,6 +228,7 @@ export class ChatModel {
     }
     return {
       comments: this.comments,
+      activeComment: this.activeComment,
       items,
       prompts: this.prompts,
       hasMore: this.hasMore,

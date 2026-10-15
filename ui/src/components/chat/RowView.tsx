@@ -251,7 +251,7 @@ function ItemBody({
     case 'user':
       return (
         <div className="body">
-          {item.text && <p className="usertext">{item.text}</p>}
+          {item.text && <UserText text={item.text} />}
           {item.images.length > 0 && (
             <div className="chatimgs">
               {item.images.map((im) => (
@@ -380,6 +380,33 @@ function ItemBody({
         </div>
       );
   }
+}
+
+/** A sent message. Highlight-to-comment quotes ("> ...") show as quotes, the rest as typed. */
+function UserText({ text }: { text: string }) {
+  const blocks: { quote: boolean; lines: string[] }[] = [];
+  for (const line of text.split('\n')) {
+    const quote = /^>( |$)/.test(line);
+    const last = blocks.at(-1);
+    const body = quote ? line.replace(/^> ?/, '') : line;
+    if (last && last.quote === quote) last.lines.push(body);
+    else blocks.push({ quote, lines: [body] });
+  }
+  if (!blocks.some((b) => b.quote)) return <p className="usertext">{text}</p>;
+  return (
+    <div className="usertext">
+      {blocks.map((b, i) =>
+        b.quote ? (
+          <blockquote key={i} className="uq">
+            {b.lines.join('\n')}
+          </blockquote>
+        ) : (
+          // A blank line between a quote and its note is spacing, not text.
+          <p key={i}>{b.lines.join('\n').replace(/^\n+|\n+$/g, '')}</p>
+        ),
+      )}
+    </div>
+  );
 }
 
 export interface RowViewProps {
