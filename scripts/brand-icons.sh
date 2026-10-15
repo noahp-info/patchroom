@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rebuild src-tauri/icons/ from the two brand SVGs. Needs pnpm, node, python3, sips, iconutil, Playwright chromium.
-# Sources: patchroom-mark.svg (48px and up) plus pixel-fit drawings authored on their own grids: patchroom-mark-small-16.svg (16px) and
-# patchroom-mark-small-32.svg (32px, also shown 2x for 64px and scaled for 24px). patchroom-mark-small.svg is a copy of the 32px drawing.
+# Sources: patchroom-mark.svg (128px and up) and patchroom-mark-small.svg (16 to 64px: the same mark, heavier strokes, no plug
+# highlights). Both sit on the macOS grid (body 824 of 1024, centered) so the small sizes match the Dock icon and other apps.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BRAND="$ROOT/ui/public/brand"
@@ -16,14 +16,13 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const [brand, work] = process.argv.slice(2);
 const uri = (f) => 'data:image/svg+xml;base64,' + readFileSync(`${brand}/${f}`).toString('base64');
 const full = uri('patchroom-mark.svg');
-const s16 = uri('patchroom-mark-small-16.svg');
-const s32 = uri('patchroom-mark-small-32.svg');
+const small = uri('patchroom-mark-small.svg');
 // macOS grid: body 824 of 1024, centered, soft drop shadow, transparent corners.
 const master = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs><filter id="s" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.35"/></filter></defs>
   <image href="${full}" x="100" y="100" width="824" height="824" filter="url(#s)"/></svg>`;
-// Small sizes: the drawing's viewBox equals its pixel size and the body already carries its own margin, so it is shown 1:1 (or 2x) with no shadow.
-const flat = (href, size) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><image href="${href}" width="${size}" height="${size}"/></svg>`;
+// Small sizes: the heavier mark on the same grid, without the shadow (it only muddies a 16px tile).
+const flat = (href, size) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><image href="${href}" x="${(size * 100) / 1024}" y="${(size * 100) / 1024}" width="${(size * 824) / 1024}" height="${(size * 824) / 1024}"/></svg>`;
 const browser = await chromium.launch();
 const page = await browser.newPage();
 async function shot(svg, size, out) {
@@ -35,10 +34,7 @@ async function shot(svg, size, out) {
 }
 await shot(master, 1024, 'master.png');
 for (const s of [128, 256, 512, 1024, 48]) await shot(master, s, `full-${s}.png`);
-await shot(flat(s16, 16), 16, 'small-16.png');
-await shot(flat(s32, 32), 32, 'small-32.png');
-await shot(flat(s32, 24), 24, 'small-24.png');
-await shot(flat(s32, 64), 64, 'small-64.png');
+for (const s of [16, 24, 32, 64]) await shot(flat(small, s), s, `small-${s}.png`);
 await browser.close();
 JS
 )
@@ -48,7 +44,7 @@ JS
 for f in 128x128.png 128x128@2x.png icon.png; do cp "$WORK/tauri-out/$f" "$ICONS/$f"; done
 cp "$WORK/small-32.png" "$ICONS/32x32.png"
 
-# 3. icns via iconutil: small drawing for 16, 16@2x, 32, 32@2x; full mark above that.
+# 3. icns via iconutil: small mark for 16, 16@2x, 32, 32@2x; full mark above that.
 SET="$WORK/patchroom.iconset"
 mkdir "$SET"
 cp "$WORK/small-16.png" "$SET/icon_16x16.png"
@@ -63,12 +59,12 @@ cp "$WORK/full-512.png" "$SET/icon_512x512.png"
 cp "$WORK/full-1024.png" "$SET/icon_512x512@2x.png"
 iconutil -c icns "$SET" -o "$ICONS/icon.icns"
 
-# 4. ico with embedded PNGs: small drawing at 16, 24, 32; full mark at 48, 64+.
+# 4. ico with embedded PNGs: small mark at 16, 24, 32, 64; full mark at 48, 128+.
 python3 -I - "$WORK" "$ICONS/icon.ico" <<'PY'
 import struct, sys
 work, out = sys.argv[1:3]
 entries = [(16, 'small-16'), (24, 'small-24'), (32, 'small-32'), (48, 'full-48'), (64, 'small-64'), (128, 'full-128'), (256, 'full-256')]
-# 64px also uses the small drawing, matching the 32@2x iconset entry.
+# 64px also uses the small mark, matching the 32@2x iconset entry.
 blobs = [(s, open(f'{work}/{n}.png', 'rb').read()) for s, n in entries]
 head = struct.pack('<HHH', 0, 1, len(blobs))
 off = 6 + 16 * len(blobs)

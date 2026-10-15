@@ -2886,6 +2886,32 @@ body.dragging * {
 .chat .box[data-readonly='true'] {
   background: var(--surface);
 }
+/* An ended DM: the whole message box is one Resume target. */
+.chat .box__resume {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat .box__resume:hover {
+  background: var(--hover);
+}
+.chat .box__resume svg.i {
+  color: var(--link);
+}
+.chat .box__resume span {
+  color: var(--muted);
+}
 
 /* A terminal shown because the chat cannot render what claude is doing. */
 .pane .tnote {

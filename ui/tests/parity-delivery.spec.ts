@@ -119,7 +119,7 @@ test.describe('session parity: check failed', () => {
     await page.evaluate(() => {
       window.__PR_MOCK__!.failNextCheck = 'could not check: claude agents is not installed';
     });
-    await page.getByRole('button', { name: 'Resume' }).click();
+    await page.getByRole('button', { name: 'Resume', exact: true }).click();
     await expect(page.getByTestId('check-failed')).toContainText('not installed');
     expect(await page.evaluate(() => window.__PR_MOCK__!.resumes.length)).toBe(0);
     await expect(page.getByTestId('exit-bar')).toBeVisible();

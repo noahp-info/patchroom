@@ -20,6 +20,8 @@ export interface ComposerProps {
   busy: boolean;
   /** The process ended: the box is disabled. */
   ended: boolean;
+  /** Restart an ended session. When set, clicking the ended box resumes it. */
+  onResume?(): void;
   /** Why the box is read-only (a mirror of a session open elsewhere); null when it is not. */
   readOnly?: string | null;
   /** A terminal-only dialog is up: Enter keeps the draft and shows why instead of sending. */
@@ -44,6 +46,7 @@ export function Composer({
   name,
   busy,
   ended,
+  onResume,
   readOnly = null,
   blocked = false,
   notice = null,
@@ -145,7 +148,7 @@ export function Composer({
           )}
         </div>
       )}
-      {(readOnly || ended) && (
+      {(readOnly || (ended && !onResume)) && (
         <div className="cnotice cnotice--reason" role="status" data-testid="composer-reason">
           <span>
             {readOnly
@@ -157,6 +160,18 @@ export function Composer({
         </div>
       )}
       <div className="box" data-readonly={readOnly ? 'true' : undefined}>
+        {ended && !readOnly && onResume && (
+          <button
+            type="button"
+            className="box__resume"
+            data-testid="composer-resume"
+            onClick={onResume}
+          >
+            <Icon name="resume" />
+            This session has ended. Click here to resume it.
+            {text.trim() !== '' && <span>Your draft is kept.</span>}
+          </button>
+        )}
         {comments.length > 0 && (
           <ul className="clines" aria-label="Comments to send" data-testid="comment-lines">
             {comments.map((c) => (
@@ -214,7 +229,9 @@ export function Composer({
             {readOnly
               ? 'Read-only. Sending is off.'
               : ended
-                ? 'Ended. Sending is off.'
+                ? onResume
+                  ? 'Ended. Click the box to resume.'
+                  : 'Ended. Sending is off.'
                 : blocked
                   ? 'Enter keeps your message here while the terminal is open. Shift+Enter adds a line.'
                   : 'Enter sends. Shift+Enter adds a line.'}

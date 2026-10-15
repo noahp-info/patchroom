@@ -34,7 +34,7 @@ test.describe('shell', () => {
     const id = await openWithDm(page, 'mock');
     await page.evaluate((sid) => window.__PR_MOCK__!.exit(sid, 0), id);
     await expect(page.locator('.side .row')).toHaveAttribute('data-status', 'exited');
-    await page.getByRole('button', { name: 'Resume' }).click();
+    await page.getByRole('button', { name: 'Resume', exact: true }).click();
     // Resume uses session_resume on the same DM: no second DM, no --resume via session_create.
     await expect
       .poll(() => page.evaluate(() => window.__PR_MOCK__!.resumes.map((r) => r.id)))
@@ -268,4 +268,22 @@ test.describe('layout stability', () => {
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
   });
+});
+
+test('clicking the ended message box resumes the same DM, and keeps the draft', async ({
+  page,
+}) => {
+  const id = await openWithDm(page, 'mock', 'chat');
+  await page.getByTestId('composer-input').fill('half-written thought');
+  await page.evaluate((sid) => window.__PR_MOCK__!.exit(sid, 0), id);
+  const resume = page.getByTestId('composer-resume');
+  await expect(resume).toContainText('This session has ended. Click here to resume it.');
+  await expect(resume).toContainText('Your draft is kept.');
+  await expect(page.getByTestId('composer-hint')).toHaveText('Ended. Click the box to resume.');
+  await resume.click();
+  await expect
+    .poll(() => page.evaluate(() => window.__PR_MOCK__!.resumes.map((r) => r.id)))
+    .toEqual([id]);
+  await expect(resume).toHaveCount(0);
+  await expect(page.getByTestId('composer-input')).toHaveValue('half-written thought');
 });
