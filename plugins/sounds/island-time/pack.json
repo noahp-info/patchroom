@@ -1,0 +1,29 @@
+{
+  "id": "island-time",
+  "name": "Island Time",
+  "description": "Warm steel-pan phrases. The most cheerful pack.",
+  "kind": "files",
+  "license": "CC0-1.0",
+  "author": "Kenney (kenney.nl)",
+  "source": "Kenney Music Jingles (CC0)",
+  "originals": {
+    "needs": "jingles_STEEL09.ogg",
+    "done": "jingles_STEEL00.ogg",
+    "message": "jingles_STEEL08.ogg",
+    "error": "jingles_STEEL04.ogg",
+    "bell": "jingles_STEEL10.ogg",
+    "decision": "jingles_STEEL05.ogg",
+    "due": "jingles_STEEL11.ogg",
+    "session": "jingles_STEEL15.ogg"
+  },
+  "sounds": {
+    "needs": "sounds/needs.m4a",
+    "done": "sounds/done.m4a",
+    "message": "sounds/message.m4a",
+    "error": "sounds/error.m4a",
+    "bell": "sounds/bell.m4a",
+    "decision": "sounds/decision.m4a",
+    "due": "sounds/due.m4a",
+    "session": "sounds/session.m4a"
+  }
+}

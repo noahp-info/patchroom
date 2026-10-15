@@ -35,7 +35,8 @@ async function feed(page: Page, id: string, text = LINE, chips: object = CHIPS) 
 }
 
 async function openMenu(page: Page) {
-  await strip(page).click({ button: 'right', position: { x: 4, y: 4 } });
+  // Clear of the sidebar resize handle, which straddles the pane's left edge.
+  await strip(page).click({ button: 'right', position: { x: 40, y: 4 } });
   const menu = page.getByRole('dialog', { name: 'Customize status bar' });
   await expect(menu).toBeVisible();
   return menu;

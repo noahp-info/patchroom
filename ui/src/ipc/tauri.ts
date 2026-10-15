@@ -50,6 +50,8 @@ function section(r: Loose): SectionInfo {
     collapsed: Boolean(r.collapsed),
     folder: (r.folder as string | null | undefined) ?? null,
     archiveDays: Number(pick(r, 'archiveDays', 'archive_days') ?? 14),
+    kind: r.kind === 'divider' ? 'divider' : 'section',
+    emoji: (r.emoji as string | null | undefined) ?? null,
   };
 }
 function folderSession(r: Loose): FolderSession {
@@ -60,6 +62,7 @@ function folderSession(r: Loose): FolderSession {
     launchCwd: String(pick(r, 'launchCwd', 'launch_cwd') ?? ''),
     relPath: String(pick(r, 'relPath', 'rel_path') ?? ''),
     branch: (r.branch as string | null | undefined) ?? null,
+    folderBranch: (pick(r, 'folderBranch', 'folder_branch') as string | null | undefined) ?? null,
     lastActivity: pick(r, 'lastActivity', 'last_activity') as FolderSession['lastActivity'],
     firstPrompt: String(pick(r, 'firstPrompt', 'first_prompt') ?? ''),
     lastPrompt: String(pick(r, 'lastPrompt', 'last_prompt') ?? ''),
@@ -175,7 +178,9 @@ export function createTauriIpc(): Ipc {
     sessionDelete: (id) => invoke('session_delete', { id }),
     sessionSetSection: (id, sectionId) => invoke('session_set_section', { id, sectionId }),
     sectionList: async () => (await invoke<Loose[]>('section_list')).map(section),
-    sectionCreate: (name) => invoke('section_create', { name }),
+    sectionCreate: (name, opts) =>
+      invoke('section_create', { name, kind: opts?.kind, emoji: opts?.emoji ?? undefined }),
+    sectionSetEmoji: (id, emoji) => invoke('section_set_emoji', { id, emoji }),
     sectionSetCollapsed: (id, collapsed) => invoke('section_set_collapsed', { id, collapsed }),
     pickFolder: (defaultPath) => invoke<string | null>('pick_folder', { defaultPath }),
     chatHistory: (id, before, limit) => invoke('chat_history', { id, before, limit }),
@@ -218,6 +223,23 @@ export function createTauriIpc(): Ipc {
     prefsSet: (patch) => invoke<Prefs>('prefs_set', { patch }),
     soundHooksDetect: () => invoke('sound_hooks_detect', {}),
     notifyTest: () => invoke('notify_test', {}),
+    soundPacks: () => invoke('sound_packs', {}),
+    soundFile: (packId, event) => invoke('sound_file', { packId, event }),
+    soundCustomList: () => invoke('sound_custom_list', {}),
+    soundCustomFile: (id) => invoke('sound_custom_file', { id }),
+    soundPickFile: async () => {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const picked = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Sound', extensions: ['wav', 'aiff', 'mp3', 'm4a'] }],
+      });
+      return typeof picked === 'string' ? picked : null;
+    },
+    soundImportFile: (path) => invoke('sound_import_file', { path }),
+    soundCustomRemove: (id) => invoke('sound_custom_remove', { id }),
+    soundClaudeProfiles: () => invoke('sound_claude_profiles', {}),
+    soundImportClaudeProfile: (id) => invoke('sound_import_claude_profile', { id }),
     sessionFocus: (id) => invoke('session_focus', { id }),
     sectionCreateFromFolder: (path, name) =>
       invoke<{ id: string }>('section_create_from_folder', { path, name }),

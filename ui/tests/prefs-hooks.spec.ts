@@ -13,9 +13,9 @@ test('detected hooks default to Keep yours and never claim to edit them', async 
     await expect(row.getByRole('radio', { name: 'Play both' })).not.toBeChecked();
     await expect(row).toContainText('afplay');
   }
-  // Stop overlaps "Turn complete"; SessionStart has no Patchroom twin.
+  // Stop overlaps "Turn complete"; SessionStart overlaps "Session start".
   await expect(table.locator('[data-hook-event="Stop"]')).toContainText('Turn complete');
-  await expect(table.locator('[data-hook-event="SessionStart"]')).toContainText('No overlap');
+  await expect(table.locator('[data-hook-event="SessionStart"]')).toContainText('Session start');
 });
 
 test('Play both is saved per event', async ({ page }) => {

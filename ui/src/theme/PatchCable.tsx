@@ -68,6 +68,7 @@ export function PatchCable({
     const ro = new ResizeObserver(measure);
     ro.observe(root);
     const side = root.querySelector('.side');
+    if (side) ro.observe(side);
     const rows = root.querySelector('.side-scroll') ?? side;
     rows?.addEventListener('scroll', measure, { passive: true });
     const mo = new MutationObserver(measure);

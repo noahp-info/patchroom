@@ -350,3 +350,83 @@ export async function setTheme(page: Page, themeId: string, mode: 'light' | 'dar
     [themeId, mode],
   );
 }
+
+// ---- sidebar organization helpers --------------------------------------------------------------
+
+/**
+ * Open the organized-sidebar demo (`?mock&sidebar-demo`): a 30-session gamerNetworking-like folder
+ * section `gn`, a labeled divider `div-side` over sections `kf` and `lab`, an unlabeled divider
+ * `div-plain`, a needs-you DM in `gn` (`dm-ci`) and in `kf` (`dm-kf2`), and the default groups.
+ */
+export async function openSidebarDemo(
+  page: Page,
+  theme?: { id: string; mode: 'light' | 'dark' },
+): Promise<void> {
+  await page.goto('/?mock&sidebar-demo');
+  await page.waitForFunction(() => !!window.__PR_STORE__ && !!window.__PR_MOCK__);
+  await page.locator('.side [data-folder-body="gn"] .fs-row').first().waitFor();
+  if (theme) await setTheme(page, theme.id, theme.mode);
+}
+
+/** The header button of a sidebar group. */
+export const headerOf = (page: Page, groupId: string) =>
+  page.locator(`.side [data-group="${groupId}"] > .sec-h`);
+
+/** Stored sidebar rows in order: `[id, kind, name, emoji]`. */
+export async function storedSections(page: Page) {
+  return page.evaluate(() =>
+    window.__PR_MOCK__!.sections().map((s) => [s.id, s.kind ?? 'section', s.name, s.emoji ?? null]),
+  );
+}
+
+/** Ids of the groups in the sidebar, top to bottom, as rendered. */
+export async function renderedGroups(page: Page): Promise<string[]> {
+  return page
+    .locator('.side .side-scroll > .sec')
+    .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.group ?? ''));
+}
+
+/** WCAG contrast of an element's text against its composited background, computed in the page. */
+export async function textContrast(page: Page, selector: string): Promise<number> {
+  return page.evaluate((sel) => {
+    type RGBA = [number, number, number, number];
+    const parse = (c: string): RGBA => {
+      const m = /rgba?\(([^)]+)\)/.exec(c);
+      if (m) {
+        const p = m[1]
+          .split(/[ ,/]+/)
+          .filter(Boolean)
+          .map(Number);
+        return [p[0], p[1], p[2], p[3] ?? 1];
+      }
+      const s = /color\(srgb ([^)]+)\)/.exec(c);
+      if (s) {
+        const p = s[1].split(/[ /]+/).filter(Boolean).map(Number);
+        return [p[0] * 255, p[1] * 255, p[2] * 255, p[3] ?? 1];
+      }
+      return [0, 0, 0, 0];
+    };
+    const over = (top: RGBA, under: RGBA): RGBA => {
+      const a = top[3] + under[3] * (1 - top[3]);
+      if (a === 0) return [0, 0, 0, 0];
+      const mix = (i: number) => (top[i] * top[3] + under[i] * under[3] * (1 - top[3])) / a;
+      return [mix(0), mix(1), mix(2), a];
+    };
+    const lum = (c: RGBA) => {
+      const f = (v: number) => {
+        const x = v / 255;
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+    };
+    const el = document.querySelector(sel);
+    if (!el) throw new Error(`no ${sel}`);
+    const chain: Element[] = [];
+    for (let e: Element | null = el; e; e = e.parentElement) chain.unshift(e);
+    let bg: RGBA = [255, 255, 255, 1];
+    for (const e of chain) bg = over(parse(getComputedStyle(e).backgroundColor), bg);
+    const fg = over(parse(getComputedStyle(el).color), bg);
+    const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a);
+    return (hi + 0.05) / (lo + 0.05);
+  }, selector);
+}

@@ -1,3 +1,11 @@
+import type {
+  ClaudeProfile,
+  DmSoundPref,
+  ImportedFile,
+  MixChoice,
+  PackInfo,
+  SoundFileData,
+} from '../components/prefs/ipc.ts';
 import type { Theme } from '../theme/types.ts';
 
 /** Session status as reported by the backend (`session:status` and `session_list`). */
@@ -69,7 +77,14 @@ export interface SectionInfo {
   folder?: string | null;
   /** P3: folder sections fold sessions idle this many days into "Older than X days". */
   archiveDays?: number;
+  /** `divider` rows hold no DMs: a rule with an optional label. Absent means `section`. */
+  kind?: SectionKind;
+  /** Leading emoji of the header; null for none. */
+  emoji?: string | null;
 }
+
+/** What a stored sidebar row is. */
+export type SectionKind = 'section' | 'divider';
 
 export interface SessionCreateArgs {
   cwd: string;
@@ -195,7 +210,12 @@ export interface Ipc {
   /** Move a DM to a stored section, or to the default group with null. */
   sessionSetSection(id: string, sectionId: string | null): Promise<void>;
   sectionList(): Promise<SectionInfo[]>;
-  sectionCreate(name: string): Promise<{ id: string }>;
+  /** `kind` defaults to a section. A divider may have an empty name (a rule with no label). */
+  sectionCreate(
+    name: string,
+    opts?: { kind?: SectionKind; emoji?: string | null },
+  ): Promise<{ id: string }>;
+  sectionSetEmoji(id: string, emoji: string | null): Promise<void>;
   sectionSetCollapsed(id: string, collapsed: boolean): Promise<void>;
   /** Native folder picker (`pick_folder`). Resolves null when cancelled. */
   pickFolder(defaultPath?: string): Promise<string | null>;
@@ -239,6 +259,17 @@ export interface Ipc {
   prefsSet(patch: Partial<Prefs>): Promise<Prefs>;
   soundHooksDetect(): Promise<DetectedHook[]>;
   notifyTest(): Promise<void>;
+  /** Sound packs (docs/gauntlet/SOUND-PACKS-BAR.md). */
+  soundPacks(): Promise<PackInfo[]>;
+  soundFile(packId: string, event: string): Promise<SoundFileData>;
+  soundCustomList(): Promise<ImportedFile[]>;
+  soundCustomFile(id: string): Promise<SoundFileData>;
+  /** Native file picker for the user's own sound. Resolves null when cancelled. */
+  soundPickFile(): Promise<string | null>;
+  soundImportFile(path: string): Promise<ImportedFile>;
+  soundCustomRemove(id: string): Promise<void>;
+  soundClaudeProfiles(): Promise<ClaudeProfile[]>;
+  soundImportClaudeProfile(id: string): Promise<{ packId: string }>;
   /** The DM the user is looking at (null: none), so it does not notify while focused. */
   sessionFocus(id: string | null): Promise<void>;
   /** P3 folder sections. */
@@ -483,6 +514,15 @@ export type NotifyLevel = 'all' | 'needs' | 'mute';
 export type NotifyEventName = 'needs' | 'done' | 'message' | 'error' | 'bell';
 export type SoundEventName = 'needs' | 'done' | 'message' | 'error';
 
+export type {
+  ClaudeProfile,
+  DmSoundPref,
+  ImportedFile,
+  MixChoice,
+  PackInfo,
+  SoundFileData,
+} from '../components/prefs/ipc.ts';
+
 export interface Prefs {
   themeId: string;
   mode: 'light' | 'dark' | 'system';
@@ -496,7 +536,9 @@ export interface Prefs {
     enabled: boolean;
     volume: number;
     perEvent: Record<string, { on: boolean; sound: string }>;
-    perDm: Record<string, 'default' | 'mute'>;
+    /** Per event: a pack's sound, the user's own file or off. */
+    mix: Record<string, MixChoice>;
+    perDm: Record<string, DmSoundPref>;
     hookPolicy: Record<string, 'keep' | 'both'>;
   };
   dnd: {
@@ -505,6 +547,8 @@ export interface Prefs {
   };
   termPerDm: Record<string, { themeId?: string; font?: string; fontSize?: number }>;
   searchAllSessions: boolean;
+  /** Sidebar width in px, 220 to 420. Missing in older blobs: 264. */
+  sidebarWidth: number;
   /** Status strip layout. Absent: the built-in default with duplicates hidden. */
   statusBar?: StatusBarPrefs;
 }
@@ -555,6 +599,8 @@ export interface FolderSession {
   /** Path of `launchCwd` inside the home folder; empty for the home folder itself. */
   relPath: string;
   branch?: string | null;
+  /** The branch currently checked out in the section's home folder (read only). */
+  folderBranch?: string | null;
   /** Newest transcript timestamp. */
   lastActivity: Timestamp;
   firstPrompt: string;

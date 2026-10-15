@@ -16,7 +16,10 @@
         "width": 1200,
         "height": 800,
         "minWidth": 880,
-        "minHeight": 520
+        "minHeight": 520,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 16, "y": 22 }
       }
     ],
     "security": {
@@ -36,6 +39,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "../plugins/sounds/": "sounds/"
+    },
     "externalBin": [
       "binaries/patchroom-hook",
       "binaries/patchroom-statusline"

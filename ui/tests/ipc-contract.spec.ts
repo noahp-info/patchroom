@@ -69,6 +69,19 @@ const FOLDER_COMMANDS = [
 ];
 /** Session parity additions (docs/gauntlet/SESSION-PARITY-BAR.md, Contract: backend). */
 const PARITY_COMMANDS = ['session_mirror_takeover_when_closed', 'session_takeover'];
+/** Sidebar organization: section emoji (docs/gauntlet/SIDEBAR-ORG-BAR.md). */
+const SIDEBAR_COMMANDS = ['section_set_emoji'];
+/** Sound packs (docs/gauntlet/SOUND-PACKS-BAR.md). The file picker is the dialog plugin, not a command. */
+const SOUND_COMMANDS = [
+  'sound_claude_profiles',
+  'sound_custom_file',
+  'sound_custom_list',
+  'sound_custom_remove',
+  'sound_file',
+  'sound_import_claude_profile',
+  'sound_import_file',
+  'sound_packs',
+];
 /** Declared by the backend beyond the fixed contract; the UI uses them when present. */
 const P2_OPTIONAL = ['session_view', 'session_focus'];
 const P1B_EVENTS = ['pty:exit', 'pty:output', 'session:status', 'session:title'];
@@ -220,6 +233,8 @@ async function recordTauriCalls(): Promise<Call[]> {
   await ipc.sessionSetSection('i', 's');
   await ipc.sectionList();
   await ipc.sectionCreate('n');
+  await ipc.sectionCreate('Later', { kind: 'divider', emoji: '\u{1F4E6}' });
+  await ipc.sectionSetEmoji('s', '\u{1F525}');
   await ipc.sectionSetCollapsed('s', true);
   await ipc.pickFolder('/w');
   await ipc.chatHistory('i', 'k', 300);
@@ -248,6 +263,14 @@ async function recordTauriCalls(): Promise<Call[]> {
   await ipc.prefsSet({ themeId: 'patch-bay' });
   await ipc.soundHooksDetect();
   await ipc.notifyTest();
+  await ipc.soundPacks();
+  await ipc.soundFile('lab-glass', 'needs');
+  await ipc.soundImportFile('/w/chime.wav');
+  await ipc.soundCustomList();
+  await ipc.soundCustomFile('01J');
+  await ipc.soundCustomRemove('01J');
+  await ipc.soundClaudeProfiles();
+  await ipc.soundImportClaudeProfile('retro');
   await ipc.sessionFocus('i');
   await ipc.sectionCreateFromFolder('/w', 'atlas');
   await ipc.sectionSetArchiveDays('s', 30);
@@ -284,8 +307,12 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     if (requireParity(declared, PARITY_COMMANDS)) {
       for (const c of PARITY_COMMANDS) expect(declared, `parity command ${c}`).toContain(c);
     }
+    for (const c of SIDEBAR_COMMANDS) expect(declared, `sidebar command ${c}`).toContain(c);
+    for (const c of SOUND_COMMANDS) expect(declared, `sound command ${c}`).toContain(c);
     const known = new Set([
+      ...SOUND_COMMANDS,
       ...P1B_COMMANDS,
+      ...SIDEBAR_COMMANDS,
       ...P2_COMMANDS,
       ...P3_COMMANDS,
       ...FOLDER_COMMANDS,
@@ -346,6 +373,9 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     expect(byCmd.session_resume).toEqual({ id: 'i', cols: 80, rows: 24 });
     expect(byCmd.session_set_section).toEqual({ id: 'i', sectionId: 's' });
     expect(byCmd.section_set_collapsed).toEqual({ id: 's', collapsed: true });
+    // Sidebar organization: `kind` and `emoji` are optional on create; null clears an emoji.
+    expect(byCmd.section_create).toEqual({ name: 'Later', kind: 'divider', emoji: '\u{1F4E6}' });
+    expect(byCmd.section_set_emoji).toEqual({ id: 's', emoji: '\u{1F525}' });
     expect(byCmd.pick_folder).toEqual({ defaultPath: '/w' });
     expect(byCmd.chat_history).toEqual({ id: 'i', before: 'k', limit: 300 });
     expect(byCmd.chat_thread).toEqual({ id: 'i', toolUseId: 'tu' });

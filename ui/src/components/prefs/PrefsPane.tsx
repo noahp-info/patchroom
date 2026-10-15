@@ -27,10 +27,12 @@ export interface PrefsPaneProps {
   dms?: PrefsDm[];
   /** Section to open first. */
   initialTab?: TabId;
+  /** Open this DM's sound settings in the Sounds section. */
+  targetDm?: string;
 }
 
 /** Preferences, as a modal over the app. Esc and the close button call `onClose`. */
-export function PrefsPane({ onClose, dms = [], initialTab = 'themes' }: PrefsPaneProps) {
+export function PrefsPane({ onClose, dms = [], initialTab = 'themes', targetDm }: PrefsPaneProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState<TabId>(initialTab);
 
@@ -79,7 +81,7 @@ export function PrefsPane({ onClose, dms = [], initialTab = 'themes' }: PrefsPan
           {tab === 'terminal' && <TerminalSection dms={dms} />}
           {tab === 'statusbar' && <StatusBarSection dms={dms} />}
           {tab === 'notifications' && <NotificationsSection dms={dms} />}
-          {tab === 'sounds' && <SoundsSection dms={dms} />}
+          {tab === 'sounds' && <SoundsSection dms={dms} openDm={targetDm} />}
           {tab === 'dnd' && <DndSection />}
           {tab === 'hooks' && <HooksSection />}
         </div>

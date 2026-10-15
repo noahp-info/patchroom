@@ -5,12 +5,13 @@ use rusqlite::{params, OptionalExtension, Row};
 use crate::error::{Error, Result};
 use crate::store::{col_author, col_id, col_opt_id, col_opt_parse, col_parse, new_id, now, Store};
 use crate::types::{
-    Author, Conversation, ConversationKind, Id, Membership, NewConversation, Section, Workspace,
+    Author, Conversation, ConversationKind, Id, Membership, NewConversation, Section, SectionKind,
+    Workspace,
 };
 
 const WS_COLS: &str = "id, author, created_at, updated_at, name";
 const SEC_COLS: &str = "id, author, created_at, updated_at, workspace_id, name, position, \
-                        collapsed, folder, archive_days";
+                        collapsed, folder, archive_days, kind, emoji";
 const CONV_COLS: &str = "id, author, created_at, updated_at, workspace_id, section_id, position, \
                          kind, name, provider, cwd, worktree, session_id, adapter_state, \
                          assign_mode, lead_id, starred, archived";
@@ -38,6 +39,8 @@ fn sec_row(r: &Row<'_>) -> rusqlite::Result<Section> {
         collapsed: r.get(7)?,
         folder: r.get(8)?,
         archive_days: r.get(9)?,
+        kind: col_parse(r, 10)?,
+        emoji: r.get(11)?,
     })
 }
 
@@ -80,6 +83,20 @@ fn require_nonempty(what: &str, v: &str) -> Result<()> {
         return Err(Error::invalid(format!("{what} must not be empty")));
     }
     Ok(())
+}
+
+/// Longest emoji field kept, in bytes: room for a ZWJ family sequence, not for prose.
+const MAX_EMOJI_BYTES: usize = 32;
+
+/// Trim an emoji field; blank means none.
+fn clean_emoji(emoji: Option<&str>) -> Result<Option<String>> {
+    let e = emoji.map(str::trim).filter(|e| !e.is_empty());
+    if let Some(e) = e {
+        if e.len() > MAX_EMOJI_BYTES {
+            return Err(Error::invalid("emoji is too long"));
+        }
+    }
+    Ok(e.map(str::to_owned))
 }
 
 impl Store {
@@ -145,20 +162,54 @@ impl Store {
 
     /// Append a section at the end of the workspace.
     pub fn create_section(&self, author: &Author, workspace_id: Id, name: &str) -> Result<Section> {
-        require_nonempty("section name", name)?;
+        self.create_section_of(author, workspace_id, name, SectionKind::Section, None)
+    }
+
+    /// Append a section or a divider, with an optional emoji. A divider may have an empty name
+    /// (a rule with no label); a section may not.
+    pub fn create_section_of(
+        &self,
+        author: &Author,
+        workspace_id: Id,
+        name: &str,
+        kind: SectionKind,
+        emoji: Option<&str>,
+    ) -> Result<Section> {
+        let name = name.trim();
+        if kind == SectionKind::Section {
+            require_nonempty("section name", name)?;
+        }
+        let emoji = clean_emoji(emoji)?;
         let (id, t) = (new_id(), now());
         self.conn.execute(
-            "INSERT INTO section (id, author, created_at, updated_at, workspace_id, name, position)
+            "INSERT INTO section (id, author, created_at, updated_at, workspace_id, name, position,
+                                  kind, emoji)
              VALUES (?1, ?2, ?3, ?3, ?4, ?5,
-                     (SELECT COALESCE(MAX(position) + 1, 0) FROM section WHERE workspace_id = ?4))",
+                     (SELECT COALESCE(MAX(position) + 1, 0) FROM section WHERE workspace_id = ?4),
+                     ?6, ?7)",
             params![
                 id.to_string(),
                 author.to_string(),
                 t,
                 workspace_id.to_string(),
-                name
+                name,
+                kind.as_str(),
+                emoji
             ],
         )?;
+        self.section(id)
+    }
+
+    /// Set or clear the emoji of a section or divider.
+    pub fn set_section_emoji(&self, id: Id, emoji: Option<&str>) -> Result<Section> {
+        let emoji = clean_emoji(emoji)?;
+        let n = self.conn.execute(
+            "UPDATE section SET emoji = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id.to_string(), emoji, now()],
+        )?;
+        if n == 0 {
+            return Err(Error::not_found("section", id));
+        }
         self.section(id)
     }
 
@@ -276,9 +327,12 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Rename a section.
+    /// Rename a section. A divider may be renamed to the empty string (no label).
     pub fn rename_section(&self, id: Id, name: &str) -> Result<Section> {
-        require_nonempty("section name", name)?;
+        let name = name.trim();
+        if self.section(id)?.kind == SectionKind::Section {
+            require_nonempty("section name", name)?;
+        }
         let n = self.conn.execute(
             "UPDATE section SET name = ?2, updated_at = ?3 WHERE id = ?1",
             params![id.to_string(), name, now()],
@@ -483,6 +537,9 @@ impl Store {
             let sec = self.section(s)?;
             if sec.workspace_id != conv.workspace_id {
                 return Err(Error::invalid("section belongs to a different workspace"));
+            }
+            if sec.kind == SectionKind::Divider {
+                return Err(Error::invalid("a divider cannot hold conversations"));
             }
         }
         let mut ids: Vec<String> = {

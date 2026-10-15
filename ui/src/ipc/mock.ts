@@ -25,6 +25,7 @@ import type {
   SessionStatus,
   Unlisten,
 } from './types';
+import { createMockSoundBackend, type MockSoundControl } from './mockSounds';
 
 /** Test and browser-dev handle, exposed as `window.__PR_MOCK__`. */
 export interface MockControl {
@@ -126,6 +127,8 @@ export interface MockControl {
   prefs(): Prefs;
   /** What `sound_hooks_detect` returns. */
   soundHooks: DetectedHook[];
+  /** The sound-pack backend: next picked file, files on the "disk", Claude profiles, calls. */
+  sound: MockSoundControl;
   /** Emit `notify:fire`, as the backend does after its own decision. */
   fireNotify(e: NotifyFireEvent): void;
   /** Emit `activity:changed`. */
@@ -179,6 +182,13 @@ type Handler = (payload: never) => void;
  */
 const PERSIST_KEY = 'patchroom.mock.state';
 
+const DEFAULT_MIX = Object.fromEntries(
+  ['needs', 'done', 'message', 'error', 'bell', 'decision', 'due', 'session'].map((e) => [
+    e,
+    { pack: 'patchtones' },
+  ]),
+);
+
 const DEFAULT_PREFS: Prefs = {
   themeId: 'homeroom',
   mode: 'system',
@@ -186,11 +196,12 @@ const DEFAULT_PREFS: Prefs = {
   base: 'homeroom',
   cablePreset: 'theme',
   notify: { default: 'all', perDm: {} },
-  sound: { enabled: true, volume: 0.6, perEvent: {}, perDm: {}, hookPolicy: {} },
+  sound: { enabled: true, volume: 0.6, perEvent: {}, mix: DEFAULT_MIX, perDm: {}, hookPolicy: {} },
   dnd: { manual: false, schedule: null },
   termPerDm: {},
   searchAllSessions: false,
   statusBar: { default: null, perDm: {} },
+  sidebarWidth: 264,
 };
 
 /** Text a search or a snapshot can see for one chat item. */
@@ -256,6 +267,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
   const closedMirrors = new Set<string>();
   let marks: MarkInfo[] = [];
   let prefs: Prefs = structuredClone(DEFAULT_PREFS);
+  const soundBackend = createMockSoundBackend();
   let counter = 0;
 
   // ---- persistence: `?persist` keeps the backend across page reloads, like a restart ----
@@ -443,6 +455,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     focusCalls: [],
     notifyTests: 0,
     soundHooks: [],
+    sound: soundBackend.control,
     storedMarks: () => marks.map((m) => ({ ...m })),
     prefs: () => structuredClone(prefs),
     fireNotify: (e) => emit('notify:fire', e),
@@ -471,6 +484,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
         launchCwd: home,
         relPath: '',
         branch: null,
+        folderBranch: folderRows.get(sectionId)?.[0]?.folderBranch ?? null,
         lastActivity: Date.now(),
         firstPrompt: row.name,
         lastPrompt: row.name,
@@ -609,6 +623,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
         collapsed: info.collapsed ?? false,
         folder: info.folder ?? null,
         archiveDays: info.archiveDays ?? 14,
+        kind: info.kind ?? 'section',
+        emoji: info.emoji ?? null,
       };
       sections.set(sec.id, sec);
       if (sec.folder && !folderRows.has(sec.id)) {
@@ -744,6 +760,9 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       save();
     },
     async sessionSetSection(id, sectionId) {
+      if (sectionId && sections.get(sectionId)?.kind === 'divider') {
+        throw new Error('a divider cannot hold conversations');
+      }
       const s = sessions.get(id);
       if (s) s.sectionId = sectionId;
       save();
@@ -751,8 +770,16 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     async sectionList() {
       return control.sections().map((x) => ({ ...x }));
     },
-    async sectionCreate(name) {
-      return { id: control.addSection({ name }).id };
+    async sectionCreate(name, opts) {
+      const kind = opts?.kind ?? 'section';
+      if (kind === 'section' && !name.trim()) throw new Error('section name must not be empty');
+      return { id: control.addSection({ name: name.trim(), kind, emoji: opts?.emoji ?? null }).id };
+    },
+    async sectionSetEmoji(id, emoji) {
+      const sec = sections.get(id);
+      if (!sec) throw new Error(`no such section: ${id}`);
+      sec.emoji = emoji?.trim() || null;
+      save();
     },
     async sectionSetCollapsed(id, collapsed) {
       const sec = sections.get(id);
@@ -804,7 +831,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     async sectionRename(id, name) {
       const sec = sections.get(id);
       if (!sec) throw new Error(`no such section: ${id}`);
-      sec.name = name.trim() || sec.name;
+      // A divider may lose its label; a section keeps its name when the new one is blank.
+      sec.name = sec.kind === 'divider' ? name.trim() : name.trim() || sec.name;
       save();
     },
     async sectionDelete(id) {
@@ -941,6 +969,15 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       emit('prefs:changed', { prefs: structuredClone(prefs) });
       return structuredClone(prefs);
     },
+    soundPacks: soundBackend.soundPacks,
+    soundFile: soundBackend.soundFile,
+    soundCustomList: soundBackend.soundCustomList,
+    soundCustomFile: soundBackend.soundCustomFile,
+    soundPickFile: soundBackend.soundPickFile,
+    soundImportFile: soundBackend.soundImportFile,
+    soundCustomRemove: soundBackend.soundCustomRemove,
+    soundClaudeProfiles: soundBackend.soundClaudeProfiles,
+    soundImportClaudeProfile: soundBackend.soundImportClaudeProfile,
     async soundHooksDetect() {
       return control.soundHooks.map((h) => ({ ...h }));
     },

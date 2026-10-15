@@ -8,6 +8,7 @@ import { openWithDm } from './helpers';
  * theme in light and dark and every cable preset.
  */
 const THEMES = ['homeroom', 'patch-bay', 'ansi-slate', 'cool-paper'];
+const WIDTHS = [220, 264, 420];
 const PRESETS = ['theme', 'jade', 'signal', 'studio', 'ocean', 'copper'];
 const SIZES = [
   { width: 880, height: 520 },
@@ -108,17 +109,27 @@ async function crossings(page: Page): Promise<{ hits: Hit[]; samples: number }> 
   });
 }
 
-async function setLook(page: Page, themeId: string, mode: string, cablePreset: string) {
+async function setLook(
+  page: Page,
+  themeId: string,
+  mode: string,
+  cablePreset: string,
+  sidebarWidth = 264,
+) {
   await page.evaluate((p) => window.__PR_STORE__!.setPrefs({ base: 'patchbay', ...p } as never), {
     themeId,
     mode,
     cablePreset,
+    sidebarWidth,
   });
   const app = page.locator('.pr-app');
   await expect(app).toHaveAttribute('data-base', 'patchbay');
   await expect(app).toHaveAttribute('data-theme', themeId);
   await expect(app).toHaveAttribute('data-mode', mode);
   await expect(page.locator('.pr-app > svg.cable')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.querySelector('.side')!.getBoundingClientRect().width))
+    .toBe(sidebarWidth);
   // Let the cable re-measure after fonts and layout settle.
   await page.evaluate(
     () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
@@ -139,11 +150,13 @@ for (const size of SIZES) {
             await page.keyboard.press('Meta+j');
             await page.locator('[data-testid="terminal"]').first().waitFor({ state: 'visible' });
           }
-          for (const preset of PRESETS) {
-            await setLook(page, themeId, mode, preset);
-            const { hits, samples } = await crossings(page);
-            expect(samples, `${view}/${preset}: cable has a path`).toBeGreaterThan(20);
-            expect(hits, `${view}/${preset}`).toEqual([]);
+          for (const width of WIDTHS) {
+            for (const preset of PRESETS) {
+              await setLook(page, themeId, mode, preset, width);
+              const { hits, samples } = await crossings(page);
+              expect(samples, `${view}/${preset}/${width}: cable has a path`).toBeGreaterThan(20);
+              expect(hits, `${view}/${preset}/${width}`).toEqual([]);
+            }
           }
         }
       });

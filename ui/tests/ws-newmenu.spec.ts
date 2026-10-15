@@ -67,7 +67,7 @@ test.describe('workspace: the + menu (Slack style)', () => {
     await expect(page.locator('aside.side .ws button[aria-label="New DM"]')).toHaveCount(0);
   });
 
-  test('opens with the three actions, first one focused, and Esc returns focus to the button', async ({
+  test('opens with its actions, first one focused, and Esc returns focus to the button', async ({
     page,
   }) => {
     const errs = watchErrors(page);
@@ -78,6 +78,7 @@ test.describe('workspace: the + menu (Slack style)', () => {
     await expect(menu(page).getByRole('menuitem')).toHaveText([
       'New DM',
       'New section',
+      'New divider',
       'New section from folder...',
     ]);
     await expect(menu(page).getByRole('menuitem', { name: 'New DM' })).toBeFocused();

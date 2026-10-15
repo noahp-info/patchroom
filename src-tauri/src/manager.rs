@@ -35,7 +35,8 @@ use patchroom_bridge::{
 };
 use patchroom_pty::{Command, PtyEvent, Session as PtySession, SpawnConfig, TitleKind};
 use patchroom_store::{
-    Author, Conversation, ConversationKind, DefaultSections, Id, NewConversation, Store,
+    Author, Conversation, ConversationKind, DefaultSections, Id, NewConversation, SectionKind,
+    Store,
 };
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +46,7 @@ mod mirror;
 mod needs;
 mod paste;
 mod slack;
+pub mod sound;
 mod terminal;
 
 pub use chat::{ImageData, PromptAnswer};
@@ -150,6 +152,12 @@ pub struct ManagerConfig {
     pub extra_projects_dirs: Vec<PathBuf>,
     /// How often a read-only mirror checks whether the other process is still there.
     pub mirror_poll: Duration,
+    /// The bundled `sounds` resource dir (`generated-packs.json` and one folder per file
+    /// pack). `None`: only imported packs are listed.
+    pub sounds_dir: Option<PathBuf>,
+    /// The home dir that `$HOME` and `~` mean inside the user's Claude sound profiles.
+    /// Defaults to `$HOME`; tests point it at a temp dir.
+    pub home_dir: Option<PathBuf>,
 }
 
 impl ManagerConfig {
@@ -167,6 +175,8 @@ impl ManagerConfig {
             terminal_hold: TERMINAL_HOLD,
             extra_projects_dirs: Vec::new(),
             mirror_poll: MIRROR_POLL,
+            sounds_dir: None,
+            home_dir: std::env::var_os("HOME").map(PathBuf::from),
         }
         .with_default_claude_paths()
     }
@@ -264,6 +274,10 @@ pub struct SectionInfo {
     /// Folder sections fold sessions idle this many days into "Older than X days".
     #[serde(rename = "archiveDays")]
     pub archive_days: i64,
+    /// `section` (holds DMs) or `divider` (a rule with an optional label).
+    pub kind: String,
+    /// Leading emoji of the header; `None` for none.
+    pub emoji: Option<String>,
 }
 
 /// What `--open-dm` asks for.
@@ -397,8 +411,10 @@ impl Manager {
         };
         let defaults = store.ensure_default_sections(&me, workspace)?;
         let default_section = defaults.dm;
-        let slack =
-            slack::SlackState::open(&cfg.data_dir, store.setting_value("prefs")?.as_deref());
+        let stored_prefs = store.setting_value("prefs")?;
+        let session_hook = sound::session_start_hook(&cfg, &store, workspace);
+        let slack = slack::SlackState::open(&cfg.data_dir, stored_prefs.as_deref(), session_hook);
+        sound::prune_unreferenced(&cfg.data_dir, stored_prefs.as_deref());
         let bridge = Bridge::start(BridgeConfig::new(socket_path_for(&cfg.data_dir)))?;
         let events = bridge.subscribe();
         let active = Arc::new(AtomicBool::new(false));
@@ -771,17 +787,54 @@ impl Manager {
                 collapsed: s.collapsed,
                 folder: s.folder,
                 archive_days: s.archive_days,
+                kind: s.kind.as_str().to_owned(),
+                emoji: s.emoji,
             })
             .collect())
     }
 
-    /// `section_create`.
+    /// `section_create {name}`: a plain section.
     ///
     /// # Errors
     /// Empty name or store failure.
     pub fn create_section(&self, name: &str) -> Result<String> {
-        let s = lock(&self.store).create_section(&Author::me(), self.workspace, name)?;
+        self.create_section_of(name, None, None)
+    }
+
+    /// `section_create {name, kind?, emoji?}`. `kind` defaults to `section`; a divider may have
+    /// an empty name.
+    ///
+    /// # Errors
+    /// Empty section name, unknown kind, or store failure.
+    pub fn create_section_of(
+        &self,
+        name: &str,
+        kind: Option<&str>,
+        emoji: Option<&str>,
+    ) -> Result<String> {
+        let kind = match kind {
+            None => SectionKind::Section,
+            Some(k) => k
+                .parse::<SectionKind>()
+                .map_err(|_| Error::Invalid(format!("unknown section kind: {k}")))?,
+        };
+        let s = lock(&self.store).create_section_of(
+            &Author::me(),
+            self.workspace,
+            name,
+            kind,
+            emoji,
+        )?;
         Ok(s.id.to_string())
+    }
+
+    /// `section_set_emoji {id, emoji|null}`.
+    ///
+    /// # Errors
+    /// Unknown section or an over-long emoji.
+    pub fn set_section_emoji(&self, id: &str, emoji: Option<&str>) -> Result<()> {
+        lock(&self.store).set_section_emoji(parse_id(id)?, emoji)?;
+        Ok(())
     }
 
     /// `section_set_collapsed`.

@@ -72,7 +72,7 @@ test.describe('workspace: folder sections in every theme, light and dark (checkl
           '.fs-row [data-testid="fs-name"]',
           '.fs-row .fs-age',
           '.fs-row [data-chip="branch"]',
-          '.fs-row [data-chip="path"]',
+          '.fs-row .fs-wt',
           '.fs-row [data-chip="live"]',
           '.fs-toggle',
           '.fs-confirm p',
@@ -88,6 +88,10 @@ test.describe('workspace: folder sections in every theme, light and dark (checkl
         }
 
         await page.getByTestId('fs-confirm').getByRole('button', { name: 'Cancel' }).click();
+        // The confirm closing shifts the rows; hover only once the layout has settled.
+        await expect(page.getByTestId('fs-confirm')).toHaveCount(0);
+        // The press dismissed any card; leave the sidebar so the hover is a fresh pointer entry.
+        await page.mouse.move(900, 500);
         await page.locator('[data-fs-session="fx-001"]').hover();
         const tip = page.getByRole('tooltip');
         await expect(tip).toBeVisible();

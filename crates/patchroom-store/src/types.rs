@@ -89,6 +89,16 @@ str_enum! {
 }
 
 str_enum! {
+    /// What a sidebar section row is.
+    SectionKind {
+        /// A section that holds DMs.
+        Section => "section",
+        /// A rule with an optional label. A labeled divider folds the sections below it.
+        Divider => "divider",
+    }
+}
+
+str_enum! {
     /// How a channel hands out work (SPEC 3.7).
     AssignMode {
         /// Agents claim cards.
@@ -250,6 +260,10 @@ pub struct Section {
     pub folder: Option<String>,
     /// Folder sections fold sessions idle this many days into "Older than X days".
     pub archive_days: i64,
+    /// Whether this row holds DMs or is only a divider.
+    pub kind: SectionKind,
+    /// Leading emoji of the header; `None` for none.
+    pub emoji: Option<String>,
 }
 
 /// Input for [`crate::Store::create_conversation`].
