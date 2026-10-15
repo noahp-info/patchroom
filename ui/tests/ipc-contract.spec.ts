@@ -68,7 +68,12 @@ const FOLDER_COMMANDS = [
   'section_set_archive_days',
 ];
 /** Session parity additions (docs/gauntlet/SESSION-PARITY-BAR.md, Contract: backend). */
-const PARITY_COMMANDS = ['session_mirror_takeover_when_closed', 'session_takeover'];
+const PARITY_COMMANDS = [
+  'session_mirror_end',
+  'session_mirror_reveal',
+  'session_mirror_takeover_when_closed',
+  'session_takeover',
+];
 /** Sidebar organization: section emoji (docs/gauntlet/SIDEBAR-ORG-BAR.md). */
 const SIDEBAR_COMMANDS = ['section_set_emoji'];
 /** Sound packs (docs/gauntlet/SOUND-PACKS-BAR.md). The file picker is the dialog plugin, not a command. */
@@ -198,7 +203,7 @@ async function recordTauriCalls(): Promise<Call[]> {
           return { id: 'd', name: 'n', cwd: '/w', title: '', status: 'busy', section_id: 's' };
         if (cmd === 'session_send_text')
           return { outcome: 'blocked_dialog', reason: 'dialog open' };
-        if (cmd === 'session_takeover')
+        if (cmd === 'session_takeover' || cmd === 'session_mirror_end')
           return { id: 'd', name: 'n', cwd: '/w', title: '', status: 'busy', section_id: null };
         if (cmd === 'chat_history') return { items: [], hasMore: false };
         if (cmd === 'chat_thread') return { items: [] };
@@ -286,6 +291,9 @@ async function recordTauriCalls(): Promise<Call[]> {
   const taken = await ipc.sessionTakeover('i', 80, 24);
   expect(taken).toMatchObject({ id: 'd', mirror: null });
   await ipc.sessionMirrorTakeoverWhenClosed('i', true);
+  await ipc.sessionMirrorReveal('i');
+  const ended = await ipc.sessionMirrorEnd('i', 80, 24);
+  expect(ended).toMatchObject({ id: 'd', mirror: null });
   void listens;
   return calls;
 }
@@ -412,6 +420,8 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     // Session parity: a mirror is taken over with the terminal grid, or armed with a flag.
     expect(byCmd.session_takeover).toEqual({ id: 'i', cols: 80, rows: 24 });
     expect(byCmd.session_mirror_takeover_when_closed).toEqual({ id: 'i', enabled: true });
+    expect(byCmd.session_mirror_reveal).toEqual({ id: 'i' });
+    expect(byCmd.session_mirror_end).toEqual({ id: 'i', cols: 80, rows: 24 });
     // Nothing goes through the ungranted dialog plugin.
     expect(Object.keys(byCmd).some((c) => c.startsWith('plugin:'))).toBe(false);
   });

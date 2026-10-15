@@ -324,7 +324,8 @@ export function ChatView({ store, session, visible, unread, thread, prefs, marks
             <MirrorBanner
               session={session}
               onArm={(on) => void store.takeoverWhenClosed(id, on)}
-              onTakeoverNow={() => store.takeoverNow(id)}
+              onReveal={() => store.revealMirror(id)}
+              onEnd={() => store.endMirror(id)}
             />
           )}
           {dialog && (

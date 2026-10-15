@@ -192,6 +192,13 @@ export interface Ipc {
   sessionTakeover(id: string, cols?: number, rows?: number): Promise<SessionInfo>;
   /** Arm or disarm "Take over when it closes" on a mirrored DM. */
   sessionMirrorTakeoverWhenClosed(id: string, enabled: boolean): Promise<void>;
+  /** Bring the terminal that runs a mirrored DM to the front, on its tab when possible. */
+  sessionMirrorReveal(id: string): Promise<void>;
+  /**
+   * The user confirmed "End it there": stop the other copy (only while it is idle) and resume
+   * the session here. Rejects with the reason when it refuses or the copy does not close.
+   */
+  sessionMirrorEnd(id: string, cols?: number, rows?: number): Promise<SessionInfo>;
   /** Save pasted image bytes (`data` is base64) to a private file and return its absolute path. */
   pasteImage(id: string, data: string, mediaType: string): Promise<{ path: string }>;
   sessionResize(id: string, cols: number, rows: number): Promise<void>;

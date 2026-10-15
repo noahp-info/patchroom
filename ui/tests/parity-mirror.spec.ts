@@ -70,13 +70,20 @@ test.describe('session parity: mirror', () => {
     expect(await mock(page, () => window.__PR_MOCK__!.texts)).toEqual([]);
   });
 
-  test('Take over when it closes resumes once, when the other process exits', async ({ page }) => {
+  test('Move here arms the take-over, says how, and resumes once the other copy exits', async ({
+    page,
+  }) => {
     const errs = watchErrors(page);
     const id = await openLiveMirror(page);
-    const arm = page.getByTestId('take-over-when-closed');
-    await expect(arm).toHaveAttribute('aria-pressed', 'false');
-    await arm.click();
-    await expect(arm).toHaveAttribute('aria-pressed', 'true');
+    const move = page.getByTestId('move-here');
+    await expect(move).toHaveText('Move here');
+    await expect(move).toHaveAttribute('aria-pressed', 'false');
+    await move.click();
+    await expect(move).toHaveAttribute('aria-pressed', 'true');
+    await expect(move).toHaveText('Cancel move');
+    await expect(page.getByTestId('mirror-detail')).toContainText(
+      'Close it in iTerm (/exit or Ctrl+C twice). It opens here as soon as it closes.',
+    );
     expect(await mock(page, () => window.__PR_MOCK__!.takeoverArms)).toEqual([
       { id, enabled: true },
     ]);
@@ -90,33 +97,66 @@ test.describe('session parity: mirror', () => {
     expect(errs).toEqual([]);
   });
 
-  test('arming can be undone', async ({ page }) => {
+  test('Cancel move disarms it', async ({ page }) => {
     const id = await openLiveMirror(page);
-    const arm = page.getByTestId('take-over-when-closed');
-    await arm.click();
-    await arm.click();
-    await expect(arm).toHaveAttribute('aria-pressed', 'false');
+    const move = page.getByTestId('move-here');
+    await move.click();
+    await move.click();
+    await expect(move).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByTestId('mirror-detail')).toContainText('Read-only');
     expect(await mock(page, () => window.__PR_MOCK__!.takeoverArms)).toEqual([
       { id, enabled: true },
       { id, enabled: false },
     ]);
   });
 
-  test('Take over now is refused while the other process lives, then works once it exits', async ({
-    page,
-  }) => {
+  test('Show in iTerm asks the backend to raise that tab and signals nothing', async ({ page }) => {
     const id = await openLiveMirror(page);
-    await page.getByTestId('take-over-now').click();
-    await expect(page.getByTestId('mirror-detail')).toContainText('still running in iTerm');
+    await page.getByTestId('show-in-terminal').click();
+    await expect.poll(() => mock(page, () => window.__PR_MOCK__!.reveals)).toEqual([id]);
+    expect(await mock(page, () => window.__PR_MOCK__!.mirrorEnds)).toEqual([]);
     await expect(page.getByTestId('mirror-banner')).toBeVisible();
+  });
+
+  test('End in iTerm is red, needs a confirm, and Cancel signals nothing', async ({ page }) => {
+    const id = await openLiveMirror(page);
+    await page.evaluate((sid) => window.__PR_MOCK__!.setStatus(sid, 'idle'), id);
+    const end = page.getByTestId('end-in-terminal');
+    await expect(end).toBeEnabled();
+    // Red, unlike the other two buttons.
+    const color = (sel: string) =>
+      page.getByTestId(sel).evaluate((el) => getComputedStyle(el).color);
+    expect(await color('end-in-terminal')).not.toBe(await color('show-in-terminal'));
+    await end.click();
+    await expect(page.getByTestId('mirror-banner')).toContainText(
+      'End the Claude session running in iTerm?',
+    );
+    await expect(page.getByTestId('end-cancel')).toBeFocused();
+    await page.getByTestId('end-cancel').click();
+    await expect(page.getByTestId('end-confirm')).toHaveCount(0);
+    expect(await mock(page, () => window.__PR_MOCK__!.mirrorEnds)).toEqual([]);
     expect(await mock(page, () => window.__PR_MOCK__!.spawns)).toEqual([]);
-    // The other terminal closes (not armed): the banner stays until the user takes over.
-    await page.evaluate((sid) => window.__PR_MOCK__!.closeMirror(sid), id);
-    await expect(page.getByTestId('mirror-banner')).toBeVisible();
-    await page.getByTestId('take-over-now').click();
+  });
+
+  test('End in iTerm is off while that copy is busy', async ({ page }) => {
+    const id = await openLiveMirror(page);
+    await page.evaluate((sid) => window.__PR_MOCK__!.setStatus(sid, 'busy'), id);
+    const end = page.getByTestId('end-in-terminal');
+    await expect(end).toBeDisabled();
+    await expect(end).toHaveAttribute('title', /Busy in iTerm/);
+  });
+
+  test('confirming End ends the idle copy and resumes here once', async ({ page }) => {
+    const errs = watchErrors(page);
+    const id = await openLiveMirror(page);
+    await page.evaluate((sid) => window.__PR_MOCK__!.setStatus(sid, 'idle'), id);
+    await page.getByTestId('end-in-terminal').click();
+    await page.getByTestId('end-confirm').click();
     await expect(page.getByTestId('mirror-banner')).toHaveCount(0);
     await expect(page.getByTestId('composer-input')).toBeEnabled();
+    expect(await mock(page, () => window.__PR_MOCK__!.mirrorEnds)).toEqual([id]);
     expect(await mock(page, () => window.__PR_MOCK__!.spawns)).toEqual([id]);
+    expect(errs).toEqual([]);
   });
 
   test('a mirror started later (session:mirror) turns a running DM read-only', async ({ page }) => {

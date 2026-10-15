@@ -426,11 +426,24 @@ export class AppStore {
     }
   }
 
-  /** Resume a mirrored DM now. Resolves to the backend's refusal text, or null on success. */
-  async takeoverNow(id: string): Promise<string | null> {
+  /** Bring the other terminal to the front. Resolves to the failure text, or null. */
+  async revealMirror(id: string): Promise<string | null> {
+    try {
+      await this.ipc.sessionMirrorReveal(id);
+      return null;
+    } catch (err) {
+      return String(err).replace(/^Error: /, '');
+    }
+  }
+
+  /**
+   * Stop the idle copy in the other terminal and resume here (the user confirmed). Resolves to
+   * the refusal text, or null once the session is ours.
+   */
+  async endMirror(id: string): Promise<string | null> {
     try {
       const { cols, rows } = this.terminal(id).term;
-      const info = await this.ipc.sessionTakeover(id, cols, rows);
+      const info = await this.ipc.sessionMirrorEnd(id, cols, rows);
       this.patchSession(id, { ...info, mirror: null });
       await this.refresh();
       return null;

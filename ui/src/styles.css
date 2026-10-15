@@ -2767,6 +2767,51 @@ body.dragging * {
 .chat .mbanner__btn[aria-pressed='true'] {
   border-color: var(--link);
 }
+.chat .mbanner__actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.chat .mbanner__text code {
+  font-family: var(--f-mono);
+}
+.chat .mbanner__text span.mbanner__note {
+  color: var(--err-text);
+}
+.chat .mbanner__btn--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.chat .mbanner__btn--primary:hover {
+  background: var(--accent-hover);
+}
+/* Ending the other copy is the one destructive action here: red, and confirmed first. */
+.chat .mbanner__btn--danger {
+  border-color: color-mix(in srgb, var(--err) 55%, transparent);
+  background: none;
+  color: var(--err-text);
+}
+.chat .mbanner__btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--err) 12%, transparent);
+}
+.chat .mbanner__btn--danger-solid {
+  border-color: var(--err-text);
+  background: var(--err-text);
+  color: var(--surface);
+  font-weight: 600;
+}
+.chat .mbanner__btn--danger-solid:hover {
+  background: color-mix(in srgb, var(--err-text) 88%, var(--fg));
+}
+.chat .mbanner--confirm {
+  border-color: var(--err);
+}
+.chat .mbanner--confirm > svg.i {
+  color: var(--err-text);
+}
 .chat .tbanner__btn {
   background: var(--accent);
   border-color: var(--accent);
