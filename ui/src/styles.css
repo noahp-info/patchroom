@@ -41,10 +41,6 @@ body {
 .tb-spacer {
   flex: 1;
 }
-.tb-act:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
 
 /* sidebar additions */
 .side-empty {
