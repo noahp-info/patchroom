@@ -21,6 +21,7 @@ import { MarkList } from '../MarkList';
 import type { Decor, RowActions } from './RowView';
 import { MirrorBanner, TerminalWaitBanner, mirrorWhere } from './Banners';
 import { StatusStrip } from './StatusStrip';
+import { WorkingRow } from './WorkingRow';
 import { copyText } from '../../lib/clipboard';
 import { clearComments, paintComments } from '../../lib/commentHighlight';
 import { ThreadPane } from './ThreadPane';
@@ -395,6 +396,7 @@ export function ChatView({ store, session, visible, unread, thread, prefs, marks
               </div>
             }
           />
+          <WorkingRow session={session} />
           <div className="sr-only" role="status" aria-live="polite">
             {pending > 0
               ? `${pending} ${pending === 1 ? 'request needs' : 'requests need'} your answer`

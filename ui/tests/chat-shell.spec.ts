@@ -596,3 +596,29 @@ test.describe('log scrolling', () => {
     expect(anchorKey).not.toBe('');
   });
 });
+
+test.describe('working line', () => {
+  test('shows while busy with the CLI words, falls back to a timer, and hides when idle', async ({
+    page,
+  }) => {
+    const id = await openChat(page, []);
+    const row = page.getByTestId('working-row');
+    await expect(row).toHaveCount(0);
+    await page.evaluate((sid) => window.__PR_MOCK__!.setStatus(sid, 'busy'), id);
+    await expect(row).toContainText('Working…');
+    await expect(row).toContainText(/\d+s/);
+    await page.evaluate(
+      (sid) =>
+        window.__PR_MOCK__!.setWorking(
+          sid,
+          'Slithering…',
+          '1m 31s · ↓ 409 tokens · deep in thought',
+        ),
+      id,
+    );
+    await expect(row).toContainText('Slithering…');
+    await expect(row).toContainText('1m 31s · ↓ 409 tokens · deep in thought');
+    await page.evaluate((sid) => window.__PR_MOCK__!.setStatus(sid, 'idle'), id);
+    await expect(row).toHaveCount(0);
+  });
+});

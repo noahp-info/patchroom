@@ -3342,3 +3342,42 @@ body.dragging .sbe__grip {
   color: var(--muted);
   font-style: italic;
 }
+
+/* The live working line under the log, like the terminal's spinner line. */
+.chat .working {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: var(--chat-max, 980px);
+  margin: 2px var(--gutter) 0;
+  padding: 4px 2px;
+  min-width: 0;
+  --fs: 12.5px;
+}
+.chat .working__spin {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--line);
+  border-top: 2px solid var(--busy);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chat .working__spin {
+    animation: spin 0.9s linear infinite;
+  }
+}
+.chat .working__verb {
+  flex: none;
+  color: var(--accent-text, var(--fg));
+  font-weight: 600;
+}
+.chat .working__detail {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

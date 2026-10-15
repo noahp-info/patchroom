@@ -46,6 +46,16 @@ export interface SessionInfo {
    * `session:terminal_wait`, cleared by `session:terminal_wait_clear`.
    */
   terminalWait?: TerminalWait | null;
+  /** When the session last turned busy, epoch ms (UI only). */
+  busySince?: number;
+  /** The CLI's live working line while a turn runs (`session:working`). */
+  working?: WorkingLine | null;
+}
+
+/** "Slithering…" and "1m 31s · ↓ 409 tokens · deep in thought", read off the CLI's screen. */
+export interface WorkingLine {
+  verb: string;
+  detail: string;
 }
 
 /** Where a mirrored session really runs. */
@@ -131,6 +141,7 @@ export interface IpcEvents {
   'session:mirror': SessionMirrorEvent;
   'session:terminal_wait': TerminalWaitEvent;
   'session:terminal_wait_clear': { id: string };
+  'session:working': { id: string; verb: string | null; detail: string | null };
 }
 
 export interface TerminalWaitEvent extends TerminalWait {
