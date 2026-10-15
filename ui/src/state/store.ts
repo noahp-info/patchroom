@@ -522,9 +522,12 @@ export class AppStore {
       }),
       this.ipc.on('session:title', (e) => this.patchSession(e.id, { title: e.title })),
       this.ipc.on('session:status', (e) => {
+        const was = this.state.sessions.find((s) => s.id === e.id)?.status;
         this.patchSession(e.id, {
           status: e.status,
           needs: e.status === 'waiting' ? e.needs : undefined,
+          // When the turn began, for the working line's clock.
+          ...(e.status === 'busy' && was !== 'busy' ? { busySince: Date.now() } : {}),
         });
       }),
       this.ipc.on('session:terminal_wait', (e) =>
@@ -535,6 +538,11 @@ export class AppStore {
         // The dialog is gone: its "not sent" notice no longer applies.
         this.chat(e.id).clearNotice('blocked');
       }),
+      this.ipc.on('session:working', (e) =>
+        this.patchSession(e.id, {
+          working: e.verb ? { verb: e.verb, detail: e.detail ?? '' } : null,
+        }),
+      ),
       this.ipc.on('session:mirror', (e) => {
         this.patchSession(e.id, { mirror: e.mirror });
         if (!e.mirror) this.chat(e.id).clearNotice('mirror');

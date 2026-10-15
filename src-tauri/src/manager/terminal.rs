@@ -115,6 +115,51 @@ pub(super) struct WaitTrack {
     gone: Option<Instant>,
     /// When presence turned `waiting` (epoch ms), for "answered here".
     presence_since_ms: Option<i64>,
+    /// The working line last sent (`session:working`).
+    working: Option<WorkingLine>,
+}
+
+/// The CLI's live working line: "Slithering…" and "1m 31s · ↓ 409 tokens · deep in thought".
+pub(super) type WorkingLine = (String, String);
+
+/// Spinner glyphs Claude Code draws in front of its working line.
+const SPINNER: &[char] = &['·', '✢', '✳', '✶', '✻', '✽', '✱', '*', '∗'];
+
+/// Read the working line off the bottom of the screen, if one shows.
+pub(super) fn working_line(screen_text: &str) -> Option<WorkingLine> {
+    let lines: Vec<&str> = screen_text.lines().collect();
+    let tail = &lines[lines.len().saturating_sub(16)..];
+    tail.iter().rev().find_map(|l| parse_working(l.trim()))
+}
+
+fn parse_working(line: &str) -> Option<WorkingLine> {
+    let mut chars = line.chars();
+    if !SPINNER.contains(&chars.next()?) {
+        return None;
+    }
+    let rest = chars.as_str().trim_start();
+    let cut = rest.find('…')? + '…'.len_utf8();
+    let verb = &rest[..cut];
+    let words = verb.trim_end_matches('…');
+    if words.is_empty()
+        || words.len() > 40
+        || !words
+            .chars()
+            .all(|c| c.is_alphabetic() || c == ' ' || c == '-' || c == '\'')
+    {
+        return None;
+    }
+    let after = rest[cut..].trim();
+    let detail = after
+        .strip_prefix('(')
+        .and_then(|d| d.strip_suffix(')'))
+        .unwrap_or("")
+        .split(" · ")
+        .map(str::trim)
+        .filter(|p| !p.is_empty() && !p.eq_ignore_ascii_case("esc to interrupt"))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    Some((verb.to_owned(), detail))
 }
 
 impl WaitTrack {
@@ -311,6 +356,11 @@ impl Manager {
                 .or_default()
                 .step(now, now_ms, &inputs);
             self.apply_wait_step(id, &step);
+            let line = live
+                .screen
+                .as_ref()
+                .and_then(|s| working_line(&screen_text(s)));
+            self.update_working(id, line);
         }
         // Sessions that ended or were deleted: whatever they waited on is gone.
         let gone: Vec<String> = lock(&self.waits)
@@ -319,15 +369,39 @@ impl Manager {
             .cloned()
             .collect();
         for id in gone {
-            let was = lock(&self.waits)
-                .remove(&id)
-                .is_some_and(|w| w.active.is_some());
+            let removed = lock(&self.waits).remove(&id);
+            if removed.as_ref().is_some_and(|w| w.working.is_some()) {
+                self.sink.emit(UiEvent::Working {
+                    id: id.clone(),
+                    verb: None,
+                    detail: None,
+                });
+            }
+            let was = removed.is_some_and(|w| w.active.is_some());
             if was {
                 self.sink
                     .emit(UiEvent::TerminalWaitClear { id: id.clone() });
                 self.drop_wait_needs(&id);
             }
         }
+    }
+
+    /// Send `session:working` when the line changed (at most once a tick per DM).
+    fn update_working(&self, id: &str, line: Option<WorkingLine>) {
+        {
+            let mut waits = lock(&self.waits);
+            let w = waits.entry(id.to_owned()).or_default();
+            if w.working == line {
+                return;
+            }
+            w.working.clone_from(&line);
+        }
+        let (verb, detail) = line.map_or((None, None), |(v, d)| (Some(v), Some(d)));
+        self.sink.emit(UiEvent::Working {
+            id: id.to_owned(),
+            verb,
+            detail,
+        });
     }
 
     fn wait_inputs(
@@ -424,6 +498,30 @@ mod tests {
     use super::*;
 
     const MENU: &str = "Settings\n\n\u{276f} 1. Haiku\n  2. Sonnet\n  3. Opus\n\nEnter to confirm \u{b7} Esc to cancel\n";
+
+    #[test]
+    fn the_working_line_is_read_off_the_screen() {
+        let screen = "> make it\n\n✻ Slithering… (1m 31s · ↓ 409 tokens · deep in thought)\n  ⎿  Tip: Use /permissions\n\n────\n❯ \n";
+        assert_eq!(
+            working_line(screen),
+            Some((
+                "Slithering…".into(),
+                "1m 31s · ↓ 409 tokens · deep in thought".into()
+            ))
+        );
+        assert_eq!(
+            working_line("✶ Thinking… (12s · esc to interrupt)\n"),
+            Some(("Thinking…".into(), "12s".into()))
+        );
+        assert_eq!(
+            working_line("· Compacting conversation…\n"),
+            Some(("Compacting conversation…".into(), String::new()))
+        );
+        // Not a working line: list bullets, prose with an ellipsis, an idle prompt.
+        assert_eq!(working_line("* item one\n· a list entry\n> \n"), None);
+        assert_eq!(working_line("✻ Worked for 38s\n"), None);
+        assert_eq!(working_line("* see https://x.dev/a…b (link)\n"), None);
+    }
 
     #[test]
     fn dialogs_are_told_from_the_normal_ui() {

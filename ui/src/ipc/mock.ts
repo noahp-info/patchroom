@@ -87,6 +87,8 @@ export interface MockControl {
   resolvePrompt(id: string, promptId: string, by: ResolvedBy): void;
   /** `needsYou` is a boolean on the wire, as the backend sends it. */
   setBadges(id: string, unread: number, needsYou: boolean): void;
+  /** The CLI's working line shows (or, with a null verb, goes away): `session:working`. */
+  setWorking(id: string, verb: string | null, detail?: string): void;
   badges(id: string): { unread: number; needsYou: boolean };
   setStatusline(id: string, text: string, chips?: StatusChips): void;
   /** Every `prompt_answer` the UI sent. */
@@ -406,6 +408,11 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       s.mirror = m;
       emit('session:mirror', { id, mirror: m });
       save();
+    },
+    setWorking(id, verb, detail = '') {
+      const s = sessions.get(id);
+      if (s) s.working = verb ? { verb, detail } : null;
+      emit('session:working', { id, verb, detail: verb ? detail : null });
     },
     closeMirror(id) {
       const s = sessions.get(id);

@@ -140,6 +140,16 @@ pub enum UiEvent {
         /// Session id.
         id: String,
     },
+    /// `session:working {id, verb, detail}`: the CLI's live working line, read off its screen
+    /// ("Slithering…", "1m 31s · ↓ 409 tokens · deep in thought"). Both null when it is gone.
+    Working {
+        /// Session id.
+        id: String,
+        /// The spinner word, with its ellipsis.
+        verb: Option<String>,
+        /// The text in parentheses after it, without "esc to interrupt".
+        detail: Option<String>,
+    },
     /// `session:mirror {id, mirror}`: the DM became a read-only mirror of a session that runs
     /// in another terminal (`mirror` is `{where, pid, takeoverWhenClosed}`), or stopped being one
     /// (`mirror` is null).
@@ -180,6 +190,7 @@ impl UiEvent {
             UiEvent::FolderChanged { .. } => "folder:changed",
             UiEvent::TerminalWait { .. } => "session:terminal_wait",
             UiEvent::TerminalWaitClear { .. } => "session:terminal_wait_clear",
+            UiEvent::Working { .. } => "session:working",
             UiEvent::Mirror { .. } => "session:mirror",
             UiEvent::Statusline { .. } => "statusline:update",
         }
@@ -220,6 +231,9 @@ impl UiEvent {
                 json!({ "id": id, "reason": reason, "since": since })
             }
             UiEvent::TerminalWaitClear { id } => json!({ "id": id }),
+            UiEvent::Working { id, verb, detail } => {
+                json!({ "id": id, "verb": verb, "detail": detail })
+            }
             UiEvent::Mirror { id, mirror } => json!({ "id": id, "mirror": mirror }),
             UiEvent::Statusline { id, text, chips } => {
                 json!({ "id": id, "text": text, "chips": chips })

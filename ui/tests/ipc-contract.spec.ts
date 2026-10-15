@@ -103,7 +103,12 @@ const P3_OPTIONAL_EVENTS = ['notify:open'];
 /** Folder sections: the filesystem watch tells the UI a section's listing changed. */
 const FOLDER_EVENTS = ['folder:changed'];
 /** Session parity: mirror state and terminal-only waits. */
-const PARITY_EVENTS = ['session:mirror', 'session:terminal_wait', 'session:terminal_wait_clear'];
+const PARITY_EVENTS = [
+  'session:mirror',
+  'session:terminal_wait',
+  'session:terminal_wait_clear',
+  'session:working',
+];
 
 /**
  * Backend and frontend build in parallel against this contract. Once the backend declares any P2
