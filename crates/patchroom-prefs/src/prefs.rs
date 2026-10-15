@@ -374,6 +374,18 @@ pub struct Prefs {
     pub search_all_sessions: bool,
     /// Sidebar width in px. Clamped to `SIDEBAR_MIN..=SIDEBAR_MAX`; a blob without it gets 264.
     pub sidebar_width: u32,
+    /// Status strip layout: module ids in order, the default and per DM.
+    pub status_bar: StatusBar,
+}
+
+/// The status strip layout. `default: None` is the built-in layout.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct StatusBar {
+    /// Module ids for every DM without its own layout.
+    pub default: Option<Vec<String>>,
+    /// Module ids per DM id.
+    pub per_dm: BTreeMap<String, Vec<String>>,
 }
 
 /// Narrowest sidebar the UI lets the user drag to.
@@ -397,6 +409,7 @@ impl Default for Prefs {
             term_per_dm: BTreeMap::new(),
             search_all_sessions: false,
             sidebar_width: SIDEBAR_DEFAULT,
+            status_bar: StatusBar::default(),
         }
     }
 }
@@ -844,6 +857,31 @@ mod tests {
             .unwrap();
         let back = Prefs::from_stored(&serde_json::to_string(&p).unwrap());
         assert_eq!(back, p);
+    }
+
+    #[test]
+    fn the_status_bar_layout_is_a_known_preference_and_persists() {
+        // Stored before the setting existed: the built-in layout.
+        assert_eq!(
+            Prefs::from_stored(r#"{"themeId":"x"}"#).status_bar,
+            StatusBar::default()
+        );
+        let p = Prefs::default()
+            .patched(
+                &json!({"statusBar": {"default": ["model", "cost"], "perDm": {"d1": ["branch"]}}}),
+            )
+            .unwrap();
+        assert_eq!(
+            p.status_bar.default,
+            Some(vec!["model".into(), "cost".into()])
+        );
+        assert_eq!(p.status_bar.per_dm["d1"], vec!["branch".to_owned()]);
+        let back = Prefs::from_stored(&serde_json::to_string(&p).unwrap());
+        assert_eq!(back.status_bar, p.status_bar);
+        let reset = p
+            .patched(&json!({"statusBar": {"default": null, "perDm": {}}}))
+            .unwrap();
+        assert_eq!(reset.status_bar, StatusBar::default());
     }
 
     #[test]
