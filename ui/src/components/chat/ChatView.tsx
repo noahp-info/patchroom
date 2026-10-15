@@ -21,6 +21,7 @@ import { MarkList } from '../MarkList';
 import type { Decor, RowActions } from './RowView';
 import { MirrorBanner, TerminalWaitBanner, mirrorWhere } from './Banners';
 import { StatusStrip } from './StatusStrip';
+import { copyText } from '../../lib/clipboard';
 import { ThreadPane } from './ThreadPane';
 
 export interface ChatViewProps {
@@ -45,28 +46,6 @@ class DecorCache {
     if (have && have.sig === sig) return have.decor;
     this.map.set(key, { sig, decor: d });
     return d;
-  }
-}
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    // Fall back to a hidden textarea where the async clipboard is not allowed.
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    try {
-      return document.execCommand('copy');
-    } catch {
-      return false;
-    } finally {
-      ta.remove();
-    }
   }
 }
 
@@ -253,10 +232,13 @@ export function ChatView({ store, session, visible, unread, thread, prefs, marks
     const by = new Map<string, MarkInfo[]>();
     for (const m of mine) by.set(m.itemKey, [...(by.get(m.itemKey) ?? []), m]);
     if (snap.hit && !by.has(snap.hit)) by.set(snap.hit, []);
+    const commented = new Set(snap.comments.map((c) => c.key).filter((k): k is string => !!k));
+    for (const k of commented) if (!by.has(k)) by.set(k, []);
     const out: Record<string, Decor> = {};
     for (const [key, list] of by) {
       const d: Decor = {
         hit: key === snap.hit,
+        commented: commented.has(key),
         pinned: list.some((m) => m.kind === 'pin'),
         saved: list.some((m) => m.kind === 'saved'),
         reactions: list.filter((m) => m.kind === 'reaction' && m.emoji).map((m) => m.emoji!),
@@ -264,7 +246,7 @@ export function ChatView({ store, session, visible, unread, thread, prefs, marks
       out[key] = decorCache.reuse(key, d);
     }
     return out;
-  }, [mine, snap.hit, decorCache]);
+  }, [mine, snap.hit, snap.comments, decorCache]);
   const pending = snap.prompts.filter((p) => !p.resolved).length;
 
   const actions = useMemo<RowActions>(

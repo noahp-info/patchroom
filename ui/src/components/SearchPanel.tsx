@@ -24,7 +24,7 @@ const DEBOUNCE_MS = 120;
 export function SearchPanel({ state, store }: { state: AppState; store: AppStore }) {
   const active = state.sessions.find((s) => s.id === state.activeId) ?? null;
   const [scope, setScope] = useState<'dm' | 'all'>(active ? state.searchScope : 'all');
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(state.searchSeed);
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [took, setTook] = useState(0);
   const [sel, setSel] = useState(0);

@@ -93,6 +93,8 @@ export interface AppState {
   prefsTarget: PrefsTarget | null;
   /** Search scope when the search panel opens: the active DM or every DM. */
   searchScope: 'dm' | 'all';
+  /** Text the search panel opens with ("Search" on a highlight). */
+  searchSeed: string;
   /** DM ids, most recently opened first. */
   recent: string[];
   /** Folder section id to the sessions found under its home folder. */
@@ -179,6 +181,7 @@ export class AppStore {
     panel: null,
     prefsTarget: null,
     searchScope: 'all',
+    searchSeed: '',
     recent: readRecent(),
     folders: {},
     termBg: {},
@@ -984,7 +987,12 @@ export class AppStore {
   }
 
   setPanel(panel: Panel, searchScope?: 'dm' | 'all'): void {
-    this.set({ panel, prefsTarget: null, ...(searchScope ? { searchScope } : {}) });
+    this.set({ panel, prefsTarget: null, searchSeed: '', ...(searchScope ? { searchScope } : {}) });
+  }
+
+  /** Open search across every DM with `text` already typed. */
+  searchFor(text: string): void {
+    this.set({ panel: 'search', prefsTarget: null, searchScope: 'all', searchSeed: text });
   }
 
   closePanel(): void {
