@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type {
+  ChatItem,
   ActivityRow,
   FolderSession,
   Ipc,
@@ -18,6 +19,7 @@ import { visibleOrder } from '../lib/groups';
 import { isCheckFailed } from '../ipc/types';
 import { bindTerminalStyle } from '../lib/prefsModule';
 import { toMillis } from '../lib/time';
+import { noteArtifacts } from '../lib/artifacts';
 import { bytesToBase64, utf8ToBase64 } from '../lib/base64';
 import { shellQuotePath } from '../lib/keys';
 import { SessionTerminal, type SessionTerminalOptions } from '../lib/sessionTerminal';
@@ -292,6 +294,7 @@ export class AppStore {
     if (!c) {
       c = new ChatModel(id, this.ipc);
       c.draftHook = (text) => this.draftChanged(id, text);
+      c.itemsHook = (items) => this.noteArtifacts(id, items);
       this.chats.set(id, c);
       const w = window as unknown as { __PR_CHATS__?: Record<string, ChatModel> };
       (w.__PR_CHATS__ ??= {})[id] = c;
@@ -549,6 +552,8 @@ export class AppStore {
         // The dialog is gone: its "not sent" notice no longer applies.
         this.chat(e.id).clearNotice('blocked');
       }),
+      // The CLI opened a URL (BROWSER points at patchroom-hook): the Links preference decides.
+      this.ipc.on('link:open', (e) => this.openLink(e.url)),
       this.ipc.on('viewer:changed', (e) => {
         const v = this.state.viewer;
         if (v) this.set({ viewer: { ...v, url: e.url, loading: e.loading } });
@@ -1220,6 +1225,14 @@ export class AppStore {
   }
 
   /** Add the mark, or remove it when it exists. A reaction is a label only: nothing reaches the PTY. */
+  /** Artifacts in new items are pinned once (Links preference `artifacts.autoPin`). */
+  private noteArtifacts(id: string, items: ChatItem[]): void {
+    const autoPin = this.state.prefs?.artifacts?.autoPin ?? true;
+    for (const key of noteArtifacts(id, items, autoPin)) {
+      if (!this.hasMark(id, key, 'pin')) void this.toggleMark(id, key, 'pin');
+    }
+  }
+
   async toggleMark(id: string, itemKey: string, kind: MarkKind, emoji?: string): Promise<void> {
     const prev = this.state.marks;
     try {

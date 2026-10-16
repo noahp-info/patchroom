@@ -140,6 +140,14 @@ pub enum UiEvent {
         /// Session id.
         id: String,
     },
+    /// `link:open {id, url}`: a session's CLI asked to open a URL. The UI opens it per the
+    /// Links preference.
+    OpenUrl {
+        /// The DM, when known.
+        id: Option<String>,
+        /// An http(s) URL.
+        url: String,
+    },
     /// `session:working {id, verb, detail}`: the CLI's live working line, read off its screen
     /// ("Slithering…", "1m 31s · ↓ 409 tokens · deep in thought"). Both null when it is gone.
     Working {
@@ -191,6 +199,7 @@ impl UiEvent {
             UiEvent::TerminalWait { .. } => "session:terminal_wait",
             UiEvent::TerminalWaitClear { .. } => "session:terminal_wait_clear",
             UiEvent::Working { .. } => "session:working",
+            UiEvent::OpenUrl { .. } => "link:open",
             UiEvent::Mirror { .. } => "session:mirror",
             UiEvent::Statusline { .. } => "statusline:update",
         }
@@ -231,6 +240,7 @@ impl UiEvent {
                 json!({ "id": id, "reason": reason, "since": since })
             }
             UiEvent::TerminalWaitClear { id } => json!({ "id": id }),
+            UiEvent::OpenUrl { id, url } => json!({ "id": id, "url": url }),
             UiEvent::Working { id, verb, detail } => {
                 json!({ "id": id, "verb": verb, "detail": detail })
             }

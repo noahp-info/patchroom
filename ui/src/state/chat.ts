@@ -117,6 +117,8 @@ export class ChatModel {
   scroll: { top: number; atBottom: boolean } = { top: 0, atBottom: true };
   readonly expanded = new Set<string>();
   draft = '';
+  /** Called with every batch of items this chat applies (the store notes artifacts). */
+  itemsHook: ((items: ChatItem[]) => void) | null = null;
   /** Called with the new text whenever the composer text changes (the store persists it). */
   draftHook: ((text: string) => void) | null = null;
   private draftDirty = false;
@@ -255,6 +257,7 @@ export class ChatModel {
 
   /** New or updated items. The same key replaces the earlier item in place. */
   apply(items: ChatItem[]): void {
+    this.itemsHook?.(items);
     let touched = false;
     for (const it of items) {
       if (it.parentToolUseId) {

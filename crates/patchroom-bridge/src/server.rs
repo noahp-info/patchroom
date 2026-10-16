@@ -16,9 +16,9 @@ use serde_json::{json, Value};
 
 use crate::agents::AgentsSource;
 use crate::events::{
-    BridgeEvent, HookRecord, NeedsKind, PermissionPrompt, PlanPrompt, PromptId, PromptResolved,
-    Question, QuestionPrompt, Resolution, SessionRef, Status, StatusEvent, StatusSource,
-    StatuslineRecord,
+    BridgeEvent, HookRecord, NeedsKind, OpenUrlRecord, PermissionPrompt, PlanPrompt, PromptId,
+    PromptResolved, Question, QuestionPrompt, Resolution, SessionRef, Status, StatusEvent,
+    StatusSource, StatuslineRecord,
 };
 use crate::hookinfo::HookInfo;
 use crate::protocol::{self, ClientMessage, ServerMessage};
@@ -574,6 +574,7 @@ fn serve_connection(inner: &Arc<Inner>, stream: UnixStream) {
             payload,
             output,
         }) => inner.handle_statusline(session_key, payload, output),
+        Ok(ClientMessage::OpenUrl { session_key, url }) => inner.handle_open_url(session_key, url),
     };
     let _ = protocol::write_frame(&mut out, &reply);
 }
@@ -664,6 +665,21 @@ impl Inner {
             session,
             payload,
             output,
+        }));
+        ServerMessage::Ack
+    }
+
+    fn handle_open_url(&self, session_key: Option<String>, url: String) -> ServerMessage {
+        let url = url.trim().to_owned();
+        let web = url.starts_with("https://") || url.starts_with("http://");
+        if !web || url.len() > 8192 {
+            return ServerMessage::Error {
+                message: "only http and https URLs open".into(),
+            };
+        }
+        self.emit(BridgeEvent::OpenUrl(OpenUrlRecord {
+            session_key: session_key.filter(|k| !k.is_empty()),
+            url,
         }));
         ServerMessage::Ack
     }

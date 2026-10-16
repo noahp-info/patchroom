@@ -46,9 +46,9 @@ mod server;
 
 pub use agents::{AgentEntry, AgentsSource, CommandAgentsSource};
 pub use events::{
-    BridgeEvent, HookRecord, NeedsKind, PermissionPrompt, PlanPrompt, PromptId, PromptResolved,
-    Question, QuestionOption, QuestionPrompt, Resolution, SessionRef, Status, StatusEvent,
-    StatusSource, StatuslineRecord,
+    BridgeEvent, HookRecord, NeedsKind, OpenUrlRecord, PermissionPrompt, PlanPrompt, PromptId,
+    PromptResolved, Question, QuestionOption, QuestionPrompt, Resolution, SessionRef, Status,
+    StatusEvent, StatusSource, StatuslineRecord,
 };
 pub use hookinfo::HookInfo;
 pub use server::{
