@@ -59,7 +59,7 @@ export function SearchPanel({ state, store }: { state: AppState; store: AppStore
   }, [sel, hits]);
 
   const shown = q.trim() === '' ? null : hits;
-  const nameOf = (id: string) => state.sessions.find((s) => s.id === id)?.name ?? 'Deleted DM';
+  const nameOf = (id: string) => state.sessions.find((s) => s.id === id)?.name ?? 'Deleted session';
   const open = (h: SearchHit | undefined) => h && store.openDm(h.id, { itemKey: h.itemKey });
 
   return (
@@ -73,7 +73,9 @@ export function SearchPanel({ state, store }: { state: AppState; store: AppStore
           <input
             className="palette__q"
             aria-label="Search messages"
-            placeholder={scope === 'dm' && active ? `Search ${active.name}` : 'Search every DM'}
+            placeholder={
+              scope === 'dm' && active ? `Search ${active.name}` : 'Search every session'
+            }
             value={q}
             autoFocus
             onChange={(e) => setQ(e.target.value)}
@@ -102,7 +104,7 @@ export function SearchPanel({ state, store }: { state: AppState; store: AppStore
               disabled={!active}
               onClick={() => setScope('dm')}
             >
-              This DM
+              This session
             </button>
             <button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>
               Everywhere

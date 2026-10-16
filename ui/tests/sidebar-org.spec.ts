@@ -426,7 +426,7 @@ test.describe('sidebar organization: collapse never hides what needs you (bar 5)
     await expect(page.locator('.side .row[data-dm="dm-lab"]')).toHaveCount(0);
     // Cmd+K still finds a DM that is folded away.
     await page.keyboard.press('Meta+k');
-    await page.getByRole('combobox', { name: 'Jump to a DM' }).fill('receipts');
+    await page.getByRole('combobox', { name: 'Jump to a session' }).fill('receipts');
     await expect(
       page.locator('#qs-list .palette__name', { hasText: 'receipts-tracker' }),
     ).toBeVisible();

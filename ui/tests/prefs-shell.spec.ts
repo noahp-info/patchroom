@@ -17,7 +17,7 @@ for (const size of SIZES) {
         await page.setViewportSize(size);
         await page.goto('/?mock&grid=100x30');
         await page.keyboard.press('Meta+,');
-        const dlg = page.getByRole('dialog', { name: 'Preferences' });
+        const dlg = page.getByRole('dialog', { name: 'Settings' });
         await expect(dlg).toBeVisible();
         await page.locator(`[data-theme-card="${theme}"]`).click();
         await page.getByRole('radio', { name: mode, exact: true }).check();
@@ -48,3 +48,11 @@ for (const size of SIZES) {
     }
   }
 }
+
+test('the app menu Settings item opens Settings, and the gear says Settings', async ({ page }) => {
+  await page.goto('/?mock&grid=100x30');
+  await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
+  await page.evaluate(() => window.__PR_MOCK__!.menuSettings());
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+});

@@ -90,7 +90,7 @@ test.describe('workspace: search UI (checklist 6)', () => {
     await expect(
       dlg(page)
         .getByRole('group', { name: 'Search scope' })
-        .getByRole('button', { name: 'This DM' }),
+        .getByRole('button', { name: 'This session' }),
     ).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.type('quokka');
     await expect(results(page)).toHaveCount(1);

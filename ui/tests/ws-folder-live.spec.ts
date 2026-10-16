@@ -107,7 +107,7 @@ test.describe('workspace: folder section live behavior (checklist 16)', () => {
       LIVE,
     );
     await page.keyboard.press('Meta+k');
-    await page.getByRole('combobox', { name: 'Jump to a DM' }).fill(name);
+    await page.getByRole('combobox', { name: 'Jump to a session' }).fill(name);
     await expect(page.locator('.palette__item[data-folder-session]').first()).toContainText(
       'Live elsewhere',
     );

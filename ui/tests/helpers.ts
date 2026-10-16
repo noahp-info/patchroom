@@ -12,10 +12,10 @@ export async function openWithDm(
   view: 'terminal' | 'chat' = 'terminal',
 ): Promise<string> {
   await page.goto(`/?${query}`);
-  await chooseNew(page, 'New DM');
-  const dlg = page.getByRole('dialog', { name: 'New DM' });
+  await chooseNew(page, 'New session');
+  const dlg = page.getByRole('dialog', { name: 'New session' });
   await dlg.getByLabel('Folder').fill('/tmp/patchroom-test');
-  await dlg.getByRole('button', { name: 'Start DM' }).click();
+  await dlg.getByRole('button', { name: 'Start session' }).click();
   await page
     .locator('[data-testid="terminal"] .xterm-helper-textarea')
     .waitFor({ state: 'attached' });
@@ -30,7 +30,7 @@ export async function openWithDm(
 /** Press the sidebar + button and pick one of its menu items. */
 export async function chooseNew(
   page: Page,
-  item: 'New DM' | 'New section' | 'New section from folder...',
+  item: 'New session' | 'New section' | 'New section from folder...',
 ): Promise<void> {
   await page.getByRole('button', { name: 'Create new' }).click();
   await page.getByRole('menuitem', { name: item, exact: true }).click();

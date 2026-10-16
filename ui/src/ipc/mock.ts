@@ -95,6 +95,8 @@ export interface MockControl {
   setWorking(id: string, verb: string | null, detail?: string): void;
   /** A session's CLI opened a URL (`$BROWSER` is patchroom-hook): `link:open`. */
   cliOpenUrl(url: string, id?: string | null): void;
+  /** The app menu's Settings item was chosen. */
+  menuSettings(): void;
   badges(id: string): { unread: number; needsYou: boolean };
   setStatusline(id: string, text: string, chips?: StatusChips): void;
   /** Every `prompt_answer` the UI sent. */
@@ -419,6 +421,9 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     },
     cliOpenUrl(url, id = null) {
       emit('link:open', { id, url });
+    },
+    menuSettings() {
+      emit('menu:settings', {});
     },
     setWorking(id, verb, detail = '') {
       const s = sessions.get(id);
@@ -769,12 +774,12 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     },
     async sessionMirrorReveal(id) {
       const s = sessions.get(id);
-      if (!s?.mirror) throw new Error('this DM is not a read-only mirror');
+      if (!s?.mirror) throw new Error('this session is not a read-only mirror');
       control.reveals.push(id);
     },
     async sessionMirrorEnd(id) {
       const s = sessions.get(id);
-      if (!s?.mirror) throw new Error('this DM is not a read-only mirror');
+      if (!s?.mirror) throw new Error('this session is not a read-only mirror');
       const where = s.mirror.where ?? 'another terminal';
       if (s.status !== 'idle') {
         throw new Error(`it's not idle in ${where}; wait until it finishes, or close it there`);

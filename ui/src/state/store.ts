@@ -554,6 +554,8 @@ export class AppStore {
       }),
       // The CLI opened a URL (BROWSER points at patchroom-hook): the Links preference decides.
       this.ipc.on('link:open', (e) => this.openLink(e.url)),
+      // The app menu owns Cmd+, in the real app, so the keydown never reaches the page.
+      this.ipc.on('menu:settings', () => this.setPanel('prefs')),
       this.ipc.on('viewer:changed', (e) => {
         const v = this.state.viewer;
         if (v) this.set({ viewer: { ...v, url: e.url, loading: e.loading } });
@@ -606,7 +608,7 @@ export class AppStore {
       this.syncFolders();
       void this.loadP3();
     } catch (err) {
-      this.set({ ready: true, error: `Could not load DMs: ${String(err)}` });
+      this.set({ ready: true, error: `Could not load sessions: ${String(err)}` });
     }
   }
 
@@ -670,7 +672,7 @@ export class AppStore {
       // Reconcile with the backend row (it owns the name and title).
       await this.refresh();
     } catch (err) {
-      this.set({ error: `Could not start the DM: ${String(err)}` });
+      this.set({ error: `Could not start the session: ${String(err)}` });
     }
   }
 
@@ -815,7 +817,7 @@ export class AppStore {
       await this.ipc.sessionSetSection(id, sectionId);
       if (this.isFolderSection(sectionId) || this.isFolderSection(from)) await this.refresh();
     } catch (err) {
-      this.set({ sessions: prev, error: `Could not move the DM: ${String(err)}` });
+      this.set({ sessions: prev, error: `Could not move the session: ${String(err)}` });
     }
   }
 
@@ -870,7 +872,7 @@ export class AppStore {
     try {
       await this.ipc.sessionSetFlags(id, flags);
     } catch (err) {
-      this.set({ sessions: prev, error: `Could not update the DM: ${String(err)}` });
+      this.set({ sessions: prev, error: `Could not update the session: ${String(err)}` });
     }
   }
 
@@ -914,7 +916,7 @@ export class AppStore {
       const was = prev.find((s) => s.id === id)?.sectionId ?? null;
       if (this.isFolderSection(sectionId) || this.isFolderSection(was)) await this.refresh();
     } catch (err) {
-      this.set({ sessions: prev, error: `Could not move the DM: ${String(err)}` });
+      this.set({ sessions: prev, error: `Could not move the session: ${String(err)}` });
     }
   }
 
@@ -1293,7 +1295,7 @@ export class AppStore {
       const activeId = this.state.activeId === id ? firstActive(sessions) : this.state.activeId;
       this.set({ sessions, activeId });
     } catch (err) {
-      this.set({ error: `Could not delete the DM: ${String(err)}` });
+      this.set({ error: `Could not delete the session: ${String(err)}` });
     }
   }
 

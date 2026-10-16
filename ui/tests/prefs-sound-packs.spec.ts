@@ -155,7 +155,7 @@ test('mixing: one event from a file pack, the rest stay, and it plays and persis
   page,
 }) => {
   await page.goto('/src/components/prefs/harness.html');
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   await tab(page, 'Sounds');
   await source(page, 'Needs you').selectOption('pack:island-time');
   await source(page, 'Error').selectOption('pack:nightshift');
@@ -170,7 +170,7 @@ test('mixing: one event from a file pack, the rest stay, and it plays and persis
   await expect.poll(async () => (await audio(page)).osc).toBeGreaterThan(0);
   // Persistence: a reload on the same storage keeps the mix.
   await page.reload();
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   await tab(page, 'Sounds');
   await expect(source(page, 'Needs you')).toHaveValue('pack:island-time');
   await expect(source(page, 'Error')).toHaveValue('pack:nightshift');
@@ -438,7 +438,7 @@ test('prefs saved before packs existed load as Patch Tones everywhere', async ({
     );
   });
   await page.goto('/src/components/prefs/harness.html');
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   await tab(page, 'Sounds');
   for (const n of EVENT_NAMES) await expect(source(page, n)).toHaveValue('pack:patchtones');
   await expect(page.getByLabel('Mute sounds for hook-bridge')).toBeChecked();

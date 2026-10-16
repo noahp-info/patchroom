@@ -124,7 +124,7 @@ export function TerminalSection({ dms }: { dms: PrefsDm[] }) {
       <ul className="tlist">
         <TermRow
           rowId={TERM_DEFAULT_KEY}
-          label="All DMs"
+          label="All sessions"
           prefs={prefs}
           dmId={null}
           inherit={false}
@@ -133,7 +133,9 @@ export function TerminalSection({ dms }: { dms: PrefsDm[] }) {
           <TermRow key={d.id} rowId={d.id} label={d.name} prefs={prefs} dmId={d.id} inherit />
         ))}
       </ul>
-      {dms.length === 0 && <p className="pf-hint">Start a DM to give it its own terminal style.</p>}
+      {dms.length === 0 && (
+        <p className="pf-hint">Start a session to give it its own terminal style.</p>
+      )}
     </div>
   );
 }

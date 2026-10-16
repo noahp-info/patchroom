@@ -82,7 +82,7 @@ function Shell() {
         <span className="tb-title">Patchroom</span>
         <span className="tb-spacer" />
         <button type="button" className="tb-act" onClick={() => setOpen(true)}>
-          Preferences
+          Settings
         </button>
       </div>
       <main className="conv" data-testid="app-main">

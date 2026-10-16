@@ -9,7 +9,7 @@ test.describe('shell', () => {
     const row = page.locator('.side .row', { hasText: 'patchroom-test' });
     await expect(row).toHaveAttribute('aria-current', 'true');
     expect(id).toBeTruthy();
-    await expect(page.getByRole('button', { name: 'Direct messages' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sessions' })).toBeVisible();
   });
 
   test('presence dot and title follow the session live', async ({ page }) => {
@@ -111,21 +111,21 @@ test.describe('shell', () => {
   test('Browse uses the backend folder picker', async ({ page }) => {
     await page.goto('/?mock');
     await page.evaluate(() => (window.__PR_MOCK__!.pickResult = '/tmp/picked-folder'));
-    await chooseNew(page, 'New DM');
-    const dlg = page.getByRole('dialog', { name: 'New DM' });
+    await chooseNew(page, 'New session');
+    const dlg = page.getByRole('dialog', { name: 'New session' });
     await dlg.getByRole('button', { name: 'Browse' }).click();
     await expect(dlg.getByLabel('Folder')).toHaveValue('/tmp/picked-folder');
   });
 
   test('New DM defaults to the last folder', async ({ page }) => {
     await openWithDm(page, 'mock');
-    await chooseNew(page, 'New DM');
+    await chooseNew(page, 'New session');
     await expect(page.getByRole('dialog').getByLabel('Folder')).toHaveValue('/tmp/patchroom-test');
   });
 
   test('empty state offers New DM', async ({ page }) => {
     await page.goto('/?mock');
-    await expect(page.getByRole('heading', { name: 'No DMs yet' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'No sessions yet' })).toBeVisible();
   });
 });
 
@@ -286,4 +286,14 @@ test('clicking the ended message box resumes the same DM, and keeps the draft', 
     .toEqual([id]);
   await expect(resume).toHaveCount(0);
   await expect(page.getByTestId('composer-input')).toHaveValue('half-written thought');
+});
+
+test('agent sessions are called sessions: sidebar section, New session, Jump to a session', async ({
+  page,
+}) => {
+  await page.goto('/?mock&grid=100x30');
+  await expect(page.getByRole('complementary', { name: 'Sessions' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Jump to a session' })).toBeVisible();
+  const words = await page.locator('aside.side').innerText();
+  expect(words).not.toMatch(/\bDMs?\b|Direct messages/);
 });

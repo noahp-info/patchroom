@@ -15,7 +15,7 @@ test.describe('workspace: sound packs', () => {
     ]);
     await page.locator('.side .row', { hasText: 'beta' }).click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Sounds...' }).click();
-    const dlg = page.getByRole('dialog', { name: 'Preferences' });
+    const dlg = page.getByRole('dialog', { name: 'Settings' });
     await expect(dlg.getByTestId('prefs-sounds')).toBeVisible();
     await expect(dlg.getByTestId('sound-dm-b1')).toHaveJSProperty('open', true);
     await expect(dlg.getByTestId('sound-dm-a1')).toHaveJSProperty('open', false);

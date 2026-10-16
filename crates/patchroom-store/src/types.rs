@@ -216,7 +216,7 @@ pub struct ActivityMarks {
 pub struct DefaultSections {
     /// "Starred", or `None` once the user deleted it.
     pub starred: Option<Id>,
-    /// "Direct messages": where new DMs land and deleted sections' DMs fall back to.
+    /// "Sessions": where new sessions land and deleted sections' sessions fall back to.
     pub dm: Id,
     /// "Archived", or `None` once the user deleted it.
     pub archived: Option<Id>,

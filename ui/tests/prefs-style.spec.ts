@@ -16,9 +16,9 @@ const colors = (page: Page) => Promise.all(COLOR_TOKENS.map((t) => cssVar(page, 
 
 async function openThemes(page: Page): Promise<void> {
   await page.keyboard.press('Meta+,');
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   await page
-    .getByRole('navigation', { name: 'Preferences sections' })
+    .getByRole('navigation', { name: 'Settings sections' })
     .getByRole('button', { name: 'Themes', exact: true })
     .click();
   await page.getByTestId('style-picker').waitFor();

@@ -89,7 +89,7 @@ fn migration_3_applies_to_a_v2_database_and_keeps_rows() {
 fn fresh_workspace_gets_starred_dm_archived_in_order() {
     let f = fx();
     let d = f.store.ensure_default_sections(&me(), f.ws.id).unwrap();
-    assert_eq!(names(&f), ["Starred", "Direct messages", "Archived"]);
+    assert_eq!(names(&f), ["Starred", "Sessions", "Archived"]);
     let secs = f.store.list_sections(f.ws.id).unwrap();
     assert_eq!(Some(secs[0].id), d.starred);
     assert_eq!(secs[1].id, d.dm);
@@ -104,7 +104,7 @@ fn fresh_workspace_gets_starred_dm_archived_in_order() {
 }
 
 #[test]
-fn old_workspace_keeps_its_section_as_direct_messages() {
+fn old_workspace_keeps_its_section_and_renames_direct_messages() {
     let f = fx();
     let old = f
         .store
@@ -113,15 +113,12 @@ fn old_workspace_keeps_its_section_as_direct_messages() {
     let custom = f.store.create_section(&me(), f.ws.id, "Work").unwrap();
     let d = f.store.ensure_default_sections(&me(), f.ws.id).unwrap();
     assert_eq!(d.dm, old.id);
-    assert_eq!(
-        names(&f),
-        ["Starred", "Direct messages", "Work", "Archived"]
-    );
+    assert_eq!(names(&f), ["Starred", "Sessions", "Work", "Archived"]);
     let _ = custom;
 }
 
 #[test]
-fn a_deleted_default_stays_deleted_but_direct_messages_returns() {
+fn a_deleted_default_stays_deleted_but_sessions_returns() {
     let f = fx();
     let d = f.store.ensure_default_sections(&me(), f.ws.id).unwrap();
     f.store
@@ -131,8 +128,28 @@ fn a_deleted_default_stays_deleted_but_direct_messages_returns() {
     let d2 = f.store.ensure_default_sections(&me(), f.ws.id).unwrap();
     assert_eq!(d2.starred, None);
     assert_ne!(d2.dm, d.dm);
-    assert!(names(&f).contains(&"Direct messages".to_string()));
+    assert!(names(&f).contains(&"Sessions".to_string()));
     assert!(!names(&f).contains(&"Starred".to_string()));
+}
+
+#[test]
+fn a_sessions_section_the_user_renamed_keeps_its_name() {
+    let f = fx();
+    let d = f.store.ensure_default_sections(&me(), f.ws.id).unwrap();
+    f.store.rename_section(d.dm, "Agents").unwrap();
+    let d2 = f.store.ensure_default_sections(&me(), f.ws.id).unwrap();
+    assert_eq!(d2.dm, d.dm);
+    assert!(names(&f).contains(&"Agents".to_string()));
+}
+
+#[test]
+fn an_upgraded_direct_messages_section_is_renamed_sessions() {
+    let f = fx();
+    let d = f.store.ensure_default_sections(&me(), f.ws.id).unwrap();
+    f.store.rename_section(d.dm, "Direct messages").unwrap();
+    let d2 = f.store.ensure_default_sections(&me(), f.ws.id).unwrap();
+    assert_eq!(d2.dm, d.dm);
+    assert_eq!(names(&f), ["Starred", "Sessions", "Archived"]);
 }
 
 #[test]

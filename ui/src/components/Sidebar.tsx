@@ -346,7 +346,7 @@ export function Sidebar({
   function menuItems(m: MenuState): MenuItem[] {
     if (m.kind === 'new') {
       return [
-        { label: 'New DM', onSelect: () => onNewDm() },
+        { label: 'New session', onSelect: () => onNewDm() },
         { label: 'New section', onSelect: () => setAdding('section') },
         { label: 'New divider', onSelect: () => setAdding('divider') },
         { label: 'New section from folder...', onSelect: () => void fromFolder() },
@@ -376,7 +376,7 @@ export function Sidebar({
       if (sec?.folder) {
         const days = sec.archiveDays ?? DEFAULT_ARCHIVE_DAYS;
         items.push(
-          { label: 'New DM here', onSelect: () => onNewDm(sec.id) },
+          { label: 'New session here', onSelect: () => onNewDm(sec.id) },
           {
             label: `Older than ${days} days...`,
             onSelect: () => setDaysEdit({ id: sec.id, anchor: menu?.anchor ?? { x: 0, y: 0 } }),
@@ -416,7 +416,7 @@ export function Sidebar({
     const here = s.sectionId;
     if (here !== null && state.sections.some((x) => x.id === here)) {
       items.push({
-        label: 'Move to Direct messages',
+        label: 'Move to Sessions',
         separator: true,
         onSelect: () => void store.moveSession(s.id, null),
       });
@@ -684,7 +684,7 @@ export function Sidebar({
   const savedCount = state.marks.filter((m) => m.kind === 'saved').length;
 
   return (
-    <aside className="side" aria-label="Direct messages" ref={root}>
+    <aside className="side" aria-label="Sessions" ref={root}>
       <div className="ws">
         {/* The app icon stands in for a team avatar until workspaces have their own. */}
         <img
@@ -695,14 +695,16 @@ export function Sidebar({
         />
         <div>
           <strong>Patchroom</strong>
-          <small>{state.sessions.length === 1 ? '1 DM' : `${state.sessions.length} DMs`}</small>
+          <small>
+            {state.sessions.length === 1 ? '1 session' : `${state.sessions.length} sessions`}
+          </small>
         </div>
         <button
           type="button"
           ref={plusBtn}
           className="ws-new"
           aria-label="Create new"
-          title="New DM, section or divider"
+          title="New session, section or divider"
           aria-haspopup="menu"
           aria-expanded={menu?.kind === 'new'}
           data-testid="new-menu"
@@ -724,8 +726,8 @@ export function Sidebar({
         <button
           type="button"
           onClick={() => store.setPanel(state.panel === 'prefs' ? null : 'prefs')}
-          aria-label="Preferences"
-          title={'Preferences (⌘,)'}
+          aria-label="Settings"
+          title={'Settings (⌘,)'}
           aria-pressed={state.panel === 'prefs'}
         >
           <Icon name="gear" />
@@ -778,7 +780,9 @@ export function Sidebar({
         </button>
       </div>
       <nav className="side-scroll" aria-label="Sections">
-        {state.sessions.length === 0 && state.ready && <p className="side-empty">No DMs yet.</p>}
+        {state.sessions.length === 0 && state.ready && (
+          <p className="side-empty">No sessions yet.</p>
+        )}
         {groups.map((g) => {
           const parent = under.get(g.id) ?? null;
           // A group under a folded divider shows nothing of its own: the divider carries its
@@ -883,7 +887,9 @@ export function Sidebar({
                 </button>
               )}
               {!closed && g.id === STARRED_GROUP && g.items.length === 0 && (
-                <p className="sec-hint">Star a DM from its right-click menu to keep it here.</p>
+                <p className="sec-hint">
+                  Star a session from its right-click menu to keep it here.
+                </p>
               )}
               {closed && peekRows(covered)}
               {!closed &&
@@ -916,7 +922,7 @@ export function Sidebar({
           anchor={menu.anchor}
           label={
             menu.kind === 'dm'
-              ? 'DM actions'
+              ? 'Session actions'
               : menu.kind === 'section'
                 ? 'Section actions'
                 : menu.kind === 'new'

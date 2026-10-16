@@ -73,17 +73,17 @@ function ChatBar({
         type="button"
         className="chatbar__btn"
         onClick={() => store.setPanel('search', 'dm')}
-        title={'Find in this DM (\u2318F)'}
+        title={'Find in this session (\u2318F)'}
       >
         <Icon name="search" />
-        <span className="sr-only">Find in this DM</span>
+        <span className="sr-only">Find in this session</span>
       </button>
       <button
         type="button"
         className="chatbar__btn"
         aria-haspopup="dialog"
         aria-expanded={open?.kind === 'pins'}
-        title="Pins in this DM"
+        title="Pins in this session"
         data-testid="pins-btn"
         onClick={(e) => setOpen({ kind: 'pins', rect: e.currentTarget.getBoundingClientRect() })}
       >

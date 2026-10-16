@@ -15,7 +15,9 @@ const MARK_COLS: &str =
 /// Setting key that remembers the default section ids.
 const DEFAULTS_KEY: &str = "sections.defaults";
 /// Name of the section new DMs land in.
-pub const DM_SECTION: &str = "Direct messages";
+pub const DM_SECTION: &str = "Sessions";
+/// The default section's name before the rename. Still found on upgrade, then renamed.
+pub const LEGACY_DM_SECTION: &str = "Direct messages";
 /// Longest reaction label (an emoji or a `:shortcode:`), in characters.
 const MAX_EMOJI_CHARS: usize = 64;
 
@@ -44,12 +46,13 @@ fn clip(s: &str, n: usize) -> String {
 impl Store {
     // ---- default sections ----
 
-    /// Make sure the workspace has its default sections: Starred, Direct messages, Archived.
+    /// Make sure the workspace has its default sections: Starred, Sessions, Archived.
     ///
     /// A fresh workspace gets all three in that order. A workspace from an older build keeps
-    /// its first section as "Direct messages" and gains the other two around it. A default
-    /// section the user deleted later stays deleted, except "Direct messages", which is
-    /// where new DMs land and so is recreated.
+    /// its first section as the sessions section and gains the other two around it. A default
+    /// section the user deleted later stays deleted, except Sessions, which is where new
+    /// sessions land and so is recreated. A sessions section still named "Direct messages"
+    /// is renamed "Sessions"; a name the user chose is kept.
     pub fn ensure_default_sections(
         &self,
         author: &Author,
@@ -82,7 +85,7 @@ impl Store {
             dm = dm.or_else(|| {
                 sections
                     .iter()
-                    .find(|s| s.name == DM_SECTION)
+                    .find(|s| s.name == DM_SECTION || s.name == LEGACY_DM_SECTION)
                     .or(sections.first())
                     .map(|s| s.id)
             });
@@ -106,6 +109,9 @@ impl Store {
             Some(id) => id,
             None => self.create_section(author, workspace_id, DM_SECTION)?.id,
         };
+        if self.section(dm)?.name == LEGACY_DM_SECTION {
+            self.rename_section(dm, DM_SECTION)?;
+        }
         let out = DefaultSections {
             starred,
             dm,

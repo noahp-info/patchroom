@@ -233,13 +233,13 @@ test('a gain persists across a reload, per event and per DM', async ({ page }) =
   await page.goto(HARNESS); // no ?fresh: the harness keeps prefs in localStorage
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   await tab(page, 'Sounds');
   await slider(page, 'Terminal bell').fill('0.35');
   await page.getByTestId('sound-dm-dm-alpha').locator('summary').click();
   await slider(page, 'hook-bridge Needs you').fill('1.4');
   await page.reload();
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   await tab(page, 'Sounds');
   await expect(slider(page, 'Terminal bell')).toHaveValue('0.35');
   await expect(page.getByTestId('mix-bell').locator('.gain__out')).toHaveText('35%');
@@ -271,7 +271,7 @@ test('a stored gain outside 0 to 1.5, or not a number, is clamped on load', asyn
     );
   });
   await page.goto(HARNESS);
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   const s = await sound(page);
   expect(s.mix.needs).toEqual({ pack: 'patchtones', gain: 1.5 });
   expect(s.mix.done).toEqual({ pack: 'patchtones', gain: 0 });

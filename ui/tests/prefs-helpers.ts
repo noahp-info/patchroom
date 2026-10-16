@@ -36,13 +36,13 @@ declare global {
 /** Open the harness on a fresh mock backend. `query` adds `hooks=Stop` and similar. */
 export async function openPrefs(page: Page, query = ''): Promise<void> {
   await page.goto(`${HARNESS}?fresh&${query}`);
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   await page.waitForFunction(() => window.__PR_PREFS__.store.getPrefs() !== undefined);
 }
 
 export async function tab(page: Page, name: string): Promise<void> {
   await page
-    .getByRole('navigation', { name: 'Preferences sections' })
+    .getByRole('navigation', { name: 'Settings sections' })
     .getByRole('button', { name, exact: true })
     .click();
 }

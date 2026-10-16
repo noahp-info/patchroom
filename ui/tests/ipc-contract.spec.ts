@@ -117,6 +117,7 @@ const PARITY_EVENTS = [
   'session:terminal_wait_clear',
   'session:working',
   'link:open',
+  'menu:settings',
 ];
 
 /**

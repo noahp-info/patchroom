@@ -19,7 +19,7 @@ test.describe('workspace: Cmd+K switcher (checklist 3)', () => {
     await page.keyboard.press('Meta+k');
     const dlg = page.getByRole('dialog', { name: 'Quick switcher' });
     await expect(dlg).toBeVisible();
-    await expect(page.getByRole('combobox', { name: 'Jump to a DM' })).toBeFocused();
+    await expect(page.getByRole('combobox', { name: 'Jump to a session' })).toBeFocused();
     await expect(options(page)).toHaveCount(4);
     // Subsequence match on the name: "gdc" finds gamma-docs.
     await page.keyboard.type('gdc');
@@ -78,7 +78,7 @@ test.describe('workspace: Cmd+K switcher (checklist 3)', () => {
 
   test('the title bar field opens it too', async ({ page }) => {
     await openSeeded(page, DMS);
-    await page.getByRole('button', { name: 'Jump to a DM' }).click();
+    await page.getByRole('button', { name: 'Jump to a session' }).click();
     await expect(page.getByRole('dialog', { name: 'Quick switcher' })).toBeVisible();
   });
 });

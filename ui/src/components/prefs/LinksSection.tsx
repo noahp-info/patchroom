@@ -42,8 +42,8 @@ export function LinksSection() {
         <span>Pin artifacts automatically</span>
       </label>
       <p className="pf-hint">
-        Each artifact Claude publishes is pinned once, so it sits in the DM&#8217;s Pins next to
-        your important messages. Unpin any you do not need; they stay unpinned.
+        Each artifact Claude publishes is pinned once, so it sits in the session&#8217;s Pins next
+        to your important messages. Unpin any you do not need; they stay unpinned.
       </p>
     </div>
   );

@@ -64,7 +64,7 @@ test.describe('workspace: the + menu (Slack style)', () => {
     await expect(plus(page)).toHaveAttribute('aria-haspopup', 'menu');
     await expect(plus(page)).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('aside.side .ws button[aria-label="New section"]')).toHaveCount(0);
-    await expect(page.locator('aside.side .ws button[aria-label="New DM"]')).toHaveCount(0);
+    await expect(page.locator('aside.side .ws button[aria-label="New session"]')).toHaveCount(0);
   });
 
   test('opens with its actions, first one focused, and Esc returns focus to the button', async ({
@@ -76,12 +76,12 @@ test.describe('workspace: the + menu (Slack style)', () => {
     await expect(menu(page)).toBeVisible();
     await expect(plus(page)).toHaveAttribute('aria-expanded', 'true');
     await expect(menu(page).getByRole('menuitem')).toHaveText([
-      'New DM',
+      'New session',
       'New section',
       'New divider',
       'New section from folder...',
     ]);
-    await expect(menu(page).getByRole('menuitem', { name: 'New DM' })).toBeFocused();
+    await expect(menu(page).getByRole('menuitem', { name: 'New session' })).toBeFocused();
     await page.keyboard.press('ArrowDown');
     await expect(
       menu(page).getByRole('menuitem', { name: 'New section', exact: true }),
@@ -123,8 +123,8 @@ test.describe('workspace: the + menu (Slack style)', () => {
 
   test('New DM opens the dialog', async ({ page }) => {
     await openSeeded(page, []);
-    await chooseNew(page, 'New DM');
-    await expect(page.getByRole('dialog', { name: 'New DM' })).toBeVisible();
+    await chooseNew(page, 'New session');
+    await expect(page.getByRole('dialog', { name: 'New session' })).toBeVisible();
   });
 
   for (const theme of THEMES) {
@@ -153,7 +153,7 @@ test.describe('workspace: Terminal look from the DM menu (checklist 15)', () => 
     ]);
     await page.locator('.side .row', { hasText: 'beta' }).click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Terminal look...' }).click();
-    const dlg = page.getByRole('dialog', { name: 'Preferences' });
+    const dlg = page.getByRole('dialog', { name: 'Settings' });
     await expect(dlg).toBeVisible();
     await expect(dlg.getByTestId('prefs-terminal')).toBeVisible();
     const row = dlg.getByTestId('term-row-b1');
@@ -170,7 +170,7 @@ test.describe('workspace: Terminal look from the DM menu (checklist 15)', () => 
     ]);
     await page.locator('.side .row', { hasText: 'beta' }).click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Terminal look...' }).click();
-    const dlg = page.getByRole('dialog', { name: 'Preferences' });
+    const dlg = page.getByRole('dialog', { name: 'Settings' });
     await dlg.getByRole('combobox', { name: 'beta palette' }).selectOption('iterm');
     await expect(dlg.getByRole('combobox', { name: 'alpha palette' })).toHaveValue('');
     await page.keyboard.press('Escape');
@@ -179,7 +179,7 @@ test.describe('workspace: Terminal look from the DM menu (checklist 15)', () => 
     await page.getByRole('menuitem', { name: 'Terminal look...' }).click();
     await expect(
       page
-        .getByRole('dialog', { name: 'Preferences' })
+        .getByRole('dialog', { name: 'Settings' })
         .getByRole('combobox', { name: 'beta palette' }),
     ).toHaveValue('iterm');
   });
@@ -190,7 +190,7 @@ test.describe('workspace: Terminal look from the DM menu (checklist 15)', () => 
     await page.keyboard.press('ContextMenu');
     await page.getByRole('menuitem', { name: 'Terminal look...' }).focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('dialog', { name: 'Preferences' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
   });
 });
 
@@ -328,7 +328,7 @@ test.describe('workspace: terminal title strip and dialog scrim follow the theme
 
   test('the New DM scrim is neutral black alpha', async ({ page }) => {
     await openSeeded(page, []);
-    await chooseNew(page, 'New DM');
+    await chooseNew(page, 'New session');
     const scrim = await page.evaluate(
       () => getComputedStyle(document.querySelector('dialog.newdm')!, '::backdrop').backgroundColor,
     );
