@@ -76,6 +76,14 @@ const PARITY_COMMANDS = [
 ];
 /** Sidebar organization: section emoji (docs/gauntlet/SIDEBAR-ORG-BAR.md). */
 const SIDEBAR_COMMANDS = ['section_set_emoji'];
+/** Links: the in-app viewer and the system browser. */
+const LINK_COMMANDS = [
+  'link_open_external',
+  'viewer_go',
+  'viewer_hide',
+  'viewer_place',
+  'viewer_show',
+];
 /** Sound packs (docs/gauntlet/SOUND-PACKS-BAR.md). The file picker is the dialog plugin, not a command. */
 const SOUND_COMMANDS = [
   'sound_claude_profiles',
@@ -297,6 +305,12 @@ async function recordTauriCalls(): Promise<Call[]> {
   expect(taken).toMatchObject({ id: 'd', mirror: null });
   await ipc.sessionMirrorTakeoverWhenClosed('i', true);
   await ipc.sessionMirrorReveal('i');
+  await ipc.linkOpenExternal('https://example.com/');
+  const rect = { x: 1, y: 2, width: 3, height: 4 };
+  await ipc.viewerShow('https://example.com/', rect);
+  await ipc.viewerPlace(rect);
+  await ipc.viewerGo('back');
+  await ipc.viewerHide();
   const ended = await ipc.sessionMirrorEnd('i', 80, 24);
   expect(ended).toMatchObject({ id: 'd', mirror: null });
   void listens;
@@ -321,11 +335,13 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
       for (const c of PARITY_COMMANDS) expect(declared, `parity command ${c}`).toContain(c);
     }
     for (const c of SIDEBAR_COMMANDS) expect(declared, `sidebar command ${c}`).toContain(c);
+    for (const c of LINK_COMMANDS) expect(declared, `link command ${c}`).toContain(c);
     for (const c of SOUND_COMMANDS) expect(declared, `sound command ${c}`).toContain(c);
     const known = new Set([
       ...SOUND_COMMANDS,
       ...P1B_COMMANDS,
       ...SIDEBAR_COMMANDS,
+      ...LINK_COMMANDS,
       ...P2_COMMANDS,
       ...P3_COMMANDS,
       ...FOLDER_COMMANDS,
