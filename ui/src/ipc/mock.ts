@@ -93,6 +93,8 @@ export interface MockControl {
   setBadges(id: string, unread: number, needsYou: boolean): void;
   /** The CLI's working line shows (or, with a null verb, goes away): `session:working`. */
   setWorking(id: string, verb: string | null, detail?: string): void;
+  /** A session's CLI opened a URL (`$BROWSER` is patchroom-hook): `link:open`. */
+  cliOpenUrl(url: string, id?: string | null): void;
   badges(id: string): { unread: number; needsYou: boolean };
   setStatusline(id: string, text: string, chips?: StatusChips): void;
   /** Every `prompt_answer` the UI sent. */
@@ -414,6 +416,9 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       s.mirror = m;
       emit('session:mirror', { id, mirror: m });
       save();
+    },
+    cliOpenUrl(url, id = null) {
+      emit('link:open', { id, url });
     },
     setWorking(id, verb, detail = '') {
       const s = sessions.get(id);

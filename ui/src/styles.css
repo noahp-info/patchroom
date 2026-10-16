@@ -3453,3 +3453,29 @@ body.dragging .sbe__grip {
   color: var(--muted);
   --fs: 13px;
 }
+
+/* An artifact pin: a tag and an Open button next to the unpin control. */
+.markrow__tag {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--link) 14%, transparent);
+  color: var(--link);
+  --fs: 11px;
+  font-weight: 600;
+}
+.markrow__open {
+  flex: none;
+  align-self: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  --fs: 13px;
+  cursor: pointer;
+}
+.markrow__open:hover {
+  background: var(--hover);
+}

@@ -30,6 +30,21 @@ export function LinksSection() {
           </label>
         ))}
       </div>
+
+      <h3>Artifacts</h3>
+      <label className="chk">
+        <input
+          type="checkbox"
+          data-testid="artifacts-autopin"
+          checked={prefs.artifacts?.autoPin ?? true}
+          onChange={(e) => void store.update({ artifacts: { autoPin: e.target.checked } })}
+        />
+        <span>Pin artifacts automatically</span>
+      </label>
+      <p className="pf-hint">
+        Each artifact Claude publishes is pinned once, so it sits in the DM&#8217;s Pins next to
+        your important messages. Unpin any you do not need; they stay unpinned.
+      </p>
     </div>
   );
 }

@@ -68,6 +68,14 @@ pub enum ClientMessage {
         /// The hook JSON exactly as the CLI sent it on stdin.
         payload: Value,
     },
+    /// The CLI asked to open a URL (`$BROWSER` points at the hook). The bridge only acks.
+    OpenUrl {
+        /// Patchroom's own key for the session, when known.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_key: Option<String>,
+        /// The URL as the CLI passed it.
+        url: String,
+    },
     /// One statusLine render. The wrapper tees the statusLine stdin JSON and the output
     /// of the user's own statusLine command. The bridge only acks.
     Statusline {

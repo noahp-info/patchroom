@@ -143,6 +143,7 @@ export interface IpcEvents {
   'session:terminal_wait_clear': { id: string };
   'session:working': { id: string; verb: string | null; detail: string | null };
   'viewer:changed': { url: string; loading: boolean };
+  'link:open': { id: string | null; url: string };
   'viewer:title': { title: string };
 }
 
@@ -581,6 +582,8 @@ export interface Prefs {
   statusBar?: StatusBarPrefs;
   /** Where a plain click opens a link. Absent in older blobs: the in-app viewer. */
   links?: { open: 'patchroom' | 'browser' };
+  /** Pin claude.ai artifacts automatically (once each; an unpin sticks). Absent: on. */
+  artifacts?: { autoPin: boolean };
 }
 
 /** Ids of the status strip modules, in the order the built-in default shows them. */

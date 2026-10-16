@@ -1070,6 +1070,18 @@ impl Manager {
         sc.rows = rows;
         sc.shell = self.cfg.shell.clone();
         sc.kill_grace = self.cfg.kill_grace;
+        if spec.is_claude() {
+            // A URL the CLI opens comes back to Patchroom (patchroom-hook's browser mode).
+            sc.env.insert(
+                "BROWSER".into(),
+                self.cfg.hook_bin.to_string_lossy().into_owned(),
+            );
+            sc.env.insert(
+                "PATCHROOM_BRIDGE_SOCKET".into(),
+                self.bridge.socket_path().to_string_lossy().into_owned(),
+            );
+            sc.env.insert("PATCHROOM_SESSION".into(), id.to_owned());
+        }
         let pty = Arc::new(PtySession::spawn(sc)?);
 
         // Publish tracking, presence and the live entry under one `live` guard, so a
@@ -1413,6 +1425,10 @@ impl Manager {
             BridgeEvent::Plan(p) => self.on_plan_prompt(p),
             BridgeEvent::Resolved(r) => self.on_prompt_resolved(r),
             BridgeEvent::Statusline(rec) => self.on_statusline(rec),
+            BridgeEvent::OpenUrl(rec) => self.sink.emit(UiEvent::OpenUrl {
+                id: rec.session_key.clone(),
+                url: rec.url.clone(),
+            }),
         }
     }
 

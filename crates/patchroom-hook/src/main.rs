@@ -13,6 +13,10 @@
 //!
 //! Usage: `patchroom-hook --socket <path> [--wait-ms <n>] [--session-key <key>]`.
 //! `PATCHROOM_BRIDGE_SOCKET` and `PATCHROOM_SESSION` are fallbacks for the first and last.
+//!
+//! Browser mode: `patchroom-hook <http(s) url>`. Patchroom sets `BROWSER` to this binary for
+//! the sessions it launches, so a URL the CLI opens goes to Patchroom (viewer or browser, by
+//! the user's Links preference). Without a bridge it opens the URL in the system browser.
 
 use std::io::{BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -118,7 +122,53 @@ fn run() -> Option<Value> {
     exchange(&args, payload, wait_deadline)
 }
 
+/// The URL when invoked as `$BROWSER <url>`.
+fn browser_url<I: Iterator<Item = String>>(mut it: I) -> Option<String> {
+    let first = it.next()?;
+    (first.starts_with("https://") || first.starts_with("http://")).then_some(first)
+}
+
+/// Hand a URL to Patchroom; open it in the system browser when Patchroom does not take it.
+fn open_url(url: &str) {
+    let socket = std::env::var("PATCHROOM_BRIDGE_SOCKET")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let taken = socket.is_some_and(|path| {
+        let Ok(mut stream) = UnixStream::connect(path) else {
+            return false;
+        };
+        let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+        let msg = ClientMessage::OpenUrl {
+            session_key: std::env::var("PATCHROOM_SESSION")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            url: url.to_owned(),
+        };
+        if protocol::write_frame(&mut stream, &msg).is_err() {
+            return false;
+        }
+        let mut reader = BufReader::new(&stream);
+        matches!(
+            protocol::read_line(&mut reader)
+                .ok()
+                .flatten()
+                .and_then(|l| protocol::parse_server_line(&l).ok()),
+            Some(ServerMessage::Ack)
+        )
+    });
+    if !taken {
+        let _ = std::process::Command::new("/usr/bin/open")
+            .arg(url)
+            .status();
+    }
+}
+
 fn main() -> ExitCode {
+    if let Some(url) = browser_url(std::env::args().skip(1)) {
+        open_url(&url);
+        return ExitCode::SUCCESS;
+    }
     if let Some(output) = run() {
         let mut out = std::io::stdout().lock();
         let _ = writeln!(out, "{output}");
@@ -181,5 +231,16 @@ mod tests {
         let p = parse_args(a(&["--wait-ms", "abc", "--nope", "--socket"]), None, None);
         assert_eq!(p.wait_ms, DEFAULT_WAIT_MS);
         assert_eq!(p.socket, None);
+    }
+
+    #[test]
+    fn browser_mode_takes_a_web_url_first_argument_only() {
+        assert_eq!(
+            browser_url(a(&["https://claude.ai/artifact/x"])),
+            Some("https://claude.ai/artifact/x".into())
+        );
+        assert_eq!(browser_url(a(&["--socket", "/tmp/s"])), None);
+        assert_eq!(browser_url(a(&["file:///etc/passwd"])), None);
+        assert_eq!(browser_url(a(&[])), None);
     }
 }

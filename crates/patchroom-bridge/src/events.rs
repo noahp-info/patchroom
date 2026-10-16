@@ -202,6 +202,15 @@ pub struct StatuslineRecord {
     pub output: String,
 }
 
+/// The CLI asked to open a URL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenUrlRecord {
+    /// Patchroom's key for the session, when known.
+    pub session_key: Option<String>,
+    /// An http(s) URL.
+    pub url: String,
+}
+
 /// Everything the bridge publishes.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BridgeEvent {
@@ -219,4 +228,6 @@ pub enum BridgeEvent {
     Resolved(PromptResolved),
     /// The statusLine wrapper reported a render.
     Statusline(StatuslineRecord),
+    /// The CLI asked to open a URL.
+    OpenUrl(OpenUrlRecord),
 }

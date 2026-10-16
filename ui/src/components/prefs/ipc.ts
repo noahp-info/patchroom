@@ -115,6 +115,8 @@ export interface Prefs {
   sidebarWidth: number;
   /** Where a plain click opens a link. Cmd-click opens it in the other place. */
   links: { open: LinkTarget };
+  /** Pin each claude.ai artifact once when it appears. */
+  artifacts: { autoPin: boolean };
 }
 
 export type LinkTarget = 'patchroom' | 'browser';
@@ -159,6 +161,7 @@ export const DEFAULT_PREFS: Prefs = {
   statusBar: { default: null, perDm: {} },
   sidebarWidth: 264,
   links: { open: 'patchroom' },
+  artifacts: { autoPin: true },
 };
 
 /** A stored gain, clamped to 0 to 1.5. Anything that is not a finite number is dropped. */
@@ -221,6 +224,7 @@ export function normalizePrefs(raw: unknown): Prefs {
     links: {
       open: isRecord(r.links) && r.links.open === 'browser' ? 'browser' : 'patchroom',
     },
+    artifacts: { autoPin: !(isRecord(r.artifacts) && r.artifacts.autoPin === false) },
     sound: {
       ...d.sound,
       ...(sound as Partial<Prefs['sound']>),

@@ -378,6 +378,22 @@ pub struct Prefs {
     pub status_bar: StatusBar,
     /// Where links open.
     pub links: Links,
+    /// Artifact handling.
+    pub artifacts: Artifacts,
+}
+
+/// Artifact preferences.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Artifacts {
+    /// Pin each claude.ai artifact once when it appears. An unpin sticks.
+    pub auto_pin: bool,
+}
+
+impl Default for Artifacts {
+    fn default() -> Self {
+        Self { auto_pin: true }
+    }
 }
 
 /// The status strip layout. `default: None` is the built-in layout.
@@ -432,6 +448,7 @@ impl Default for Prefs {
             sidebar_width: SIDEBAR_DEFAULT,
             status_bar: StatusBar::default(),
             links: Links::default(),
+            artifacts: Artifacts::default(),
         }
     }
 }
@@ -923,6 +940,19 @@ mod tests {
         assert!(Prefs::default()
             .patched(&json!({"links": {"open": "ftp"}}))
             .is_err());
+    }
+
+    #[test]
+    fn artifacts_pin_automatically_unless_turned_off() {
+        assert!(Prefs::from_stored(r#"{"themeId":"x"}"#).artifacts.auto_pin);
+        let p = Prefs::default()
+            .patched(&json!({"artifacts": {"autoPin": false}}))
+            .unwrap();
+        assert!(!p.artifacts.auto_pin);
+        assert_eq!(
+            Prefs::from_stored(&serde_json::to_string(&p).unwrap()).artifacts,
+            p.artifacts
+        );
     }
 
     #[test]

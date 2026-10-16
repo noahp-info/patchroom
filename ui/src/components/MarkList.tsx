@@ -1,5 +1,6 @@
 import type { MarkInfo, SessionInfo } from '../ipc';
 import { formatStamp, toMillis } from '../lib/time';
+import { artifactUrlFor } from '../lib/artifacts';
 import { emojiName } from '../lib/emoji';
 import type { AppStore } from '../state/store';
 import { Icon } from './Icon';
@@ -26,38 +27,62 @@ export function MarkList({
   const name = (id: string) => sessions.find((s) => s.id === id)?.name ?? 'Deleted DM';
   return (
     <ul className="marklist" data-testid={testId}>
-      {marks.map((m) => (
-        <li key={m.id} className="markrow" data-item={m.itemKey} data-dm={m.conversationId}>
-          <button
-            type="button"
-            className="markrow__main"
-            onClick={() => {
-              onJump?.();
-              store.openDm(m.conversationId, { itemKey: m.itemKey });
-            }}
+      {marks.map((m) => {
+        const artifact = m.kind === 'pin' ? artifactUrlFor(m.conversationId, m.itemKey) : null;
+        return (
+          <li
+            key={m.id}
+            className="markrow"
+            data-item={m.itemKey}
+            data-dm={m.conversationId}
+            data-artifact={artifact ? 'true' : undefined}
           >
-            <span className="markrow__meta">
-              {showDm && <b>{name(m.conversationId)}</b>}
-              {m.createdAt !== undefined && <time>{formatStamp(toMillis(m.createdAt))}</time>}
-              {m.kind === 'reaction' && m.emoji && (
-                <span title={`:${emojiName(m.emoji)}:`}>{m.emoji}</span>
-              )}
-            </span>
-            <span className="markrow__text">{m.snapshot || 'Message'}</span>
-          </button>
-          <button
-            type="button"
-            className="markrow__x"
-            aria-label={`Remove ${m.kind === 'pin' ? 'pin' : 'saved item'}`}
-            title={m.kind === 'pin' ? 'Unpin' : 'Remove from Saved'}
-            onClick={() =>
-              void store.toggleMark(m.conversationId, m.itemKey, m.kind, m.emoji ?? undefined)
-            }
-          >
-            <Icon name="x" />
-          </button>
-        </li>
-      ))}
+            <button
+              type="button"
+              className="markrow__main"
+              onClick={() => {
+                onJump?.();
+                store.openDm(m.conversationId, { itemKey: m.itemKey });
+              }}
+            >
+              <span className="markrow__meta">
+                {showDm && <b>{name(m.conversationId)}</b>}
+                {m.createdAt !== undefined && <time>{formatStamp(toMillis(m.createdAt))}</time>}
+                {m.kind === 'reaction' && m.emoji && (
+                  <span title={`:${emojiName(m.emoji)}:`}>{m.emoji}</span>
+                )}
+                {artifact && <span className="markrow__tag">Artifact</span>}
+              </span>
+              <span className="markrow__text">{m.snapshot || 'Message'}</span>
+            </button>
+            {artifact && (
+              <button
+                type="button"
+                className="markrow__open"
+                data-testid="artifact-open"
+                title={artifact}
+                onClick={() => {
+                  onJump?.();
+                  store.openLink(artifact);
+                }}
+              >
+                Open
+              </button>
+            )}
+            <button
+              type="button"
+              className="markrow__x"
+              aria-label={`Remove ${m.kind === 'pin' ? 'pin' : 'saved item'}`}
+              title={m.kind === 'pin' ? 'Unpin' : 'Remove from Saved'}
+              onClick={() =>
+                void store.toggleMark(m.conversationId, m.itemKey, m.kind, m.emoji ?? undefined)
+              }
+            >
+              <Icon name="x" />
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }
