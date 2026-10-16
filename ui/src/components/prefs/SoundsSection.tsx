@@ -33,6 +33,8 @@ export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string
   const mixRef = useRef<HTMLElement>(null);
   const [changed, setChanged] = useState<SoundEvent[]>([]);
   const [note, setNote] = useState('');
+  /** The event whose sound "Play the whole mix" just started; its row hops for a moment. */
+  const [playing, setPlaying] = useState<SoundEvent | null>(null);
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
   const later = (fn: () => void, ms: number) => timers.current.push(window.setTimeout(fn, ms));
@@ -59,14 +61,21 @@ export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string
     later(() => setChanged([]), 3000);
   };
 
-  /** Plays each event's current sound in turn, a short beat apart. Mutes do not stop a preview. */
+  /**
+   * Plays each event's current sound in turn, a short beat apart, and marks the row that is
+   * playing so the user can see which sound is which. Mutes do not stop a preview.
+   */
   const playAll = () => {
+    const step = 700;
     SOUND_EVENTS.forEach((e, i) =>
       later(() => {
         const c = s.mix[e] ?? { pack: DEFAULT_PACK };
-        if (c !== 'off') previewChoice(c, e);
-      }, i * 700),
+        if (c === 'off') return;
+        previewChoice(c, e);
+        setPlaying(e);
+      }, i * step),
     );
+    later(() => setPlaying(null), SOUND_EVENTS.length * step);
   };
 
   const resetMix = () => {
@@ -131,6 +140,7 @@ export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string
           packs={packs}
           names={names}
           changed={changed}
+          playing={playing}
           onEventOn={setEvent}
           onChoice={setChoice}
         />
