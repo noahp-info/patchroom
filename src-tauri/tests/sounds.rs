@@ -544,3 +544,35 @@ fn imported_claude_profile_packs_carry_measured_norms() {
     assert!(p["norm"]["done"].as_f64().unwrap() < 0.3, "{p}");
     assert!(p["norm"]["session"].as_f64().unwrap() > 1.5, "{p}");
 }
+
+/// A packaged app's bundled sounds resolve: every CC0 file pack in
+/// `<app>/Contents/Resources/sounds` serves every event as audio. Run against a real bundle:
+/// `PATCHROOM_BUNDLED_APP=target/release/bundle/macos/Patchroom.app cargo test -p patchroom
+/// --test sounds -- --ignored bundled_app`.
+#[test]
+#[ignore = "needs a packaged app: set PATCHROOM_BUNDLED_APP"]
+fn bundled_app_serves_every_cc0_sound() {
+    let app = PathBuf::from(std::env::var("PATCHROOM_BUNDLED_APP").expect("PATCHROOM_BUNDLED_APP"));
+    let res = app.join("Contents/Resources/sounds");
+    let data = tempfile::tempdir().unwrap();
+    let packs = patchroom_sounds::packs::list_packs(Some(&res), data.path());
+    let files: Vec<_> = packs
+        .iter()
+        .filter(|p| p.kind == patchroom_sounds::packs::PackKind::Files)
+        .collect();
+    assert_eq!(
+        files.len(),
+        7,
+        "{:?}",
+        packs.iter().map(|p| &p.id).collect::<Vec<_>>()
+    );
+    for p in files {
+        assert_eq!(p.license, "CC0-1.0", "{}", p.id);
+        for e in p.events.keys() {
+            let url =
+                patchroom_sounds::packs::sound_file(Some(&res), data.path(), &p.id, e).unwrap();
+            assert!(url.starts_with("data:audio/"), "{}/{e}", p.id);
+            assert!(url.len() > 1000, "{}/{e} is nearly empty", p.id);
+        }
+    }
+}
