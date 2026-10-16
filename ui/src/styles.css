@@ -3381,3 +3381,75 @@ body.dragging .sbe__grip {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* The in-app link viewer: a right-hand pane. The page is a native webview over .viewer__page. */
+.pr-app.shell[data-viewer='open'] {
+  grid-template-columns: var(--side-w) minmax(360px, 1fr) var(--viewer-w, clamp(420px, 44vw, 960px));
+}
+.viewer {
+  grid-row: 2;
+  grid-column: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+.viewer__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--line);
+  --fs: 13px;
+}
+.viewer__bar .flip {
+  display: inline-flex;
+  transform: scaleX(-1);
+}
+.viewer__title {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  margin: 0 6px;
+  line-height: 1.25;
+}
+.viewer__title b,
+.viewer__title span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.viewer__title span {
+  color: var(--muted);
+  --fs: 11px;
+}
+.viewer__ext {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.viewer__ext:hover {
+  background: var(--hover);
+}
+.viewer__page {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+}
+.viewer__wait {
+  color: var(--muted);
+  --fs: 13px;
+}

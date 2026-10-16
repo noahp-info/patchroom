@@ -6,6 +6,7 @@ import { ActivityView, PrefsView, SavedView } from './components/PanelViews';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { SearchPanel } from './components/SearchPanel';
 import { SelectionMenu } from './components/SelectionMenu';
+import { ViewerPane } from './components/ViewerPane';
 import { ChatView } from './components/chat/ChatView';
 import { useFullscreen } from './lib/fullscreen';
 import { Sidebar } from './components/Sidebar';
@@ -153,7 +154,18 @@ export function App() {
       data-mode={mode}
       data-theme={theme.id}
       data-fullscreen={fullscreen ? 'true' : undefined}
+      data-viewer={state.viewer ? 'open' : undefined}
       style={style}
+      onClickCapture={(e) => {
+        // Links never navigate the app: they open in the viewer or the browser (Links pref).
+        const a = (e.target as Element).closest?.('a[href]');
+        if (!a || e.button !== 0) return;
+        const href = a.getAttribute('href') ?? '';
+        if (!/^https?:\/\//i.test(href)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        store.openLink(href, { invert: e.metaKey });
+      }}
     >
       <div className="tb" data-testid="topbar" data-tauri-drag-region>
         <span className="tb-spacer" data-tauri-drag-region />
@@ -403,6 +415,8 @@ export function App() {
         {state.panel === 'activity' && <ActivityView state={state} store={store} />}
         {state.panel === 'saved' && <SavedView state={state} store={store} />}
       </main>
+
+      {state.viewer && <ViewerPane store={store} viewer={state.viewer} />}
 
       <PatchCable
         remeasureKey={`${base}/${theme.id}/${mode}/${state.activeId ?? ''}/${state.panel ?? ''}`}

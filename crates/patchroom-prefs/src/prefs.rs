@@ -376,6 +376,8 @@ pub struct Prefs {
     pub sidebar_width: u32,
     /// Status strip layout: module ids in order, the default and per DM.
     pub status_bar: StatusBar,
+    /// Where links open.
+    pub links: Links,
 }
 
 /// The status strip layout. `default: None` is the built-in layout.
@@ -386,6 +388,25 @@ pub struct StatusBar {
     pub default: Option<Vec<String>>,
     /// Module ids per DM id.
     pub per_dm: BTreeMap<String, Vec<String>>,
+}
+
+/// Where a clicked link opens. Cmd-click opens it in the other place.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LinkTarget {
+    /// The in-app viewer.
+    #[default]
+    Patchroom,
+    /// The system default browser.
+    Browser,
+}
+
+/// Link preferences.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Links {
+    /// Where a plain click opens a link.
+    pub open: LinkTarget,
 }
 
 /// Narrowest sidebar the UI lets the user drag to.
@@ -410,6 +431,7 @@ impl Default for Prefs {
             search_all_sessions: false,
             sidebar_width: SIDEBAR_DEFAULT,
             status_bar: StatusBar::default(),
+            links: Links::default(),
         }
     }
 }
@@ -882,6 +904,25 @@ mod tests {
             .patched(&json!({"statusBar": {"default": null, "perDm": {}}}))
             .unwrap();
         assert_eq!(reset.status_bar, StatusBar::default());
+    }
+
+    #[test]
+    fn links_open_in_patchroom_unless_set_to_the_browser() {
+        assert_eq!(
+            Prefs::from_stored(r#"{"themeId":"x"}"#).links.open,
+            LinkTarget::Patchroom
+        );
+        let p = Prefs::default()
+            .patched(&json!({"links": {"open": "browser"}}))
+            .unwrap();
+        assert_eq!(p.links.open, LinkTarget::Browser);
+        assert_eq!(
+            Prefs::from_stored(&serde_json::to_string(&p).unwrap()).links,
+            p.links
+        );
+        assert!(Prefs::default()
+            .patched(&json!({"links": {"open": "ftp"}}))
+            .is_err());
     }
 
     #[test]

@@ -142,6 +142,8 @@ export interface IpcEvents {
   'session:terminal_wait': TerminalWaitEvent;
   'session:terminal_wait_clear': { id: string };
   'session:working': { id: string; verb: string | null; detail: string | null };
+  'viewer:changed': { url: string; loading: boolean };
+  'viewer:title': { title: string };
 }
 
 export interface TerminalWaitEvent extends TerminalWait {
@@ -205,6 +207,14 @@ export interface Ipc {
   sessionMirrorTakeoverWhenClosed(id: string, enabled: boolean): Promise<void>;
   /** Bring the terminal that runs a mirrored DM to the front, on its tab when possible. */
   sessionMirrorReveal(id: string): Promise<void>;
+  /** Open an http(s) link in the system default browser. */
+  linkOpenExternal(url: string): Promise<void>;
+  /** Show an http(s) link in the in-app viewer, laid over `rect` (CSS px of the window). */
+  viewerShow(url: string, rect: ViewerRect): Promise<void>;
+  /** Move the viewer with its pane. */
+  viewerPlace(rect: ViewerRect): Promise<void>;
+  viewerHide(): Promise<void>;
+  viewerGo(action: 'back' | 'forward' | 'reload'): Promise<void>;
   /**
    * The user confirmed "End it there": stop the other copy (only while it is idle) and resume
    * the session here. Rejects with the reason when it refuses or the copy does not close.
@@ -569,6 +579,8 @@ export interface Prefs {
   sidebarWidth: number;
   /** Status strip layout. Absent: the built-in default with duplicates hidden. */
   statusBar?: StatusBarPrefs;
+  /** Where a plain click opens a link. Absent in older blobs: the in-app viewer. */
+  links?: { open: 'patchroom' | 'browser' };
 }
 
 /** Ids of the status strip modules, in the order the built-in default shows them. */
@@ -641,4 +653,12 @@ export interface FolderSessions {
 
 export interface FolderChangedEvent {
   sectionId: string;
+}
+
+/** Where the in-app viewer sits, in CSS pixels of the main window. */
+export interface ViewerRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }

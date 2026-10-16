@@ -152,6 +152,11 @@ export function createTauriIpc(): Ipc {
     sessionMirrorTakeoverWhenClosed: (id, enabled) =>
       invoke('session_mirror_takeover_when_closed', { id, enabled }),
     sessionMirrorReveal: (id) => invoke('session_mirror_reveal', { id }),
+    linkOpenExternal: (url) => invoke('link_open_external', { url }),
+    viewerShow: (url, rect) => invoke('viewer_show', { url, rect }),
+    viewerPlace: (rect) => invoke('viewer_place', { rect }),
+    viewerHide: () => invoke('viewer_hide'),
+    viewerGo: (action) => invoke('viewer_go', { action }),
     sessionMirrorEnd: async (id, cols, rows) =>
       wireSession(await invoke<WireSession>('session_mirror_end', { id, cols, rows })),
     pasteImage: (id, data, mediaType) =>

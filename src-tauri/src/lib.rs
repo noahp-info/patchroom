@@ -80,6 +80,7 @@ pub mod events;
 pub mod hook_path;
 pub mod manager;
 pub mod notifier;
+pub mod viewer;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -205,6 +206,11 @@ macro_rules! app_handler {
             commands::session_mirror_takeover_when_closed,
             commands::session_mirror_reveal,
             commands::session_mirror_end,
+            commands::link_open_external,
+            commands::viewer_show,
+            commands::viewer_place,
+            commands::viewer_hide,
+            commands::viewer_go,
             commands::sound_packs,
             commands::sound_file,
             commands::sound_import_file,
@@ -288,6 +294,11 @@ macro_rules! app_handler {
             commands::session_mirror_takeover_when_closed,
             commands::session_mirror_reveal,
             commands::session_mirror_end,
+            commands::link_open_external,
+            commands::viewer_show,
+            commands::viewer_place,
+            commands::viewer_hide,
+            commands::viewer_go,
             commands::sound_packs,
             commands::sound_file,
             commands::sound_import_file,
