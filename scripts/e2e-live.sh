@@ -31,7 +31,9 @@
 # report at the end, so it can be read after the screen was locked.
 #
 # Everything runs in temp dirs under $E2E_BASE (default /tmp/pr-e2e-<pid>) with PATCHROOM_DATA_DIR
-# there too. Only `--model haiku` is used. The only network use is claude's own API traffic.
+# there too. With PATCHROOM_DATA_DIR set, the app also gives its webview a WebKit data store of
+# its own (macOS 14+), so localStorage such as patchroom.lastCwd never reaches the installed app,
+# which shares the bundle id. Only `--model haiku` is used. The only network use is claude's own API traffic.
 # This script never writes the user's claude settings, shell profiles or ~/.claude.json.
 set -uo pipefail
 
