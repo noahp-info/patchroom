@@ -119,6 +119,23 @@
   margin-bottom: 14px;
   max-width: 60ch;
 }
+/*
+ * Spacing rule (DESIGN.md): a control row and the hint text next to it never touch. Whatever
+ * sits above or below a hint (a button row, a field, a segmented control, a list of controls)
+ * is one group gap away.
+ */
+.prefs
+  .prefs__main
+  :is(button, input, select, textarea, :has(button, input, select, textarea))
+  + .pf-hint {
+  margin-top: var(--group-gap);
+}
+.prefs
+  .prefs__main
+  .pf-hint
+  + :is(button, input, select, textarea, :has(button, input, select, textarea)) {
+  margin-top: var(--group-gap);
+}
 .pf-ok {
   color: var(--ok);
   font-size: 12px;

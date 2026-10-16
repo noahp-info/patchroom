@@ -45,6 +45,7 @@ spacing:
   gutter: "18px"
   row-height: "28px"
   log-gap: "14px"
+  group-gap: "12px"
 components:
   sidebar-row:
     height: "28px"
@@ -222,9 +223,21 @@ A three-column grid under a 40px title bar: sidebar, conversation, artifact pane
 | `--row-h` | 28px | 28px | Sidebar row height (density) |
 | `--gutter` | 18px | 18px (40px log left) | Pane side padding |
 | `--log-gap` | 14px | 14px | Space between messages |
+| `--group-gap` | 12px | 12px | Least space between a control row and adjacent text |
 | `--text` | 14px | 14px | Base text size |
 | `--f-ui` `--f-mono` `--f-label` `--f-prose` | per base | per base | Type stacks |
 | `--app-w` `--app-h` `--app-radius` | 100% / 100% / 12px | Patch Bay sets 6px radius | Host sizing |
+
+### Spacing rule (hard)
+
+A control row and the text next to it always get the group gap, `--group-gap` (12px), between them. Never let blocks touch.
+
+- A control row is any button row, field, select, segmented control, or list of controls.
+- Adjacent text is a hint, a description, a status line, or a paragraph above or below that row.
+- The gap is the least space. A heading above keeps its own larger top margin.
+- Use `var(--group-gap)`, never a literal. In Settings, a shared rule in `prefs.css` applies it to every `.pf-hint` next to a control.
+- Inside one card (a pack card, a theme card), the card's own internal gap applies. The card as a whole still keeps the group gap from text outside it.
+- `ui/tests/prefs-spacing.spec.ts` measures every Settings tab and fails on any pair closer than the token.
 
 ### Bases
 

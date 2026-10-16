@@ -51,6 +51,13 @@ Run all checks before every push. CI runs the same set.
 5. Local only: no network listeners, no telemetry. Bridge is a `0600` unix socket.
 6. Sync-ready data: SQLite, ULID ids, authorship on every row.
 
+## UI work: spacing rule (hard)
+
+- A control row and the text next to it are always at least the group gap apart: `--group-gap`, 12px (`ui/src/theme/base.css`).
+- Never let blocks touch. A button row, field, segmented control or list of controls never sits flush against a hint, description or status line.
+- Use the token, not a literal. `ui/tests/prefs-spacing.spec.ts` enforces it in Settings.
+- Details and the inside-a-card exception: DESIGN.md, Layout, Spacing rule.
+
 ## UI work: de-slop before merge
 
 Every UI change runs the `/impeccable` skill (critique and polish) before merge. Fix what it flags. Larger UI changes also run `/slop-gauntlet`.

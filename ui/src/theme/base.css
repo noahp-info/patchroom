@@ -19,6 +19,8 @@
   --chat-max: 1480px;
   --measure: 128ch;
   --log-gap: 14px;
+  /* The group gap: the least space between a control row and the text next to it (DESIGN.md). */
+  --group-gap: 12px;
   --text: 14px;
   --f-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --f-mono: ui-monospace, 'SF Mono', Menlo, monospace;
