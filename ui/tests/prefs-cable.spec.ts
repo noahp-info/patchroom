@@ -40,7 +40,7 @@ test('Preferences lists the cable presets with names and live previews', async (
 test('choosing a preset changes only cable and plug, live, and persists', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto(HARNESS);
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   expect(await cssVar(page, '--cable')).toBe('#f2c35b');
   expect(await cssVar(page, '--plug')).toBe('#c7cdd0');
 
@@ -57,7 +57,7 @@ test('choosing a preset changes only cable and plug, live, and persists', async 
   expect(await Promise.all(tokens.map((t) => cssVar(page, t)))).toEqual(before);
 
   await page.reload();
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   expect(await cssVar(page, '--cable')).toBe('#d9692a');
   await expect(page.locator('[data-cable-preset="copper"]')).toHaveAttribute(
     'aria-pressed',
@@ -101,7 +101,7 @@ test('P3-era stored prefs and a custom theme without cable and plug load unchang
     localStorage.setItem('pr.prefs.harness', JSON.stringify(stored));
   }, p3);
   await page.goto(HARNESS);
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
 
   // The stored choice stands: the old custom theme is active, in light.
   await expect(root(page)).toHaveAttribute('data-theme', p3.themeId);

@@ -173,11 +173,11 @@ export function App() {
           type="button"
           className="tb-search"
           onClick={() => store.setPanel('switcher')}
-          aria-label="Jump to a DM"
-          title={'Jump to a DM (\u2318K)'}
+          aria-label="Jump to a session"
+          title={'Jump to a session (\u2318K)'}
         >
           <Icon name="search" />
-          <span>Jump to a DM</span>
+          <span>Jump to a session</span>
           <kbd>{'\u2318K'}</kbd>
         </button>
         <span className="tb-spacer" data-tauri-drag-region />
@@ -186,7 +186,7 @@ export function App() {
           <button
             type="button"
             className="tb-act"
-            title={'Oldest DM that needs you (\u2318\u21E7A)'}
+            title={'Oldest session that needs you (\u2318\u21E7A)'}
             onClick={() => void store.jumpOldestNeeds()}
           >
             <Icon name="inbox" />
@@ -262,7 +262,7 @@ export function App() {
                   onChange={(e) => void store.moveSession(active.id, e.target.value || null)}
                   aria-label="Section"
                 >
-                  <option value="">Direct messages</option>
+                  <option value="">Sessions</option>
                   {state.sections
                     .filter((s) => s.kind !== 'divider')
                     .map((s) => (
@@ -391,10 +391,10 @@ export function App() {
             ))}
             {state.sessions.length === 0 && state.ready && (
               <div className="empty">
-                <h3>No DMs yet</h3>
+                <h3>No sessions yet</h3>
                 <p>Start one in a project folder. It runs claude in a real terminal.</p>
                 <button type="button" className="btn pri" onClick={() => setNewDmOpen(true)}>
-                  New DM
+                  New session
                 </button>
               </div>
             )}

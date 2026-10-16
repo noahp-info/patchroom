@@ -6,11 +6,11 @@ test.describe('workspace: prefs, sounds and notifications wiring', () => {
     const errs = watchErrors(page);
     await openSeeded(page, [{ id: 'a', name: 'alpha' }]);
     await page.keyboard.press('Meta+,');
-    await expect(page.getByRole('dialog', { name: /preferences/i })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: /settings/i })).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('dialog', { name: /preferences/i })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Preferences' }).click();
-    await expect(page.getByRole('dialog', { name: /preferences/i })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: /settings/i })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await expect(page.getByRole('dialog', { name: /settings/i })).toBeVisible();
     expect(errs).toEqual([]);
   });
 

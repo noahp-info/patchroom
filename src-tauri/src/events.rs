@@ -148,6 +148,8 @@ pub enum UiEvent {
         /// An http(s) URL.
         url: String,
     },
+    /// `menu:settings {}`: the app menu's Settings item (Cmd+,) was chosen.
+    OpenSettings,
     /// `session:working {id, verb, detail}`: the CLI's live working line, read off its screen
     /// ("Slithering…", "1m 31s · ↓ 409 tokens · deep in thought"). Both null when it is gone.
     Working {
@@ -200,6 +202,7 @@ impl UiEvent {
             UiEvent::TerminalWaitClear { .. } => "session:terminal_wait_clear",
             UiEvent::Working { .. } => "session:working",
             UiEvent::OpenUrl { .. } => "link:open",
+            UiEvent::OpenSettings => "menu:settings",
             UiEvent::Mirror { .. } => "session:mirror",
             UiEvent::Statusline { .. } => "statusline:update",
         }
@@ -234,7 +237,7 @@ impl UiEvent {
             } => json!({ "id": id, "event": event, "title": title, "body": body }),
             UiEvent::NotifyOpen { id } => json!({ "id": id }),
             UiEvent::PrefsChanged { prefs } => json!({ "prefs": prefs }),
-            UiEvent::ActivityChanged => json!({}),
+            UiEvent::ActivityChanged | UiEvent::OpenSettings => json!({}),
             UiEvent::FolderChanged { section_id } => json!({ "sectionId": section_id }),
             UiEvent::TerminalWait { id, reason, since } => {
                 json!({ "id": id, "reason": reason, "since": since })

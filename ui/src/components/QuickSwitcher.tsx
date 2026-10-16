@@ -167,8 +167,8 @@ export function QuickSwitcher({ state, store }: { state: AppState; store: AppSto
           aria-expanded="true"
           aria-controls="qs-list"
           aria-activedescendant={ranked[at] ? `qs-${ranked[at].key}` : undefined}
-          aria-label="Jump to a DM"
-          placeholder="Jump to a DM"
+          aria-label="Jump to a session"
+          placeholder="Jump to a session"
           value={q}
           autoFocus
           onChange={(e) => {
@@ -204,7 +204,7 @@ export function QuickSwitcher({ state, store }: { state: AppState; store: AppSto
             }
           }}
         />
-        <ul className="palette__list" id="qs-list" role="listbox" aria-label="DMs" ref={list}>
+        <ul className="palette__list" id="qs-list" role="listbox" aria-label="Sessions" ref={list}>
           {ranked.map((r, i) => {
             const common = {
               id: `qs-${r.key}`,
@@ -253,7 +253,7 @@ export function QuickSwitcher({ state, store }: { state: AppState; store: AppSto
               </li>
             );
           })}
-          {ranked.length === 0 && <li className="palette__none">No DM matches.</li>}
+          {ranked.length === 0 && <li className="palette__none">No session matches.</li>}
         </ul>
         {confirm && (
           <div className="palette__confirm" role="group" aria-label="Confirm open">

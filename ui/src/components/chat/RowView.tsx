@@ -82,7 +82,7 @@ function HoverBar({
       <button
         type="button"
         aria-label={pinned ? 'Unpin' : 'Pin'}
-        title={pinned ? 'Unpin from this DM' : 'Pin to this DM'}
+        title={pinned ? 'Unpin from this session' : 'Pin to this session'}
         aria-pressed={pinned}
         onClick={() => actions.toggleMark(item.key, 'pin')}
       >

@@ -85,6 +85,7 @@ pub mod viewer;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem};
 use tauri::{Emitter, Manager as _, RunEvent};
 
 use crate::events::{EventSink, UiEvent};
@@ -98,6 +99,26 @@ impl EventSink for TauriSink {
     fn emit(&self, event: UiEvent) {
         let _ = self.0.emit(event.name(), event.payload());
     }
+}
+
+/// Menu id of the app menu's Settings item.
+const SETTINGS_MENU_ID: &str = "settings";
+
+/// The default menu bar, plus "Settings..." (Cmd+,) under About in the macOS app menu.
+fn app_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let menu = Menu::default(handle)?;
+    #[cfg(target_os = "macos")]
+    if let Some(MenuItemKind::Submenu(app)) = menu.items()?.into_iter().next() {
+        let settings = MenuItem::with_id(
+            handle,
+            SETTINGS_MENU_ID,
+            "Settings\u{2026}",
+            true,
+            Some("CmdOrCtrl+,"),
+        )?;
+        app.insert_items(&[&PredefinedMenuItem::separator(handle)?, &settings], 1)?;
+    }
+    Ok(menu)
 }
 
 /// Parse `--open-dm <cwd>` and its `--open-dm-arg <arg>` companions.
@@ -327,6 +348,12 @@ pub fn run() {
         }
     });
     let app = builder
+        .menu(app_menu)
+        .on_menu_event(|handle, event| {
+            if event.id() == SETTINGS_MENU_ID {
+                TauriSink(handle.clone()).emit(UiEvent::OpenSettings);
+            }
+        })
         .setup(|app| {
             let mut cfg = ManagerConfig::new(data_dir(app)?, hook_path::resolve_hook_binary());
             cfg.reconcile = true;

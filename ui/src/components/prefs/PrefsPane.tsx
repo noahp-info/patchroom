@@ -55,7 +55,7 @@ export function PrefsPane({ onClose, dms = [], initialTab = 'themes', targetDm }
       }}
     >
       <header className="prefs__head">
-        <h1 id="prefs-title">Preferences</h1>
+        <h1 id="prefs-title">Settings</h1>
         <button
           type="button"
           className="prefs__x"
@@ -66,7 +66,7 @@ export function PrefsPane({ onClose, dms = [], initialTab = 'themes', targetDm }
         </button>
       </header>
       <div className="prefs__body">
-        <nav className="prefs__nav" aria-label="Preferences sections">
+        <nav className="prefs__nav" aria-label="Settings sections">
           {TABS.map((t) => (
             <button
               key={t.id}

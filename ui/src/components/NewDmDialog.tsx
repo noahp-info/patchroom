@@ -66,7 +66,7 @@ export function NewDmDialog({
   return (
     <dialog ref={ref} className="newdm" onClose={onClose} aria-labelledby="newdm-title">
       <form onSubmit={submit}>
-        <h2 id="newdm-title">New DM</h2>
+        <h2 id="newdm-title">New session</h2>
         <p className="newdm__lede">
           {section
             ? `Starts in ${section.name}. Pick a worktree below to start there instead.`
@@ -115,7 +115,7 @@ export function NewDmDialog({
             Cancel
           </button>
           <button type="submit" className="btn pri" disabled={busy || cwd.trim() === ''}>
-            Start DM
+            Start session
           </button>
         </div>
       </form>

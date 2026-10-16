@@ -149,9 +149,9 @@ export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string
       <h3>Your Claude sounds</h3>
       <ClaudeImport />
 
-      <h3>Sounds for one DM</h3>
+      <h3>Sounds for one session</h3>
       <p className="pf-hint">
-        Mute a DM, or open it to give it a pack or a sound of its own for any event.
+        Mute a session, or open it to give it a pack or a sound of its own for any event.
       </p>
       <DmSounds dms={dms} sound={s} packs={packs} names={names} openId={openDm} onSet={setDm} />
       <p className="pf-hint">

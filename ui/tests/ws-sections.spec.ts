@@ -11,7 +11,7 @@ const DMS = [
 test.describe('workspace: sections (checklist 1, 2)', () => {
   test('Starred, Direct messages and Archived exist on first run', async ({ page }) => {
     await page.goto('/?mock');
-    for (const name of ['Starred', 'Direct messages', 'Archived']) {
+    for (const name of ['Starred', 'Sessions', 'Archived']) {
       await expect(page.locator('.side .sec-h', { hasText: name })).toBeVisible();
     }
     // Archived starts collapsed; Starred and Direct messages are open.

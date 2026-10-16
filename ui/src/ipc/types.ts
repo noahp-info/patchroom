@@ -144,6 +144,8 @@ export interface IpcEvents {
   'session:working': { id: string; verb: string | null; detail: string | null };
   'viewer:changed': { url: string; loading: boolean };
   'link:open': { id: string | null; url: string };
+  /** The app menu's Settings item (Cmd+,). */
+  'menu:settings': Record<string, never>;
   'viewer:title': { title: string };
 }
 

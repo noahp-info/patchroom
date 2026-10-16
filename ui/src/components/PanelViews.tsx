@@ -52,7 +52,7 @@ export function ActivityView({ state, store }: { state: AppState; store: AppStor
   useEffect(() => {
     void store.loadActivity();
   }, [store]);
-  const name = (id: string) => state.sessions.find((s) => s.id === id)?.name ?? 'Deleted DM';
+  const name = (id: string) => state.sessions.find((s) => s.id === id)?.name ?? 'Deleted session';
   return (
     <PanelShell
       title="Activity"
@@ -96,7 +96,7 @@ export function SavedView({ state, store }: { state: AppState; store: AppStore }
   return (
     <PanelShell
       title="Saved items"
-      lede="Messages you saved from any DM. Click one to open it."
+      lede="Messages you saved from any session. Click one to open it."
       store={store}
       testId="saved"
     >
@@ -152,12 +152,12 @@ export function PrefsView({ state, store }: { state: AppState; store: AppStore }
   }
   return (
     <PanelShell
-      title="Preferences"
+      title="Settings"
       lede="Themes, notifications and sounds."
       store={store}
       testId="prefs-placeholder"
     >
-      <p className="listempty">Preferences are not available in this build.</p>
+      <p className="listempty">Settings are not available in this build.</p>
     </PanelShell>
   );
 }

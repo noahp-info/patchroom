@@ -35,7 +35,7 @@ export function DmSounds(props: {
   openId?: string;
   onSet(id: string, pref: DmSoundPref): void;
 }) {
-  if (props.dms.length === 0) return <p className="pf-hint">No DMs yet.</p>;
+  if (props.dms.length === 0) return <p className="pf-hint">No sessions yet.</p>;
   return (
     <ul className="plist dmsounds">
       {props.dms.map((d) => (
@@ -86,7 +86,7 @@ function DmRow(p: Parameters<typeof DmSounds>[0] & { dm: PrefsDm }) {
       >
         <summary>Sounds for {dm.name}</summary>
         {muted ? (
-          <p className="pf-hint">Muted. Unmute to give this DM its own sounds.</p>
+          <p className="pf-hint">Muted. Unmute to give this session its own sounds.</p>
         ) : (
           <div className="dmrow__body">
             <label className="pf pf--inline">
@@ -121,7 +121,7 @@ function DmRow(p: Parameters<typeof DmSounds>[0] & { dm: PrefsDm }) {
                         packs={p.packs}
                         names={p.names}
                         value={own1}
-                        inheritLabel={own.pack ? 'This DM’s pack' : 'Global mix'}
+                        inheritLabel={own.pack ? 'This session’s pack' : 'Global mix'}
                         label={`${dm.name} ${EVENT_INFO[e].name} source`}
                         disabled={file.busy}
                         onChange={(c) => setMix(e, c && keepGain(c, own1 ?? shown))}

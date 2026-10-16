@@ -24,7 +24,7 @@ export function MarkList({
   testId: string;
 }) {
   if (marks.length === 0) return <p className="listempty">{empty}</p>;
-  const name = (id: string) => sessions.find((s) => s.id === id)?.name ?? 'Deleted DM';
+  const name = (id: string) => sessions.find((s) => s.id === id)?.name ?? 'Deleted session';
   return (
     <ul className="marklist" data-testid={testId}>
       {marks.map((m) => {

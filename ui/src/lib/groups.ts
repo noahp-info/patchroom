@@ -44,7 +44,7 @@ export function buildGroups(sections: SectionInfo[], sessions: SessionInfo[]): G
     {
       id: DEFAULT_GROUP,
       kind: 'default',
-      title: 'Direct messages',
+      title: 'Sessions',
       section: null,
       // A DM whose section was deleted, or that has none, falls back to Direct messages.
       items: plain.filter((s) => s.sectionId === null || !known.has(s.sectionId)),

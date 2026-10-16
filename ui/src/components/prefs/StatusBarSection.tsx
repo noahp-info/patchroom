@@ -48,7 +48,7 @@ export function StatusBarSection({ dms }: { dms: PrefsDm[] }) {
           value={scope}
           onChange={(e) => setScope(e.target.value)}
         >
-          <option value={ALL}>All DMs</option>
+          <option value={ALL}>All sessions</option>
           {dms.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name}

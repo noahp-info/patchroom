@@ -215,7 +215,7 @@ export function StatusStrip({
                 void store.setStatusBar(sessionId, e.target.checked ? layout.active : null)
               }
             />
-            Only for this DM
+            Only for this session
           </label>
           <StatusBarEditor
             idle={new Set(layout.active.filter((m) => !availableModules(facts).has(m)))}

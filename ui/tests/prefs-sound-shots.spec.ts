@@ -48,7 +48,7 @@ for (const theme of THEMES) {
         content:
           '.prefs{height:auto!important;max-height:none!important}.prefs__main{overflow:visible!important}',
       });
-      const shot = await page.getByRole('dialog', { name: 'Preferences' }).screenshot();
+      const shot = await page.getByRole('dialog', { name: 'Settings' }).screenshot();
       expect(shot.length).toBeGreaterThan(10_000);
       await testInfo.attach(`sounds-${theme}-${mode}.png`, {
         body: shot,
@@ -58,7 +58,7 @@ for (const theme of THEMES) {
       if (dir) {
         mkdirSync(dir, { recursive: true });
         await page
-          .getByRole('dialog', { name: 'Preferences' })
+          .getByRole('dialog', { name: 'Settings' })
           .screenshot({ path: `${dir}/sounds-${theme}-${mode}.png` });
       }
     });

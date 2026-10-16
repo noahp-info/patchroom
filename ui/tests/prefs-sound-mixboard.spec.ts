@@ -18,7 +18,7 @@ test('mix board and all 8 event rows sit in the first viewport', async ({ page }
   const board = await page.getByTestId('mix-board').boundingBox();
   expect(board!.y).toBeGreaterThan(0);
   expect(board!.y).toBeLessThan(vh / 2);
-  const dialog = (await page.getByRole('dialog', { name: 'Preferences' }).boundingBox())!;
+  const dialog = (await page.getByRole('dialog', { name: 'Settings' }).boundingBox())!;
   for (const e of EVENTS) {
     const row = (await page.getByTestId(`mix-${e}`).boundingBox())!;
     expect(row.y, e).toBeGreaterThanOrEqual(0);

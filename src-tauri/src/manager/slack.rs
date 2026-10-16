@@ -295,15 +295,15 @@ impl Manager {
         Ok(())
     }
 
-    /// `section_delete`: its DMs fall back to "Direct messages". That section itself stays.
+    /// `section_delete`: its sessions fall back to "Sessions". That section itself stays.
     ///
     /// # Errors
-    /// Unknown section, or the Direct messages section.
+    /// Unknown section, or the Sessions section.
     pub fn section_delete(&self, id: &str) -> Result<()> {
         let sid = parse_id(id)?;
         if sid == self.defaults.dm {
             return Err(Error::Invalid(
-                "the Direct messages section cannot be deleted".into(),
+                "the Sessions section cannot be deleted".into(),
             ));
         }
         lock(&self.store).delete_section_into(sid, self.defaults.dm)?;

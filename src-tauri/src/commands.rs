@@ -401,7 +401,7 @@ pub async fn section_rename(
     state.section_rename(&id, &name).map_err(|e| e.to_string())
 }
 
-/// `section_delete {id}`: the section's DMs fall back to "Direct messages".
+/// `section_delete {id}`: the section's sessions fall back to "Sessions".
 #[tauri::command]
 pub async fn section_delete(state: State<'_, SessionManager>, id: String) -> CmdResult<()> {
     state.section_delete(&id).map_err(|e| e.to_string())

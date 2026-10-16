@@ -483,7 +483,7 @@ export class Runner {
 
   /** Open the New DM dialog and start a DM in `cwd`, through the real form. */
   async newDm(cwd: string, name: string): Promise<void> {
-    await this.chooseNew('New DM');
+    await this.chooseNew('New session');
     const dlg = await this.waitFor(
       'New DM dialog',
       () => document.querySelector<HTMLDialogElement>('dialog.newdm[open]'),
@@ -503,10 +503,10 @@ export class Runner {
       new InputEvent('input', { bubbles: true, inputType: 'insertText', data: name }),
     );
     const submit = [...dlg.querySelectorAll<HTMLButtonElement>('button')].find(
-      (b) => textOf(b) === 'Start DM',
+      (b) => textOf(b) === 'Start session',
     );
-    if (!submit) throw new Error('no Start DM button');
-    await this.waitFor('Start DM enabled', () => !submit.disabled, 3000);
+    if (!submit) throw new Error('no Start session button');
+    await this.waitFor('Start session enabled', () => !submit.disabled, 3000);
     click(submit);
   }
 

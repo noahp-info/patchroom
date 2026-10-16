@@ -58,7 +58,7 @@ test('light, dark and system switch the mode', async ({ page }) => {
 
 test('the theme choice persists across a reload', async ({ page }) => {
   await page.goto(HARNESS);
-  await page.getByRole('dialog', { name: 'Preferences' }).waitFor();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   await page.locator('[data-theme-card="patch-bay"]').click();
   await page.getByRole('radio', { name: 'Dark' }).check({ force: true });
   await page.reload();

@@ -191,7 +191,7 @@ test.describe('workspace: folder section order, noise and older sessions (checkl
       'Not open',
     );
     // The hidden noise rows never show up.
-    const box = page.getByRole('combobox', { name: 'Jump to a DM' });
+    const box = page.getByRole('combobox', { name: 'Jump to a session' });
     await box.fill('(no prompt)');
     await expect(page.getByRole('option')).toHaveCount(0);
     await box.fill(name);

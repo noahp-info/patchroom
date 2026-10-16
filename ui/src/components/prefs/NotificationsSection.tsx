@@ -52,12 +52,12 @@ export function NotificationsSection({ dms }: { dms: PrefsDm[] }) {
         </select>
       </label>
       <p className="pf-hint">
-        Patchroom never notifies for the DM you are looking at while the window is focused.
+        Patchroom never notifies for the session you are looking at while the window is focused.
       </p>
 
-      <h3>Per DM</h3>
+      <h3>Per session</h3>
       {dms.length === 0 ? (
-        <p className="pf-hint">No DMs yet.</p>
+        <p className="pf-hint">No sessions yet.</p>
       ) : (
         <ul className="plist">
           {dms.map((d) => (

@@ -48,7 +48,7 @@ for (const width of WIDTHS) {
 
     test('search and Needs you stay interactive', async ({ page }) => {
       await page.goto('/?mock');
-      const search = page.getByRole('button', { name: 'Jump to a DM' });
+      const search = page.getByRole('button', { name: 'Jump to a session' });
       await expect(search).toBeVisible();
       await expect(search).toBeEnabled();
       await search.click();

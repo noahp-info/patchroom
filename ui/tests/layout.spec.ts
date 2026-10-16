@@ -119,15 +119,15 @@ test.describe('layout', () => {
           .getByPlaceholder('Section name')
           .fill('Client engagements and other extremely long section names 2026');
         await page.getByPlaceholder('Section name').press('Enter');
-        await chooseNew(page, 'New DM');
-        const dlg = page.getByRole('dialog', { name: 'New DM' });
+        await chooseNew(page, 'New session');
+        const dlg = page.getByRole('dialog', { name: 'New session' });
         await dlg
           .getByLabel('Folder')
           .fill('/Users/someone/projects/deeply/nested/folder/with-a-long-repository-name');
         await dlg
           .getByLabel('Name (optional)')
           .fill('refactor-the-entire-billing-pipeline-for-the-quarterly-close');
-        await dlg.getByRole('button', { name: 'Start DM' }).click();
+        await dlg.getByRole('button', { name: 'Start session' }).click();
         await page.locator('.ch .tools select').selectOption({
           label: 'Client engagements and other extremely long section names 2026',
         });
@@ -214,15 +214,15 @@ test.describe('layout', () => {
   test('header boxes only grow as the window widens', async ({ page }) => {
     await page.setViewportSize({ width: 880, height: 800 });
     await page.goto('/?mock');
-    await chooseNew(page, 'New DM');
-    const dlg = page.getByRole('dialog', { name: 'New DM' });
+    await chooseNew(page, 'New session');
+    const dlg = page.getByRole('dialog', { name: 'New session' });
     await dlg
       .getByLabel('Folder')
       .fill('/Users/someone/projects/deeply/nested/folder/with-a-long-repository-name');
     await dlg
       .getByLabel('Name (optional)')
       .fill('refactor-the-entire-billing-pipeline-for-the-quarterly-close');
-    await dlg.getByRole('button', { name: 'Start DM' }).click();
+    await dlg.getByRole('button', { name: 'Start session' }).click();
     const id = await page.evaluate(() => window.__PR_MOCK__!.sessions()[0].id);
     await page.evaluate((sid) => window.__PR_MOCK__!.setStatus(sid, 'waiting', 'permission'), id);
     const widths = (sel: string) =>
@@ -244,10 +244,10 @@ test.describe('layout', () => {
   test('long cwd keeps the folder name and offers a tooltip', async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 800 });
     await page.goto('/?mock');
-    await chooseNew(page, 'New DM');
-    const dlg = page.getByRole('dialog', { name: 'New DM' });
+    await chooseNew(page, 'New session');
+    const dlg = page.getByRole('dialog', { name: 'New session' });
     await dlg.getByLabel('Folder').fill('/Users/NDP/code/some/deeply/nested/projects/patchroom');
-    await dlg.getByRole('button', { name: 'Start DM' }).click();
+    await dlg.getByRole('button', { name: 'Start session' }).click();
     await expect(page.locator('.ch__cwd-base')).toHaveText('patchroom');
     await expect(page.locator('.ch__cwd')).toHaveAttribute('title', /deeply\/nested/);
     expect(await page.locator('.ch__cwd-dir').textContent()).toMatch(/^~\//);
@@ -257,8 +257,8 @@ test.describe('layout', () => {
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto('/?mock');
-      await chooseNew(page, 'New DM');
-      const dlg = page.getByRole('dialog', { name: 'New DM' });
+      await chooseNew(page, 'New session');
+      const dlg = page.getByRole('dialog', { name: 'New session' });
       const input = (await dlg.getByLabel('Folder').boundingBox())!;
       const btn = (await dlg.getByRole('button', { name: 'Browse' }).boundingBox())!;
       expect(Math.abs(input.y - btn.y)).toBeLessThanOrEqual(1);

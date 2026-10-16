@@ -236,7 +236,7 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
   });
 
   // ---- 2. second DM (used for badges) -------------------------------------------------------
-  await t.step('second DM starts through the New DM dialog', async () => {
+  await t.step('second DM starts through the New session dialog', async () => {
     await t.newDm(B, NAME_B);
     await t.waitFor('second DM', () => t.sessionCount() >= 2, 20_000);
     await ready(NAME_B);
@@ -515,7 +515,7 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
   });
 
   await t.step(
-    'P3: the + menu offers New DM, New section, New divider and New section from folder',
+    'P3: the + menu offers New session, New section, New divider and New section from folder',
     async () => {
       const plus = document.querySelector('aside.side button[aria-label="Create new"]');
       plus.click();
@@ -523,7 +523,7 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
         const list = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')];
         return list.length === 4 ? list.map((b) => (b.textContent || '').trim()) : null;
       });
-      const want = ['New DM', 'New section', 'New divider', 'New section from folder...'];
+      const want = ['New session', 'New section', 'New divider', 'New section from folder...'];
       if (items.join('|') !== want.join('|')) throw new Error(`menu items: ${items.join(' | ')}`);
       await t.waitFor('focus in the menu', () => document.activeElement?.closest('[role="menu"]'));
       t.chord('ArrowDown');
@@ -558,7 +558,7 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     await t.waitFor('switcher', () =>
       document.querySelector('[role="dialog"][aria-label="Quick switcher"]'),
     );
-    document.querySelector('input[aria-label="Jump to a DM"]').focus();
+    document.querySelector('input[aria-label="Jump to a session"]').focus();
     t.typeFocused(NAME_B.slice(0, 3));
     await t.sleep(200);
     t.chord('Enter');

@@ -29,7 +29,7 @@ test('a per-DM palette and font restyle that live terminal only', async ({ page 
 test('the default row applies to every DM without its own style', async ({ page }) => {
   await openPrefs(page);
   await tab(page, 'Terminal');
-  await page.getByLabel('All DMs palette').selectOption('iterm');
+  await page.getByLabel('All sessions palette').selectOption('iterm');
   await expect.poll(() => bg(page)).toBe('#000000');
   await expect(page.getByTestId('term-row-dm-beta').getByTestId('term-preview')).toHaveAttribute(
     'data-palette',

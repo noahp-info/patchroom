@@ -182,8 +182,8 @@ test.describe('workspace: folder sections, creation and discovery (checklist 16)
   }) => {
     await openFolder(page);
     await page.locator('.side [data-group="atlas"] .sec-h').click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'New DM here' }).click();
-    const dlg = page.getByRole('dialog', { name: 'New DM' });
+    await page.getByRole('menuitem', { name: 'New session here' }).click();
+    const dlg = page.getByRole('dialog', { name: 'New session' });
     await expect(dlg.getByLabel('Folder')).toHaveValue(HOME);
     // The worktree switch lists the home folder and the discovered worktrees.
     const sel = dlg.getByLabel('Worktree');
@@ -196,7 +196,7 @@ test.describe('workspace: folder sections, creation and discovery (checklist 16)
     ]);
     await sel.selectOption(`${HOME}/.claude/worktrees/perf-sweep`);
     await expect(dlg.getByLabel('Folder')).toHaveValue(`${HOME}/.claude/worktrees/perf-sweep`);
-    await dlg.getByRole('button', { name: 'Start DM' }).click();
+    await dlg.getByRole('button', { name: 'Start session' }).click();
     const dm = page.locator('.side [data-group="atlas"] .row[data-dm]');
     await expect(dm).toHaveCount(1);
     const s = await page.evaluate(() => window.__PR_MOCK__!.sessions()[0]);
@@ -208,11 +208,11 @@ test.describe('workspace: folder sections, creation and discovery (checklist 16)
 
   test('the header New DM button is unchanged: no section, last folder', async ({ page }) => {
     await openFolder(page);
-    await chooseNew(page, 'New DM');
-    const dlg = page.getByRole('dialog', { name: 'New DM' });
+    await chooseNew(page, 'New session');
+    const dlg = page.getByRole('dialog', { name: 'New session' });
     await expect(dlg.getByLabel('Worktree')).toHaveCount(0);
     await dlg.getByLabel('Folder').fill('/tmp/elsewhere');
-    await dlg.getByRole('button', { name: 'Start DM' }).click();
+    await dlg.getByRole('button', { name: 'Start session' }).click();
     await expect(page.locator('.side [data-group="__default__"] .row[data-dm]')).toHaveCount(1);
   });
 

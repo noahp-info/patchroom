@@ -333,18 +333,15 @@ fn dm_ids_in(m: &SessionManager, section: &str) -> Vec<String> {
 #[test]
 fn default_sections_exist_and_the_whole_layout_survives_a_restart() {
     let e = env();
-    assert_eq!(
-        section_names(&e.m),
-        ["Starred", "Direct messages", "Archived"]
-    );
-    let dm = section_id(&e.m, "Direct messages");
+    assert_eq!(section_names(&e.m), ["Starred", "Sessions", "Archived"]);
+    let dm = section_id(&e.m, "Sessions");
     let a = e.sh("a", "sleep 30");
     let b = e.sh("b", "sleep 30");
     let c = e.sh("c", "sleep 30");
     assert_eq!(
         dm_ids_in(&e.m, &dm),
         ["a", "b", "c"],
-        "new DMs land in Direct messages"
+        "new sessions land in Sessions"
     );
 
     // Create, rename, reorder and collapse sections.
@@ -357,7 +354,7 @@ fn default_sections_exist_and_the_whole_layout_survives_a_restart() {
         .unwrap();
     assert_eq!(
         section_names(&e.m),
-        ["Client work", "Starred", "Direct messages", "Archived"],
+        ["Client work", "Starred", "Sessions", "Archived"],
         "unlisted sections follow in their old order"
     );
     assert!(e.m.section_reorder(&["nope".into()]).is_err());
@@ -391,7 +388,7 @@ fn default_sections_exist_and_the_whole_layout_survives_a_restart() {
     let m2 = mk_manager(e.data.path(), e.config.path(), &sink2);
     assert_eq!(
         section_names(&m2),
-        ["Client work", "Starred", "Direct messages", "Archived"]
+        ["Client work", "Starred", "Sessions", "Archived"]
     );
     assert!(m2.sections().unwrap()[0].collapsed);
     assert_eq!(dm_ids_in(&m2, &work), ["b", "c", "a"]);
@@ -406,7 +403,7 @@ fn default_sections_exist_and_the_whole_layout_survives_a_restart() {
     m2.draft_set(&c, "").unwrap();
     assert!(!m2.list().unwrap().iter().any(|s| s.has_draft));
 
-    // Deleting a section sends its DMs to Direct messages; that section cannot be deleted.
+    // Deleting a section sends its sessions to Sessions; that section cannot be deleted.
     m2.section_delete(&work).unwrap();
     assert_eq!(dm_ids_in(&m2, &dm), ["b", "c", "a"]);
     assert!(!section_names(&m2).contains(&"Client work".to_owned()));
