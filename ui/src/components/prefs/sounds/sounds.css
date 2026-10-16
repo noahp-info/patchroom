@@ -144,6 +144,46 @@
 .mixrow .chk {
   margin: 0;
 }
+/*
+ * "Play the whole mix": the row whose sound just started lights up and its name hops once, so
+ * the ear can match each sound to its event.
+ */
+.mixrow__label {
+  display: inline-block;
+}
+.mixrow[data-playing] {
+  animation: mix-glow 600ms ease-out;
+}
+.mixrow[data-playing] .mixrow__label {
+  animation: mix-hop 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes mix-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(-4px);
+  }
+  65% {
+    transform: translateY(1px);
+  }
+}
+/* No motion: only the light. */
+@media (prefers-reduced-motion: reduce) {
+  .mixrow[data-playing] .mixrow__label {
+    animation: none;
+  }
+}
+@keyframes mix-glow {
+  0%,
+  60% {
+    background: var(--sel);
+  }
+  100% {
+    background: transparent;
+  }
+}
 .mixrow .btn,
 .dmrow .btn {
   height: 28px;

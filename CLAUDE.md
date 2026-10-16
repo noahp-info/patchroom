@@ -42,6 +42,13 @@ Run all checks before every push. CI runs the same set.
 - Merge only with the owner's consent, and never on red CI.
 - Poll CI at most once a minute: `gh pr checks --watch --interval 60`. The GitHub quota is shared.
 
+## Batch changes
+
+- Small feedback accumulates and ships as one PR. Never open one PR per chore.
+- Collect the batch on one branch, run every check locally, then push once.
+- Each push re-runs CI, and macOS minutes bill at 10x. A second push costs a second full run.
+- CI is path filtered (`.github/workflows/ci.yml`): docs-only changes run no build or test job, the macOS build runs only for Rust, Tauri config, icons and bundle resources, and Playwright only for `ui/`. A squash merge of an up-to-date branch does not re-run on `dev`. Rebase onto `dev` before the merge to get that skip.
+
 ## Spec principles (do not violate)
 
 1. Wrapper, not replacement: each session is the real CLI in a real PTY from the login shell.
@@ -50,6 +57,13 @@ Run all checks before every push. CI runs the same set.
 4. Never edit user config. Inject hooks per launch (`--settings <json>`).
 5. Local only: no network listeners, no telemetry. Bridge is a `0600` unix socket.
 6. Sync-ready data: SQLite, ULID ids, authorship on every row.
+
+## UI work: spacing rule (hard)
+
+- A control row and the text next to it are always at least the group gap apart: `--group-gap`, 12px (`ui/src/theme/base.css`).
+- Never let blocks touch. A button row, field, segmented control or list of controls never sits flush against a hint, description or status line.
+- Use the token, not a literal. `ui/tests/prefs-spacing.spec.ts` enforces it in Settings.
+- Details and the inside-a-card exception: DESIGN.md, Layout, Spacing rule.
 
 ## UI work: de-slop before merge
 

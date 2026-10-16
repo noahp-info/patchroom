@@ -267,6 +267,7 @@ test('every var(--x) in the CSS is a token or a documented base variable', () =>
     'row-h',
     'gutter',
     'log-gap',
+    'group-gap',
     'text',
     'f-ui',
     'f-mono',
@@ -296,7 +297,14 @@ test('every var(--x) in the CSS is a token or a documented base variable', () =>
     files.flatMap((f) => [...read(f).matchAll(/(?:^|[;{\s])--([a-z0-9-]+)\s*:/g)].map((m) => m[1])),
   );
   // Variables the UI sets inline from runtime data, with a CSS fallback where one is needed.
-  const inlineVars = new Set(['pct', 'term-bg', 'termbar-bg', 'termbar-line', 'termbar-fg']);
+  const inlineVars = new Set([
+    'pct',
+    'term-bg',
+    'termbar-bg',
+    'termbar-line',
+    'termbar-fg',
+    'viewer-w',
+  ]);
   for (const f of files) {
     const css = read(f);
     for (const m of css.matchAll(/var\(--([a-z0-9-]+)/g)) {

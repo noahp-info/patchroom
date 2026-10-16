@@ -20,6 +20,8 @@ export function MixBoard(props: {
   names: Record<string, string>;
   /** Events a pack button just changed; their rows are highlighted for a moment. */
   changed?: SoundEvent[];
+  /** The event "Play the whole mix" is playing now; its row gives a short hop. */
+  playing?: SoundEvent | null;
   onEventOn(e: SoundEvent, on: boolean): void;
   onChoice(e: SoundEvent, c: MixChoice): void;
 }) {
@@ -33,6 +35,7 @@ export function MixBoard(props: {
           {...props}
           choice={s.mix[e] ?? { pack: DEFAULT_PACK }}
           flash={props.changed?.includes(e) ?? false}
+          now={props.playing === e}
         />
       ))}
     </ul>
@@ -40,7 +43,12 @@ export function MixBoard(props: {
 }
 
 function MixRow(
-  p: Parameters<typeof MixBoard>[0] & { event: SoundEvent; choice: MixChoice; flash: boolean },
+  p: Parameters<typeof MixBoard>[0] & {
+    event: SoundEvent;
+    choice: MixChoice;
+    flash: boolean;
+    now: boolean;
+  },
 ) {
   const { event: e, sound: s, choice } = p;
   const file = useFileImport();
@@ -60,7 +68,12 @@ function MixRow(
   }
 
   return (
-    <li className="mixrow" data-testid={`mix-${e}`} data-changed={p.flash || undefined}>
+    <li
+      className="mixrow"
+      data-testid={`mix-${e}`}
+      data-changed={p.flash || undefined}
+      data-playing={p.now || undefined}
+    >
       <label className="chk mixrow__name">
         <input
           type="checkbox"
@@ -69,7 +82,9 @@ function MixRow(
           disabled={!s.enabled}
           onChange={(ev) => p.onEventOn(e, ev.target.checked)}
         />
-        <span title={info.blurb}>{info.name}</span>
+        <span className="mixrow__label" title={info.blurb}>
+          {info.name}
+        </span>
       </label>
       <div className="mixrow__ctl">
         <ChoiceSelect

@@ -1,6 +1,12 @@
 # CI: PRs and pushes to dev/main. Stale runs are cancelled when new commits arrive.
 # ubuntu: cheap lint + test for everything that builds without WebKit, plus the Playwright suite.
 # macos: the Tauri shell (clippy + debug bundle), the only job that needs the full toolchain.
+#
+# Minutes: macOS bills at 10x, so every job runs only when its inputs changed (the `changes`
+# job decides). Docs-only changes run no build or test job. A push whose tree equals a PR head
+# that already passed this workflow (a squash merge of an up-to-date branch) runs nothing again.
+# Skipped jobs count as passed; `CI result` is the one stable check that sums them up.
+# Secret scanning lives in gitleaks.yml and always runs.
 name: CI
 
 on:
@@ -20,8 +26,78 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.f.outputs.rust }}
+      ui: ${{ steps.f.outputs.ui }}
+      tauri: ${{ steps.f.outputs.tauri }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: f
+        name: Decide which jobs run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          BEFORE: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          emit() { { echo "rust=$1"; echo "ui=$2"; echo "tauri=$3"; } | tee -a "$GITHUB_OUTPUT"; }
+          all() { emit true true true; exit 0; }
+          none() { emit false false false; exit 0; }
+          if [ "$EVENT" = pull_request ]; then
+            files="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+          else
+            # A push that lands exactly the tree of a PR head that already passed CI (a squash
+            # merge of an up-to-date branch) has nothing new to test.
+            pr="$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)][0] | "\(.number) \(.head.sha)"' 2>/dev/null || true)"
+            if [ -n "$pr" ] && [ "$pr" != "null null" ]; then
+              head="${pr#* }"
+              git fetch -q origin "pull/${pr%% *}/head" || true
+              green="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$head&status=success&per_page=1" --jq '.total_count' 2>/dev/null || echo 0)"
+              if [ "$green" -gt 0 ] && [ "$(git rev-parse "$SHA^{tree}")" = "$(git rev-parse "$head^{tree}" 2>/dev/null || true)" ]; then
+                echo "Tree equals PR #${pr%% *} head $head, which passed CI: nothing new to test."
+                none
+              fi
+            fi
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              all
+            fi
+            files="$(git diff --name-only "$BEFORE" "$SHA")"
+          fi
+          echo "$files"
+          # Markdown, docs and license text never need a build or a test (gitleaks still runs).
+          files="$(grep -vE '(\.md$|^docs/|^LICENSE$|^NOTICE$)' <<<"$files" || true)"
+          has() { grep -qE "$1" <<<"$files"; }
+          # The workflow itself changed: run everything once to prove it.
+          has '^\.github/workflows/ci\.yml$' && all
+          rust=false; ui=false; tauri=false
+          # Rust crates, the app shell and the bundled resources the Rust tests read.
+          has '^(crates/|src-tauri/|plugins/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|rustfmt\.toml$|clippy\.toml$)' && rust=true
+          # The UI, its dependencies, the plugin data it imports and the CSP its tests read.
+          has '^(ui/|plugins/|package\.json$|pnpm-(lock|workspace)\.yaml$|src-tauri/tauri\.conf\.json$)' && ui=true
+          # The macOS bundle: shell, crates, Cargo, tauri config, icons and bundle resources.
+          has '^(src-tauri/|crates/|plugins/sounds/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|package\.json$|pnpm-lock\.yaml$)' && tauri=true
+          # Anything that is not docs and not covered above still gets the cheap ubuntu checks.
+          other="$(grep -vE '(^\.github/workflows/gitleaks\.yml$|^(crates|src-tauri|plugins|ui)/|^(Cargo\.(toml|lock)|rust-toolchain\.toml|rustfmt\.toml|clippy\.toml|package\.json|pnpm-(lock|workspace)\.yaml)$)' <<<"$files" || true)"
+          if [ -n "$other" ]; then rust=true; ui=true; fi
+          emit "$rust" "$ui" "$tauri"
+
   rust:
     name: Rust (fmt, clippy, test)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -36,6 +112,8 @@ jobs:
 
   ui:
     name: UI (lint, typecheck, build)
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -55,6 +133,8 @@ jobs:
   # terminal fidelity against pyte. The corpus render test skips here (CI has no local corpus).
   ui-e2e:
     name: UI (Playwright)
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -84,7 +164,12 @@ jobs:
   tauri-macos:
     name: Tauri (macOS debug build)
     runs-on: macos-latest
-    needs: [rust, ui, ui-e2e]
+    # After the cheap jobs, so a red ubuntu check never pays for a macOS run. A skipped
+    # cheap job (nothing of its own changed) does not block it.
+    needs: [changes, rust, ui, ui-e2e]
+    if: >-
+      !cancelled() && needs.changes.outputs.tauri == 'true' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -100,3 +185,19 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: pnpm tauri build --debug --bundles app
+
+  # The one check to require: green when every job above passed or was skipped as not needed.
+  result:
+    name: CI result
+    if: always()
+    needs: [changes, rust, ui, ui-e2e, tauri-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sum up
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in success|skipped) ;; *) echo "a job ended $r"; exit 1 ;; esac
+          done

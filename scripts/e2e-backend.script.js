@@ -190,6 +190,39 @@ window.__PR_E2E_SCENARIO__ = async function scenario(t) {
     await ready(NAME_A);
   });
 
+  // ---- 1b. this run's webview storage and file sounds ----------------------------------------------
+  // PATCHROOM_DATA_DIR gives the webview its own data store, so nothing from the installed app's
+  // localStorage shows up here (and nothing from here leaks into it).
+  await t.step('storage: the webview store belongs to this data dir only', async () => {
+    const base = A.replace(/\/s\d+\/alpha$/, '');
+    const last = window.localStorage.getItem('patchroom.lastCwd');
+    t.fact('lastCwdAtStart', last);
+    if (last !== null && !last.startsWith(base) && !last.startsWith(`/private${base}`)) {
+      throw new Error(`lastCwd ${last} comes from another app's storage`);
+    }
+    return `lastCwd=${last ?? 'unset'}`;
+  });
+
+  // The page CSP must allow data: media, or every CC0 sound falls back to the default pack.
+  await t.step('sounds: a CC0 pack sound loads and plays from its data URL (muted)', async () => {
+    const { dataUrl } = await invoke('sound_file', { packId: 'lab-glass', event: 'done' });
+    if (!dataUrl.startsWith('data:audio/')) throw new Error(`sound_file gave ${dataUrl.slice(0, 30)}`);
+    const violations = [];
+    const onViolation = (e) => violations.push(`${e.effectiveDirective} ${e.blockedURI}`);
+    document.addEventListener('securitypolicyviolation', onViolation);
+    const a = new Audio(dataUrl);
+    a.muted = true;
+    try {
+      await a.play();
+      await t.waitFor('audio advances', () => a.currentTime > 0, 5000);
+    } finally {
+      a.pause();
+      document.removeEventListener('securitypolicyviolation', onViolation);
+    }
+    if (violations.length) throw new Error(`CSP refused: ${violations.join(', ')}`);
+    return `played ${a.currentTime.toFixed(2)}s of ${a.duration.toFixed(2)}s`;
+  });
+
   await t.step('second DM starts through the New DM dialog', async () => {
     await t.newDm(B, NAME_B);
     await t.waitFor('second DM', () => t.sessionCount() >= 2, 20_000);

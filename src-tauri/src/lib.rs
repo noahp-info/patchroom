@@ -144,6 +144,46 @@ fn data_dir(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
     }
 }
 
+/// The main window's WebKit data store when `PATCHROOM_DATA_DIR` is set: an id derived from the
+/// data dir, so a test or e2e run keeps its own `localStorage` (and the same one across its
+/// restarts) and never reads or writes the installed app's. `None` uses the default store.
+fn webview_store_id(data_dir_override: Option<&str>) -> Option<[u8; 16]> {
+    let raw = data_dir_override.filter(|p| !p.is_empty())?;
+    let path = std::fs::canonicalize(raw).unwrap_or_else(|_| PathBuf::from(raw));
+    // FNV-1a, 128 bit: stable across builds and platforms, unlike `DefaultHasher`.
+    let mut h: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
+    for b in path.to_string_lossy().bytes() {
+        h ^= u128::from(b);
+        h = h.wrapping_mul(0x0000_0000_0100_0000_0000_0000_0000_013b);
+    }
+    // A well-formed UUID (version and variant bits set), as WKWebsiteDataStore expects.
+    Some(
+        *uuid::Builder::from_random_bytes(h.to_be_bytes())
+            .as_uuid()
+            .as_bytes(),
+    )
+}
+
+/// Opens the main window from its config (`create: false` there, so this is the only one).
+/// With `PATCHROOM_DATA_DIR` set the webview gets its own data store (macOS 14+) or data
+/// directory (other platforms), so private runs stay out of the installed app's storage.
+fn open_main_window(app: &tauri::App) -> tauri::Result<()> {
+    let Some(conf) = app.config().app.windows.first() else {
+        return Ok(());
+    };
+    let mut b = tauri::WebviewWindowBuilder::from_config(app.handle(), conf)?;
+    let over = std::env::var("PATCHROOM_DATA_DIR").ok();
+    if let Some(id) = webview_store_id(over.as_deref()) {
+        if cfg!(target_os = "macos") {
+            b = b.data_store_identifier(id);
+        } else if let Some(dir) = over.as_deref() {
+            b = b.data_directory(PathBuf::from(dir).join("webview"));
+        }
+    }
+    b.build()?;
+    Ok(())
+}
+
 /// The first candidate that holds `generated-packs.json`, the mark of the bundled sounds.
 fn first_sounds_dir(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
     candidates
@@ -378,6 +418,7 @@ pub fn run() {
                 e2e::start_heartbeat(app.handle().clone());
             }
             app.manage(manager);
+            open_main_window(app)?;
             Ok(())
         })
         .invoke_handler(app_handler!())
@@ -476,6 +517,43 @@ mod tests {
             Some(src)
         );
         assert_eq!(first_sounds_dir([tmp.path().join("missing")]), None);
+    }
+
+    #[test]
+    fn a_private_data_dir_gets_its_own_stable_webview_store() {
+        assert_eq!(webview_store_id(None), None);
+        assert_eq!(webview_store_id(Some("")), None);
+        let a = webview_store_id(Some("/tmp/pr-e2e-1/s1/data")).unwrap();
+        assert_eq!(webview_store_id(Some("/tmp/pr-e2e-1/s1/data")), Some(a));
+        assert_ne!(webview_store_id(Some("/tmp/pr-e2e-1/s2/data")), Some(a));
+        let u = uuid::Uuid::from_bytes(a);
+        assert_eq!(u.get_variant(), uuid::Variant::RFC4122);
+    }
+
+    #[test]
+    fn the_main_window_is_built_in_setup_not_from_config() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let windows = conf["app"]["windows"].as_array().unwrap();
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0]["create"], serde_json::json!(false));
+        assert!(include_str!("lib.rs").contains("open_main_window(app)?"));
+    }
+
+    /// The page CSP must let `<audio>` play the data URLs `sound_file` returns. Without
+    /// `media-src ... data:` it falls back to `default-src 'self'`, every file sound is refused,
+    /// and the player falls back to the default pack.
+    #[test]
+    fn the_csp_lets_file_sounds_play_from_data_urls() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let csp = conf["app"]["security"]["csp"].as_str().unwrap();
+        let media = csp
+            .split(';')
+            .map(str::trim)
+            .find(|d| d.starts_with("media-src "))
+            .expect("the CSP has a media-src directive");
+        assert!(media.split_whitespace().any(|s| s == "data:"), "{media}");
     }
 
     #[test]
