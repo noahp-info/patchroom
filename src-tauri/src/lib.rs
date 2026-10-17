@@ -280,6 +280,8 @@ macro_rules! app_handler {
             commands::sound_custom_remove,
             commands::sound_claude_profiles,
             commands::sound_import_claude_profile,
+            commands::theme_import_detect,
+            commands::theme_import_file,
             e2e::e2e_report,
             e2e::e2e_pgrep,
             e2e::e2e_sleep,
@@ -368,6 +370,8 @@ macro_rules! app_handler {
             commands::sound_custom_remove,
             commands::sound_claude_profiles,
             commands::sound_import_claude_profile,
+            commands::theme_import_detect,
+            commands::theme_import_file,
         ]
     };
 }

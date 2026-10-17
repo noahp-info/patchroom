@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 4179;
+// PW_PORT lets two checkouts run the suite at once.
+const PORT = Number(process.env.PW_PORT ?? 4179);
 
 export default defineConfig({
   testDir: './tests',

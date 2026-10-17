@@ -380,6 +380,9 @@ pub struct Prefs {
     pub links: Links,
     /// Artifact handling.
     pub artifacts: Artifacts,
+    /// Terminal palettes imported from other tools (read once, stored here). The shape belongs
+    /// to the UI's theme import.
+    pub term_palettes: Vec<Value>,
 }
 
 /// Artifact preferences.
@@ -449,6 +452,7 @@ impl Default for Prefs {
             status_bar: StatusBar::default(),
             links: Links::default(),
             artifacts: Artifacts::default(),
+            term_palettes: Vec::new(),
         }
     }
 }

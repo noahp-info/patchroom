@@ -248,6 +248,8 @@ export function createTauriIpc(): Ipc {
     soundCustomRemove: (id) => invoke('sound_custom_remove', { id }),
     soundClaudeProfiles: () => invoke('sound_claude_profiles', {}),
     soundImportClaudeProfile: (id) => invoke('sound_import_claude_profile', { id }),
+    themeImportDetect: () => invoke('theme_import_detect', {}),
+    themeImportFile: () => invoke('theme_import_file', {}),
     sessionFocus: (id) => invoke('session_focus', { id }),
     sectionCreateFromFolder: (path, name) =>
       invoke<{ id: string }>('section_create_from_folder', { path, name }),

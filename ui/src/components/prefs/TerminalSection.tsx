@@ -11,6 +11,8 @@ import {
 import { TERM_DEFAULT_KEY, type Prefs, type TermStyle } from './ipc.ts';
 import { getPrefsStore, usePrefs } from './store.ts';
 import { TermPreview } from './TermPreview.tsx';
+import { ImportFrom } from './ImportFrom.tsx';
+import { IMPORT_PREFIX } from '../../theme/themeImport.ts';
 import type { PrefsDm } from './types.ts';
 
 const INHERIT = '';
@@ -65,6 +67,15 @@ function TermRow({
                 {p.name}
               </option>
             ))}
+            {(prefs.termPalettes ?? []).length > 0 && (
+              <optgroup label="Imported">
+                {(prefs.termPalettes ?? []).map((p) => (
+                  <option key={p.id} value={IMPORT_PREFIX + p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
             <optgroup label="Match a theme">
               {themes.map((t) => (
                 <option key={t.id} value={`theme:${t.id}`}>
@@ -82,7 +93,7 @@ function TermRow({
             onChange={(e) => set({ ...own, font: e.target.value || undefined })}
           >
             {inherit && <option value={INHERIT}>Use default</option>}
-            {TERM_FONTS.map((f) => (
+            {[...new Set([...TERM_FONTS, ...[own.font, def.font].filter((f) => !!f)])].map((f) => (
               <option key={f} value={f}>
                 {f}
               </option>
@@ -99,11 +110,18 @@ function TermRow({
             onChange={(e) => set({ ...own, fontSize: Number(e.target.value) || undefined })}
           >
             {inherit && <option value={INHERIT}>Use default</option>}
-            {FONT_SIZES.map((s) => (
-              <option key={s} value={s}>
-                {s} px
-              </option>
-            ))}
+            {[
+              ...new Set<number>([
+                ...FONT_SIZES,
+                ...[own.fontSize, def.fontSize].filter((s): s is number => !!s),
+              ]),
+            ]
+              .sort((a, b) => a - b)
+              .map((s) => (
+                <option key={s} value={s}>
+                  {s} px
+                </option>
+              ))}
           </select>
         </label>
       </div>
@@ -136,6 +154,7 @@ export function TerminalSection({ dms }: { dms: PrefsDm[] }) {
       {dms.length === 0 && (
         <p className="pf-hint">Start a session to give it its own terminal style.</p>
       )}
+      <ImportFrom target="terminal" />
     </div>
   );
 }

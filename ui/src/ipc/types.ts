@@ -7,6 +7,7 @@ import type {
   SoundFileData,
 } from '../components/prefs/ipc.ts';
 import type { Theme } from '../theme/types.ts';
+import type { ImportEntry, ImportSource } from '../theme/themeImport.ts';
 
 /** Session status as reported by the backend (`session:status` and `session_list`). */
 export type SessionStatus = 'busy' | 'idle' | 'waiting' | 'exited';
@@ -301,6 +302,10 @@ export interface Ipc {
   soundCustomRemove(id: string): Promise<void>;
   soundClaudeProfiles(): Promise<ClaudeProfile[]>;
   soundImportClaudeProfile(id: string): Promise<{ packId: string }>;
+  /** Theme import: the looks the user's installed tools offer. Read only. */
+  themeImportDetect(): Promise<ImportSource[]>;
+  /** Theme import: pick an `.itermcolors` file and read it. Null when cancelled. */
+  themeImportFile(): Promise<ImportEntry | null>;
   /** The DM the user is looking at (null: none), so it does not notify while focused. */
   sessionFocus(id: string | null): Promise<void>;
   /** P3 folder sections. */
@@ -586,6 +591,8 @@ export interface Prefs {
   links?: { open: 'patchroom' | 'browser' };
   /** Pin claude.ai artifacts automatically (once each; an unpin sticks). Absent: on. */
   artifacts?: { autoPin: boolean };
+  /** Terminal palettes imported from other tools. Absent in older blobs: none. */
+  termPalettes?: unknown[];
 }
 
 /** Ids of the status strip modules, in the order the built-in default shows them. */
