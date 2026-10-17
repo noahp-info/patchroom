@@ -2639,6 +2639,9 @@ version = "0.0.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "core-graphics",
+ "objc2",
+ "objc2-app-kit",
  "patchroom-bridge",
  "patchroom-claude",
  "patchroom-core",
@@ -2648,6 +2651,7 @@ dependencies = [
  "patchroom-search",
  "patchroom-sounds",
  "patchroom-store",
+ "png 0.17.16",
  "serde",
  "serde_json",
  "tauri",

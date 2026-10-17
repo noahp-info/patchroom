@@ -32,3 +32,12 @@ opt-level = 2
 lto = "thin"
 codegen-units = 1
 strip = true
+# Window capture encodes PNGs in the debug app; keep it fast enough to time.
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.crc32fast]
+opt-level = 3

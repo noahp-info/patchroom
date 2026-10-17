@@ -117,6 +117,8 @@ export interface Prefs {
   links: { open: LinkTarget };
   /** Pin each claude.ai artifact once when it appears. */
   artifacts: { autoPin: boolean };
+  /** First-time hints already shown (ids). */
+  hints: { seen: string[] };
 }
 
 export type LinkTarget = 'patchroom' | 'browser';
@@ -162,6 +164,7 @@ export const DEFAULT_PREFS: Prefs = {
   sidebarWidth: 264,
   links: { open: 'patchroom' },
   artifacts: { autoPin: true },
+  hints: { seen: [] },
 };
 
 /** A stored gain, clamped to 0 to 1.5. Anything that is not a finite number is dropped. */
@@ -225,6 +228,12 @@ export function normalizePrefs(raw: unknown): Prefs {
       open: isRecord(r.links) && r.links.open === 'browser' ? 'browser' : 'patchroom',
     },
     artifacts: { autoPin: !(isRecord(r.artifacts) && r.artifacts.autoPin === false) },
+    hints: {
+      seen:
+        isRecord(r.hints) && Array.isArray(r.hints.seen)
+          ? r.hints.seen.filter((x): x is string => typeof x === 'string')
+          : [],
+    },
     sound: {
       ...d.sound,
       ...(sound as Partial<Prefs['sound']>),

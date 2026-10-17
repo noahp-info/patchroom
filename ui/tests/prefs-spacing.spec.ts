@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { openPrefs, tab } from './prefs-helpers';
+import { ringFindings } from './qa';
 
 /*
  * Spacing rule (DESIGN.md): a control row and the hint text next to it are at least one group
@@ -61,4 +62,31 @@ test('no control row sits closer than the group gap to the hint text beside it',
     tight.push(...found.map((f) => `${t}: ${f}`));
   }
   expect(tight).toEqual([]);
+});
+
+/*
+ * Ring rule (DESIGN.md): an outline, ring, border or highlight box keeps `--ring-pad` (8px)
+ * between itself and its content, and two outlined siblings sit at least `--ring-gap` (6px)
+ * apart. Checked on every Settings tab, with rows changed from the default so their rings show.
+ */
+test('outlined boxes keep ring padding and never touch each other', async ({ page }) => {
+  await openPrefs(page);
+  const tokens = await page.locator('.pr-app').evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return [cs.getPropertyValue('--ring-pad'), cs.getPropertyValue('--ring-gap')].map((v) =>
+      parseFloat(v),
+    );
+  });
+  expect(tokens).toEqual([8, 6]);
+  const found: string[] = [];
+  for (const t of TABS) {
+    await tab(page, t);
+    if (t === 'Sounds') {
+      // Every row changes at once: stacked rings must not touch.
+      await page.getByRole('button', { name: 'Use Lab Glass for every event' }).click();
+      await expect(page.locator('.mixrow[data-changed]').nth(1)).toBeVisible();
+    }
+    found.push(...(await ringFindings(page, '.prefs__main')).map((f) => `${t}: ${f}`));
+  }
+  expect(found).toEqual([]);
 });

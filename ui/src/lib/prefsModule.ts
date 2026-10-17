@@ -22,12 +22,24 @@ export interface ThemeRuntime {
   style: CSSProperties;
 }
 
+/** Settings sections a caller can open on. */
+export type PrefsTabId =
+  | 'themes'
+  | 'terminal'
+  | 'statusbar'
+  | 'notifications'
+  | 'sounds'
+  | 'dnd'
+  | 'hooks'
+  | 'links'
+  | 'accounts';
+
 /** What `<PrefsPane>` takes from the workspace. */
 export interface PrefsPaneProps {
   onClose(): void;
   dms?: { id: string; name: string }[];
   /** Section to open first. */
-  initialTab?: 'terminal' | 'sounds';
+  initialTab?: PrefsTabId;
   /** Open this DM's sound settings. */
   targetDm?: string;
 }

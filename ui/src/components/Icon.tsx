@@ -42,6 +42,13 @@ const PATHS: Record<string, ReactNode> = {
   ),
   lock: <path d="M4.5 7.5h7v5.5h-7zM6 7.5V5.5a2 2 0 0 1 4 0v2" />,
   resume: <path d="M3.5 8a4.5 4.5 0 1 0 1.4-3.3M3 2.5v3h3" />,
+  ext: <path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M11.5 9.5v4h-9v-9h4" />,
+  shot: <path d="M2.5 5.5v-3h3M10.5 2.5h3v3M13.5 10.5v3h-3M5.5 13.5h-3v-3M6 8h4M8 6v4" />,
+  more: <path d="M3.5 8h.01M8 8h.01M12.5 8h.01" strokeWidth="2.4" />,
+  comment: <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2zM5 6h6M5 8h4" />,
+  user: (
+    <path d="M8 2.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM3 13.5c.5-2.5 2.5-4 5-4s4.5 1.5 5 4" />
+  ),
 };
 
 /** 16px stroke icon using the theme's `svg.i` rule. */

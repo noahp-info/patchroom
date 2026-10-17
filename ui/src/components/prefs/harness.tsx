@@ -5,6 +5,7 @@ import '../../styles.css';
 import { PrefsPane } from './index.ts';
 import { createMockPrefsApi, type HookDetect } from './ipc.ts';
 import { setPrefsApi } from './store.ts';
+import type { TabId } from './PrefsPane.tsx';
 import { decideSound } from '../../sound/decide.ts';
 import { effectiveGain, playSound, soundLog } from '../../sound/index.ts';
 import { GENERATED, notesPeak } from '../../sound/pack.ts';
@@ -92,7 +93,7 @@ function Shell() {
         <PrefsPane
           dms={DMS}
           onClose={() => setOpen(false)}
-          initialTab={q.get('tab') === 'sounds' ? 'sounds' : undefined}
+          initialTab={(q.get('tab') as TabId | null) ?? undefined}
         />
       )}
     </div>

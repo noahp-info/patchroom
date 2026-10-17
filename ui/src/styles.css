@@ -88,8 +88,10 @@ body {
    path gives way first, then the name and the folder name. Status and tools never shrink. */
 /* Free space splits name : meta as 1 : 2 from zero, so the folder keeps pace with a long
    name; the name never grows past its own text, so short names leave no gap. */
+/* The name wins room before the path: it takes its own width first (up to 28ch) and only
+   shrinks once the folder path is down to its floor. */
 .pr-app .ch h2 {
-  flex: 1 1 0;
+  flex: 0 1 auto;
   max-width: max-content;
   min-width: 48px; /* glyph + gap + a couple of letters; short names leave no dead space */
   overflow: hidden;
@@ -112,8 +114,8 @@ body {
 /* .meta floor = the longest status ("Needs you: permission", 600 weight, 134px measured)
    + the cwd floor (60) + one 10px gap, rounded up. Pixels: Figtree's ch is wide. */
 .pr-app .ch .meta {
-  flex: 2 1 0;
-  min-width: 208px;
+  flex: 1 1 0;
+  min-width: min-content;
 }
 .ch .meta > .ch__cwd {
   gap: 0;
@@ -3040,7 +3042,8 @@ body.dragging * {
 .sbe__list,
 .sbe__tray {
   margin: 0;
-  padding: 0;
+  /* Ring rule: half the pad here, half on each row, so content clears the frame. */
+  padding: calc(var(--ring-pad) / 2) 0;
   list-style: none;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
@@ -3061,7 +3064,7 @@ body.dragging * {
   align-items: center;
   gap: 8px;
   min-height: 30px;
-  padding: 2px 6px;
+  padding: calc(var(--ring-pad) / 2) var(--ring-pad);
 }
 .sbe__row + .sbe__row {
   border-top: 1px solid var(--line);
@@ -3384,7 +3387,37 @@ body.dragging .sbe__grip {
 
 /* The in-app link viewer: a right-hand pane. The page is a native webview over .viewer__page. */
 .pr-app.shell[data-viewer='open'] {
-  grid-template-columns: var(--side-w) minmax(360px, 1fr) var(--viewer-w, clamp(420px, 44vw, 960px));
+  /* The pane gives way before the conversation drops under 320px, so nothing spills sideways. */
+  grid-template-columns:
+    var(--side-w) minmax(320px, 1fr)
+    minmax(0, var(--viewer-w, clamp(320px, 44vw, 960px)));
+}
+/* A narrow conversation (side pane open, small window) collapses its header from the edges:
+   the section picker and parent path go first, then the folder, then the status text. The
+   sidebar keeps the section move (right-click a session) and the presence mark. */
+.pr-app .conv {
+  container: conv / inline-size;
+}
+@container conv (max-width: 560px) {
+  .pr-app .ch .tools .sel,
+  .ch .meta span.ch__cwd-dir {
+    display: none;
+  }
+}
+@container conv (max-width: 440px) {
+  .pr-app .ch .meta > .ch__cwd {
+    display: none;
+  }
+}
+@container conv (max-width: 380px) {
+  .pr-app .ch .meta > .ch__status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 .viewer {
   grid-row: 2;

@@ -380,7 +380,20 @@ pub struct Prefs {
     pub links: Links,
     /// Artifact handling.
     pub artifacts: Artifacts,
+    /// First-time hints already shown.
+    pub hints: Hints,
 }
+
+/// First-time hints (DESIGN.md, First-time hints). Each id shows once, ever.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Hints {
+    /// Ids of hints the user has seen (shown, dismissed or acted on).
+    pub seen: Vec<String>,
+}
+
+/// Most hint ids kept. Older ids beyond this are dropped first.
+pub const MAX_HINTS: usize = 64;
 
 /// Artifact preferences.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -449,6 +462,7 @@ impl Default for Prefs {
             status_bar: StatusBar::default(),
             links: Links::default(),
             artifacts: Artifacts::default(),
+            hints: Hints::default(),
         }
     }
 }
@@ -610,6 +624,20 @@ impl Prefs {
                     return Err(PrefsError("bad pack id in a DM sound".into()));
                 }
             }
+        }
+        for id in &self.hints.seen {
+            if id.is_empty()
+                || id.len() > 64
+                || !id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+            {
+                return Err(PrefsError(format!("bad hint id {id:?}")));
+            }
+        }
+        if self.hints.seen.len() > MAX_HINTS {
+            let drop = self.hints.seen.len() - MAX_HINTS;
+            self.hints.seen.drain(..drop);
         }
         if !self.sound.volume.is_finite() {
             return Err(PrefsError("volume must be a number".into()));
@@ -940,6 +968,33 @@ mod tests {
         assert!(Prefs::default()
             .patched(&json!({"links": {"open": "ftp"}}))
             .is_err());
+    }
+
+    #[test]
+    fn hints_remember_what_was_seen_and_refuse_odd_ids() {
+        assert!(Prefs::from_stored(r#"{"themeId":"x"}"#)
+            .hints
+            .seen
+            .is_empty());
+        let p = Prefs::default()
+            .patched(&json!({"hints": {"seen": ["links.browser"]}}))
+            .unwrap();
+        assert_eq!(p.hints.seen, vec!["links.browser".to_owned()]);
+        assert_eq!(
+            Prefs::from_stored(&serde_json::to_string(&p).unwrap()).hints,
+            p.hints
+        );
+        for bad in ["", "has space", "<x>"] {
+            assert!(Prefs::default()
+                .patched(&json!({"hints": {"seen": [bad]}}))
+                .is_err());
+        }
+        let many: Vec<String> = (0..MAX_HINTS + 5).map(|i| format!("h{i}")).collect();
+        let p = Prefs::default()
+            .patched(&json!({"hints": {"seen": many}}))
+            .unwrap();
+        assert_eq!(p.hints.seen.len(), MAX_HINTS);
+        assert_eq!(p.hints.seen[0], "h5");
     }
 
     #[test]

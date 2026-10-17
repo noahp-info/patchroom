@@ -147,6 +147,14 @@ export interface IpcEvents {
   /** The app menu's Settings item (Cmd+,). */
   'menu:settings': Record<string, never>;
   'viewer:title': { title: string };
+  /** The viewer page's selection, handed back after `viewerSelection` (never unasked). */
+  'viewer:selection': { text: string; url: string };
+  /** A claude.ai page in the viewer showed the user signed in or out. Never from cookies. */
+  'viewer:account': { service: 'claude.ai'; signedIn: boolean; url: string };
+  /** Edit > Comment on Selection (Cmd+Shift+M). Fires even while the viewer has focus. */
+  'menu:comment': Record<string, never> | null;
+  /** Edit > Screenshot to Steer (Cmd+Shift+2). */
+  'menu:screenshot': Record<string, never> | null;
 }
 
 export interface TerminalWaitEvent extends TerminalWait {
@@ -218,6 +226,21 @@ export interface Ipc {
   viewerPlace(rect: ViewerRect): Promise<void>;
   viewerHide(): Promise<void>;
   viewerGo(action: 'back' | 'forward' | 'reload'): Promise<void>;
+  /** A PNG data URL of the viewer's pixels, so an overlay can hide the native view without a blank pane. */
+  viewerSnapshot(rect: ViewerRect): Promise<string | null>;
+  /** Show the viewer again over `rect`, on the page it had. */
+  viewerReveal(rect: ViewerRect): Promise<void>;
+  /** Ask the viewer page for its selection; it arrives as `viewer:selection`. False: no viewer. */
+  viewerSelection(): Promise<boolean>;
+  /** Scroll the viewer page to `text`. */
+  viewerFind(text: string): Promise<void>;
+  /** Sign out of claude.ai in the viewer: `cleared` its own storage, or ran claude.ai's `logout`. */
+  viewerSignOut(): Promise<'cleared' | 'logout'>;
+  /** Capture Patchroom's own window for screenshot-to-steer. `width`/`height` in CSS px. */
+  shotBegin(): Promise<{ dataUrl: string; width: number; height: number }>;
+  /** Crop the capture to `rect`, save it like a pasted image and return its path. */
+  shotCommit(id: string, rect: ViewerRect): Promise<{ path: string; dataUrl: string }>;
+  shotCancel(): Promise<void>;
   /**
    * The user confirmed "End it there": stop the other copy (only while it is idle) and resume
    * the session here. Rejects with the reason when it refuses or the copy does not close.
@@ -586,6 +609,8 @@ export interface Prefs {
   links?: { open: 'patchroom' | 'browser' };
   /** Pin claude.ai artifacts automatically (once each; an unpin sticks). Absent: on. */
   artifacts?: { autoPin: boolean };
+  /** First-time hints already shown. Absent: none. */
+  hints?: { seen: string[] };
 }
 
 /** Ids of the status strip modules, in the order the built-in default shows them. */

@@ -157,6 +157,14 @@ export function createTauriIpc(): Ipc {
     viewerPlace: (rect) => invoke('viewer_place', { rect }),
     viewerHide: () => invoke('viewer_hide'),
     viewerGo: (action) => invoke('viewer_go', { action }),
+    viewerSnapshot: (rect) => invoke('viewer_snapshot', { rect }),
+    viewerReveal: (rect) => invoke('viewer_reveal', { rect }),
+    viewerSelection: () => invoke('viewer_selection'),
+    viewerFind: (text) => invoke('viewer_find', { text }),
+    viewerSignOut: () => invoke('viewer_sign_out'),
+    shotBegin: () => invoke('shot_begin'),
+    shotCommit: (id, rect) => invoke('shot_commit', { id, rect }),
+    shotCancel: () => invoke('shot_cancel'),
     sessionMirrorEnd: async (id, cols, rows) =>
       wireSession(await invoke<WireSession>('session_mirror_end', { id, cols, rows })),
     pasteImage: (id, data, mediaType) =>

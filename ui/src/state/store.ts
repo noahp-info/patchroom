@@ -17,7 +17,7 @@ import type {
 import { isInteractiveSlash, slashName, SLASH_QUIET_MS } from '../lib/slashCommands';
 import { visibleOrder } from '../lib/groups';
 import { isCheckFailed } from '../ipc/types';
-import { bindTerminalStyle } from '../lib/prefsModule';
+import { bindTerminalStyle, type PrefsTabId } from '../lib/prefsModule';
 import { toMillis } from '../lib/time';
 import { noteArtifacts } from '../lib/artifacts';
 import { bytesToBase64, utf8ToBase64 } from '../lib/base64';
@@ -41,7 +41,7 @@ export interface OpenThread {
 
 /** The overlay views over the conversation. */
 export interface PrefsTarget {
-  tab: 'terminal' | 'sounds';
+  tab: PrefsTabId;
   dmId?: string;
 }
 

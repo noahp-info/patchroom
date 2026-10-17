@@ -698,3 +698,33 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Settings > Accounts: one framed row per site. Ring rule: --ring-pad inside the frame. */
+.acct {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--group-gap);
+  margin: var(--group-gap) 0;
+  padding: var(--ring-pad) calc(var(--ring-pad) + 4px);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.acct__who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.acct__state {
+  color: var(--muted);
+  font-size: 12px;
+}
+.acct[data-state='true'] .acct__state {
+  color: var(--ok);
+}
+.acct__btns {
+  display: flex;
+  gap: 8px;
+}
