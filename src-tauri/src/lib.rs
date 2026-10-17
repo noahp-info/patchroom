@@ -324,6 +324,8 @@ macro_rules! app_handler {
             steer::viewer_selection,
             steer::viewer_find,
             steer::viewer_sign_out,
+            commands::theme_import_detect,
+            commands::theme_import_file,
             e2e::e2e_report,
             e2e::e2e_pgrep,
             e2e::e2e_sleep,
@@ -420,6 +422,8 @@ macro_rules! app_handler {
             steer::viewer_selection,
             steer::viewer_find,
             steer::viewer_sign_out,
+            commands::theme_import_detect,
+            commands::theme_import_file,
         ]
     };
 }

@@ -58,6 +58,8 @@ interface PrefsApi {
   soundCustomRemove: Ipc['soundCustomRemove'];
   soundClaudeProfiles: Ipc['soundClaudeProfiles'];
   soundImportClaudeProfile: Ipc['soundImportClaudeProfile'];
+  themeImportDetect: Ipc['themeImportDetect'];
+  themeImportFile: Ipc['themeImportFile'];
   onPrefsChanged(handler: (prefs: Prefs) => void): Promise<() => void>;
 }
 
@@ -113,6 +115,8 @@ export function installPrefsApi(ipc: Ipc): void {
     soundCustomRemove: (id) => ipc.soundCustomRemove(id),
     soundClaudeProfiles: () => ipc.soundClaudeProfiles(),
     soundImportClaudeProfile: (id) => ipc.soundImportClaudeProfile(id),
+    themeImportDetect: () => ipc.themeImportDetect(),
+    themeImportFile: () => ipc.themeImportFile(),
     onPrefsChanged: (handler) => ipc.on('prefs:changed', (e) => handler(e.prefs)),
   });
 }

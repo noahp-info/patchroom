@@ -382,6 +382,9 @@ pub struct Prefs {
     pub artifacts: Artifacts,
     /// First-time hints already shown.
     pub hints: Hints,
+    /// Terminal palettes imported from other tools (read once, stored here). The shape belongs
+    /// to the UI's theme import.
+    pub term_palettes: Vec<Value>,
 }
 
 /// First-time hints (DESIGN.md, First-time hints). Each id shows once, ever.
@@ -463,6 +466,7 @@ impl Default for Prefs {
             links: Links::default(),
             artifacts: Artifacts::default(),
             hints: Hints::default(),
+            term_palettes: Vec::new(),
         }
     }
 }

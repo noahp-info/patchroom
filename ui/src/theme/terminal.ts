@@ -3,6 +3,7 @@ import { TERM_DEFAULT_KEY, type Prefs } from '../components/prefs/ipc.ts';
 import { getPrefsStore } from '../components/prefs/store.ts';
 import { activeTheme, allThemes, currentMode } from './active.ts';
 import { ensureContrast, mix } from './color.ts';
+import { IMPORT_PREFIX, paletteToXterm } from './themeImport.ts';
 import type { Theme, ThemeMode } from './types.ts';
 
 export interface TermPalette {
@@ -160,7 +161,11 @@ export function termStyleFor(prefs: Prefs, dmId: string | null): ResolvedTermSty
   if (paletteId === 'iterm') theme = ITERM;
   else if (paletteId === 'solarized-dark') theme = SOLARIZED_DARK;
   else if (paletteId === 'solarized-light') theme = SOLARIZED_LIGHT;
-  else if (paletteId.startsWith('theme:')) {
+  else if (paletteId.startsWith(IMPORT_PREFIX)) {
+    const id = paletteId.slice(IMPORT_PREFIX.length);
+    const found = (prefs.termPalettes ?? []).find((p) => p.id === id);
+    theme = found ? paletteToXterm(found.palette) : paletteFromTheme(activeTheme(prefs), mode);
+  } else if (paletteId.startsWith('theme:')) {
     const id = paletteId.slice(6);
     theme = paletteFromTheme(allThemes(prefs).find((t) => t.id === id) ?? activeTheme(prefs), mode);
   } else theme = paletteFromTheme(activeTheme(prefs), mode);

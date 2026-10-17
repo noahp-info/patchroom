@@ -5,6 +5,14 @@ import {
   type MockSoundOptions,
 } from '../../ipc/mockSounds.ts';
 import type { BaseId, Theme } from '../../theme/types.ts';
+import {
+  cleanStoredPalettes,
+  MOCK_IMPORT_FILE,
+  MOCK_IMPORT_SOURCES,
+  type ImportEntry,
+  type ImportSource,
+  type StoredTermPalette,
+} from '../../theme/themeImport.ts';
 
 /** Patchroom events that can make a sound or a notification. */
 export const SOUND_EVENTS = [
@@ -119,6 +127,8 @@ export interface Prefs {
   artifacts: { autoPin: boolean };
   /** First-time hints already shown (ids). */
   hints: { seen: string[] };
+  /** Terminal palettes imported from other tools. Palette id `import:<id>`. */
+  termPalettes: StoredTermPalette[];
 }
 
 export type LinkTarget = 'patchroom' | 'browser';
@@ -165,6 +175,7 @@ export const DEFAULT_PREFS: Prefs = {
   links: { open: 'patchroom' },
   artifacts: { autoPin: true },
   hints: { seen: [] },
+  termPalettes: [],
 };
 
 /** A stored gain, clamped to 0 to 1.5. Anything that is not a finite number is dropped. */
@@ -234,6 +245,7 @@ export function normalizePrefs(raw: unknown): Prefs {
           ? r.hints.seen.filter((x): x is string => typeof x === 'string')
           : [],
     },
+    termPalettes: cleanStoredPalettes(r.termPalettes),
     sound: {
       ...d.sound,
       ...(sound as Partial<Prefs['sound']>),
@@ -278,6 +290,10 @@ export interface PrefsApi {
   soundCustomRemove(id: string): Promise<void>;
   soundClaudeProfiles(): Promise<ClaudeProfile[]>;
   soundImportClaudeProfile(id: string): Promise<{ packId: string }>;
+  /** Theme import: the looks the user's installed tools offer. Read only. */
+  themeImportDetect(): Promise<ImportSource[]>;
+  /** Theme import: pick an `.itermcolors` file and read it. Null when cancelled. */
+  themeImportFile(): Promise<ImportEntry | null>;
   /** Subscribe to `prefs:changed`. */
   onPrefsChanged(handler: (prefs: Prefs) => void): Promise<() => void>;
 }
@@ -342,6 +358,14 @@ export function createTauriPrefsApi(): PrefsApi {
       const { invoke } = await import('@tauri-apps/api/core');
       return invoke<{ packId: string }>('sound_import_claude_profile', { id });
     },
+    async themeImportDetect() {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<ImportSource[]>('theme_import_detect');
+    },
+    async themeImportFile() {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<ImportEntry | null>('theme_import_file');
+    },
     async onPrefsChanged(handler) {
       const { listen } = await import('@tauri-apps/api/event');
       return listen<{ prefs: Prefs }>('prefs:changed', (e) =>
@@ -357,6 +381,8 @@ export interface MockPrefsOptions {
   detected?: HookDetect[];
   /** Persist in localStorage under this key so a reload keeps the prefs. */
   storageKey?: string;
+  /** What `theme_import_detect` lists. Default: an iTerm2, Ghostty and Terminal fixture. */
+  importSources?: ImportSource[];
 }
 
 /** In-memory backend for the browser and Playwright. Records `notify_test` calls. */
@@ -402,6 +428,9 @@ export function createMockPrefsApi(opts: MockPrefsOptions = {}): PrefsApi & {
       return Promise.resolve(prefs);
     },
     soundHooksDetect: () => Promise.resolve(opts.detected ?? []),
+    themeImportDetect: () =>
+      Promise.resolve(structuredClone(opts.importSources ?? MOCK_IMPORT_SOURCES)),
+    themeImportFile: () => Promise.resolve(structuredClone(MOCK_IMPORT_FILE)),
     notifyTest() {
       api.notifyTests += 1;
       return Promise.resolve();

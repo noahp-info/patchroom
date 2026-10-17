@@ -2651,6 +2651,7 @@ dependencies = [
  "patchroom-search",
  "patchroom-sounds",
  "patchroom-store",
+ "patchroom-themeimport",
  "png 0.17.16",
  "serde",
  "serde_json",
@@ -2765,6 +2766,16 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "ulid",
+]
+
+[[package]]
+name = "patchroom-themeimport"
+version = "0.0.1"
+dependencies = [
+ "plist",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

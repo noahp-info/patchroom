@@ -26,6 +26,7 @@ import type {
   Unlisten,
 } from './types';
 import { createMockSoundBackend, type MockSoundControl } from './mockSounds';
+import { MOCK_IMPORT_FILE, MOCK_IMPORT_SOURCES } from '../theme/themeImport.ts';
 
 /** A 1x1 PNG, for the mock's snapshots and screenshots. */
 const MOCK_PNG =
@@ -1113,6 +1114,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     soundCustomRemove: soundBackend.soundCustomRemove,
     soundClaudeProfiles: soundBackend.soundClaudeProfiles,
     soundImportClaudeProfile: soundBackend.soundImportClaudeProfile,
+    themeImportDetect: () => Promise.resolve(structuredClone(MOCK_IMPORT_SOURCES)),
+    themeImportFile: () => Promise.resolve(structuredClone(MOCK_IMPORT_FILE)),
     async soundHooksDetect() {
       return control.soundHooks.map((h) => ({ ...h }));
     },

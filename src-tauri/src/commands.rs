@@ -808,3 +808,40 @@ pub async fn viewer_hide(app: AppHandle) -> CmdResult<()> {
 pub async fn viewer_go(app: AppHandle, action: String) -> CmdResult<()> {
     crate::viewer::go(&app, &action)
 }
+
+// ---- Theme import (read only) ----
+
+/// `theme_import_detect {} -> [{id, name, entries, skipped}]`: the terminal looks the user's
+/// installed tools offer (iTerm2, Ghostty, Warp, VS Code, Cursor, Terminal.app). Read only:
+/// nothing here writes, renames or locks any of their files.
+#[tauri::command]
+pub async fn theme_import_detect() -> CmdResult<Vec<patchroom_themeimport::Source>> {
+    tauri::async_runtime::spawn_blocking(|| {
+        patchroom_themeimport::Env::real()
+            .map_or_else(Vec::new, |env| patchroom_themeimport::detect(&env))
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// `theme_import_file {} -> Imported | null`: pick an `.itermcolors` file and read it, read
+/// only. Null when the picker is cancelled.
+#[tauri::command]
+pub async fn theme_import_file(
+    app: AppHandle,
+) -> CmdResult<Option<patchroom_themeimport::Imported>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(path) = app
+            .dialog()
+            .file()
+            .add_filter("iTerm2 color presets", &["itermcolors"])
+            .blocking_pick_file()
+            .and_then(|f| f.into_path().ok())
+        else {
+            return Ok(None);
+        };
+        patchroom_themeimport::read_itermcolors(&path).map(Some)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

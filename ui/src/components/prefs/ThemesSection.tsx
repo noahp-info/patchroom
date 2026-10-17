@@ -10,6 +10,7 @@ import { CablePresets } from './CablePresets.tsx';
 import { CustomEditor, uniqueThemeId } from './CustomEditor.tsx';
 import { getPrefsStore, usePrefs } from './store.ts';
 import { ThemePreview } from './ThemePreview.tsx';
+import { ImportFrom } from './ImportFrom.tsx';
 
 /** The bases that ship a full look. Stubs stay out of the picker. */
 const STYLES = BASES.filter((b) => b.status === 'ready');
@@ -261,6 +262,8 @@ export function ThemesSection() {
           </p>
         )}
       </fieldset>
+
+      <ImportFrom target="theme" />
     </div>
   );
 }

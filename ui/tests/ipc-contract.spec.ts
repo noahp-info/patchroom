@@ -95,6 +95,8 @@ const SOUND_COMMANDS = [
   'sound_import_file',
   'sound_packs',
 ];
+/** Theme import from other tools: read only. */
+const THEME_IMPORT_COMMANDS = ['theme_import_detect', 'theme_import_file'];
 /** Declared by the backend beyond the fixed contract; the UI uses them when present. */
 const P2_OPTIONAL = ['session_view', 'session_focus'];
 const P1B_EVENTS = ['pty:exit', 'pty:output', 'session:status', 'session:title'];
@@ -291,6 +293,8 @@ async function recordTauriCalls(): Promise<Call[]> {
   await ipc.soundCustomRemove('01J');
   await ipc.soundClaudeProfiles();
   await ipc.soundImportClaudeProfile('retro');
+  await ipc.themeImportDetect();
+  await ipc.themeImportFile();
   await ipc.sessionFocus('i');
   await ipc.sectionCreateFromFolder('/w', 'atlas');
   await ipc.sectionSetArchiveDays('s', 30);
@@ -339,8 +343,11 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     for (const c of SIDEBAR_COMMANDS) expect(declared, `sidebar command ${c}`).toContain(c);
     for (const c of LINK_COMMANDS) expect(declared, `link command ${c}`).toContain(c);
     for (const c of SOUND_COMMANDS) expect(declared, `sound command ${c}`).toContain(c);
+    for (const c of THEME_IMPORT_COMMANDS)
+      expect(declared, `theme import command ${c}`).toContain(c);
     const known = new Set([
       ...SOUND_COMMANDS,
+      ...THEME_IMPORT_COMMANDS,
       ...P1B_COMMANDS,
       ...SIDEBAR_COMMANDS,
       ...LINK_COMMANDS,
