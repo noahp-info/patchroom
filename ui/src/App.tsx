@@ -7,6 +7,8 @@ import { QuickSwitcher } from './components/QuickSwitcher';
 import { SearchPanel } from './components/SearchPanel';
 import { SelectionMenu } from './components/SelectionMenu';
 import { ViewerPane } from './components/ViewerPane';
+import { Hint } from './components/Hint';
+import { ShotOverlay } from './components/ShotOverlay';
 import { ChatView } from './components/chat/ChatView';
 import { useFullscreen } from './lib/fullscreen';
 import { Sidebar } from './components/Sidebar';
@@ -48,6 +50,7 @@ export function App() {
   const state = useAppState(store);
   const { base, theme, mode, style: themeStyle } = useThemeRuntime();
   const [newDmOpen, setNewDmOpen] = useState(false);
+  const [chatSlot, setChatSlot] = useState<HTMLElement | null>(null);
   // A folder section id when the dialog was opened from that section.
   const [newDmSection, setNewDmSection] = useState<string | null>(null);
   const dmSection = state.sections.find((x) => x.id === newDmSection && x.folder) ?? null;
@@ -101,6 +104,11 @@ export function App() {
           act(() => store.setPanel('search', snap.activeId ? 'dm' : 'all'));
         } else if (key === ',' && !e.shiftKey) {
           act(() => store.setPanel(snap.panel === 'prefs' ? null : 'prefs'));
+        } else if (e.shiftKey && (e.code === 'Digit2' || key === '2' || key === '@')) {
+          // The app menu owns these in the real app; this covers the page (and the browser).
+          act(() => void store.startShot());
+        } else if (e.shiftKey && key === 'm') {
+          act(() => store.commentOnSelection());
         }
       } else if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey) {
         if (e.key === 'ArrowDown') act(() => store.jumpUnread(1));
@@ -234,6 +242,8 @@ export function App() {
               </span>
             </div>
             <div className="tools">
+              {/* Chat tools (find, pins, reactions) portal in here from the chat view. */}
+              <div className="ch__chat" data-slot="chat-tools" ref={setChatSlot} />
               <div className="viewseg" role="group" aria-label="View" data-testid="view-toggle">
                 <button
                   type="button"
@@ -298,6 +308,8 @@ export function App() {
             </button>
           </div>
         )}
+
+        {state.hint && <Hint store={store} id={state.hint} />}
 
         {state.checkFailed && (
           <div
@@ -409,6 +421,7 @@ export function App() {
               thread={state.thread}
               prefs={state.prefs}
               marks={state.marks}
+              toolSlot={chatSlot}
             />
           )}
         </div>
@@ -416,7 +429,13 @@ export function App() {
         {state.panel === 'saved' && <SavedView state={state} store={store} />}
       </main>
 
-      {state.viewer && <ViewerPane store={store} viewer={state.viewer} />}
+      {state.viewer && (
+        <ViewerPane
+          store={store}
+          viewer={state.viewer}
+          covered={state.overlays > 0 || state.shot !== null}
+        />
+      )}
 
       <PatchCable
         remeasureKey={`${base}/${theme.id}/${mode}/${state.activeId ?? ''}/${state.panel ?? ''}`}
@@ -426,6 +445,7 @@ export function App() {
       {state.panel === 'switcher' && <QuickSwitcher state={state} store={store} />}
       {state.panel === 'search' && <SearchPanel state={state} store={store} />}
       <SelectionMenu store={store} activeId={state.panel ? null : state.activeId} />
+      {state.shot && <ShotOverlay store={store} shot={state.shot} />}
 
       <NewDmDialog
         open={newDmOpen}

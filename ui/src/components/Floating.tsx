@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useOverlay } from '../state/overlays';
 
 export type Anchor = { x: number; y: number } | DOMRect;
 
@@ -29,6 +30,8 @@ export function appRoot(): HTMLElement {
 
 /** A fixed-position surface that stays inside the window and closes on Esc or an outside press. */
 export function Floating({ anchor, onClose, children, className, label, role }: FloatingProps) {
+  // Menus and pickers draw over the side pane: the native viewer steps aside while one is open.
+  useOverlay(`floating:${label}`);
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const close = useRef(onClose);

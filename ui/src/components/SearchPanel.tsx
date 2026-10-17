@@ -3,6 +3,7 @@ import type { SearchHit } from '../ipc';
 import { formatStamp, toMillis } from '../lib/time';
 import type { AppState, AppStore } from '../state/store';
 import { Icon } from './Icon';
+import { useOverlay } from '../state/overlays';
 
 /** The snippet with its match ranges wrapped in <mark>. */
 export function Snippet({ text, ranges }: { text: string; ranges: [number, number][] }): ReactNode {
@@ -22,6 +23,7 @@ const DEBOUNCE_MS = 120;
 
 /** Cmd+F (this DM) and Cmd+Shift+F (every DM): full-text search over transcripts. */
 export function SearchPanel({ state, store }: { state: AppState; store: AppStore }) {
+  useOverlay('search');
   const active = state.sessions.find((s) => s.id === state.activeId) ?? null;
   const [scope, setScope] = useState<'dm' | 'all'>(active ? state.searchScope : 'all');
   const [q, setQ] = useState(state.searchSeed);

@@ -24,6 +24,10 @@ import { bytesToBase64, utf8ToBase64 } from '../lib/base64';
 import { shellQuotePath } from '../lib/keys';
 import { SessionTerminal, type SessionTerminalOptions } from '../lib/sessionTerminal';
 import { ChatModel } from './chat';
+import { overlayCount, subscribeOverlays } from './overlays';
+import { bindAccountActions, setClaudeAccount } from '../lib/accounts';
+import { cleanQuote, textFragmentLink } from '../lib/comments';
+import { HINTS, type HintId } from '../lib/hints';
 
 export type ViewMode = 'chat' | 'terminal';
 
@@ -77,12 +81,28 @@ export interface ViewerState {
   title: string;
   loading: boolean;
   req: number;
+  /** The page is claude.ai's sign-in screen (or an artifact asking to sign in). */
+  signIn?: boolean;
+}
+
+/** A screenshot in progress: the frozen window picture the box is drawn on. */
+export interface ShotState {
+  /** Empty in a browser (no capture): the overlay draws over the live page. */
+  dataUrl: string;
+  width: number;
+  height: number;
 }
 
 export interface AppState {
   ready: boolean;
   /** The in-app link viewer, or null when closed. */
   viewer: ViewerState | null;
+  /** Open overlays (Settings, Cmd+K, menus, pickers, dialogs): the native viewer steps aside. */
+  overlays: number;
+  /** The first-time hint on screen, at most one. */
+  hint: HintId | null;
+  /** Screenshot-to-steer in progress. */
+  shot: ShotState | null;
   sessions: SessionInfo[];
   /** Stored sidebar sections, in position order. DMs with no section sit in the default group. */
   sections: SectionInfo[];
@@ -217,6 +237,9 @@ export class AppStore {
     prefs: null,
     panel: null,
     viewer: null,
+    overlays: 0,
+    hint: null,
+    shot: null,
     prefsTarget: null,
     searchScope: 'all',
     searchSeed: '',
@@ -558,12 +581,19 @@ export class AppStore {
       this.ipc.on('menu:settings', () => this.setPanel('prefs')),
       this.ipc.on('viewer:changed', (e) => {
         const v = this.state.viewer;
-        if (v) this.set({ viewer: { ...v, url: e.url, loading: e.loading } });
+        if (!v) return;
+        // A new page clears the sign-in note until that page says otherwise.
+        const signIn = e.url === v.url ? v.signIn : false;
+        this.set({ viewer: { ...v, url: e.url, loading: e.loading, signIn } });
       }),
       this.ipc.on('viewer:title', (e) => {
         const v = this.state.viewer;
         if (v) this.set({ viewer: { ...v, title: e.title } });
       }),
+      this.ipc.on('viewer:selection', (e) => this.addViewerComment(e.text, e.url)),
+      this.ipc.on('viewer:account', (e) => this.noteAccount(e.signedIn, e.url)),
+      this.ipc.on('menu:comment', () => this.commentOnSelection()),
+      this.ipc.on('menu:screenshot', () => void this.startShot()),
       this.ipc.on('session:working', (e) =>
         this.patchSession(e.id, {
           working: e.verb ? { verb: e.verb, detail: e.detail ?? '' } : null,
@@ -591,6 +621,16 @@ export class AppStore {
     ]);
     window.addEventListener('pagehide', this.flushAllDrafts);
     document.addEventListener('visibilitychange', this.onVisibility);
+    window.addEventListener('focus', this.onWindowFocus);
+    this.unlisten.push(
+      subscribeOverlays(() => {
+        if (this.state.overlays !== overlayCount()) this.set({ overlays: overlayCount() });
+      }),
+    );
+    bindAccountActions({
+      signIn: () => this.signInClaude(),
+      signOut: () => this.signOutClaude(),
+    });
     try {
       const [sessions, sections] = await Promise.all([
         this.ipc.sessionList(),
@@ -628,6 +668,7 @@ export class AppStore {
     this.flushAllDrafts();
     window.removeEventListener('pagehide', this.flushAllDrafts);
     document.removeEventListener('visibilitychange', this.onVisibility);
+    window.removeEventListener('focus', this.onWindowFocus);
     for (const off of this.unlisten) off();
     this.unlisten = [];
     for (const off of this.unbindTerms.values()) off();
@@ -1083,9 +1124,167 @@ export class AppStore {
     this.set({ error: message });
   }
 
-  /** The viewer's page, in the system browser. */
+  /** The viewer's page, in the system browser. The first time, a hint waits for the return. */
   viewerToBrowser(): void {
-    if (this.state.viewer) this.openLink(this.state.viewer.url, { target: 'browser' });
+    if (!this.state.viewer) return;
+    this.openLink(this.state.viewer.url, { target: 'browser' });
+    this.pendingHint = 'links.browser';
+  }
+
+  // ---- first-time hints ----------------------------------------------------------------
+
+  /** A hint waiting for the window to get focus back (the person went to another app). */
+  private pendingHint: HintId | null = null;
+
+  private onWindowFocus = (): void => {
+    const id = this.pendingHint;
+    this.pendingHint = null;
+    if (id) this.showHint(id);
+  };
+
+  /** Show a first-time hint unless it was seen before or another hint is up. */
+  showHint(id: HintId): void {
+    if (this.state.hint) return;
+    const seen = this.state.prefs?.hints?.seen ?? [];
+    if (seen.includes(id)) return;
+    this.set({ hint: id });
+    // Shown counts as seen: a hint never comes back, even if the app quits now.
+    void this.setPrefs({ hints: { seen: [...seen, id] } });
+  }
+
+  dismissHint(): void {
+    if (this.state.hint) this.set({ hint: null });
+  }
+
+  /** The hint's button: open the setting it names. */
+  hintAction(): void {
+    const id = this.state.hint;
+    if (!id) return;
+    this.set({ hint: null });
+    this.openPrefs({ tab: HINTS[id].action.tab });
+  }
+
+  // ---- steering: the side-pane selection, screenshots ----------------------------------
+
+  /**
+   * Edit > Comment on Selection (Cmd+Shift+M). A selection in Patchroom's own page comments
+   * at once; otherwise the side-pane page is asked for its selection.
+   */
+  commentOnSelection(): void {
+    const id = this.state.activeId;
+    if (!id) {
+      this.set({ error: 'Open a session first: comments go into its message box.' });
+      return;
+    }
+    const sel = window.getSelection();
+    const text = sel && !sel.isCollapsed ? sel.toString() : '';
+    if (text.trim()) {
+      this.chat(id).addComment(null, cleanQuote(text));
+      sel?.removeAllRanges();
+      return;
+    }
+    if (!this.state.viewer) return;
+    void this.ipc.viewerSelection().catch((err: unknown) => {
+      this.set({ error: `Could not read the selection: ${String(err)}` });
+    });
+  }
+
+  /** The side-pane page handed back its selection: a draft comment line, never a send. */
+  addViewerComment(text: string, url: string): void {
+    const id = this.state.activeId;
+    const quote = cleanQuote(text);
+    if (!id || !quote) return;
+    this.chat(id).addLinkedComment(quote, textFragmentLink(url, quote));
+  }
+
+  /** A comment line's jump back: show the page in the pane, scrolled to the quote. */
+  revealComment(link: string, quote: string): void {
+    const v = this.state.viewer;
+    const page = link.split('#')[0];
+    if (v && v.url.split('#')[0] === page) {
+      void this.ipc.viewerFind(quote.split('\n')[0].replace(/…$/, '')).catch(() => undefined);
+      return;
+    }
+    this.openLink(link, { target: 'patchroom' });
+  }
+
+  /** Cmd+Shift+2 or the toolbar button: freeze the window and let the person drag a box. */
+  private shotStarting = false;
+
+  async startShot(): Promise<void> {
+    // The menu accelerator and the page's own key handler can both fire: start once.
+    if (this.state.shot || this.shotStarting) return;
+    if (!this.state.activeId) {
+      this.set({ error: 'Open a session first: the screenshot goes into its message box.' });
+      return;
+    }
+    this.shotStarting = true;
+    try {
+      const shot = await this.ipc.shotBegin();
+      this.set({ shot });
+    } catch (err) {
+      this.set({ error: `Could not take the screenshot: ${String(err)}` });
+    } finally {
+      this.shotStarting = false;
+    }
+  }
+
+  cancelShot(): void {
+    if (!this.state.shot) return;
+    this.set({ shot: null });
+    void this.ipc.shotCancel().catch(() => undefined);
+  }
+
+  /** Check: save the crop and add it with its note as one composer line. Nothing sends. */
+  async commitShot(
+    rect: { x: number; y: number; width: number; height: number },
+    note: string,
+  ): Promise<void> {
+    const id = this.state.activeId;
+    this.set({ shot: null });
+    if (!id) return;
+    const t0 = performance.now();
+    try {
+      const { path, dataUrl } = await this.ipc.shotCommit(id, rect);
+      this.chat(id).addShot({ path, src: dataUrl }, note.trim());
+      (window as unknown as { __PR_SHOT_MS__?: number }).__PR_SHOT_MS__ = performance.now() - t0;
+    } catch (err) {
+      this.set({ error: `Could not save the screenshot: ${String(err)}` });
+    }
+  }
+
+  // ---- claude.ai in the side pane --------------------------------------------------------
+
+  /** Where to go back to after signing in from an artifact's sign-in screen. */
+  private returnAfterSignIn: string | null = null;
+
+  private noteAccount(signedIn: boolean, url: string): void {
+    setClaudeAccount(signedIn);
+    const v = this.state.viewer;
+    if (v && v.url.split('#')[0] === url.split('#')[0]) {
+      this.set({ viewer: { ...v, signIn: !signedIn } });
+    }
+    if (signedIn && this.returnAfterSignIn) {
+      const back = this.returnAfterSignIn;
+      this.returnAfterSignIn = null;
+      this.openLink(back, { target: 'patchroom' });
+    }
+  }
+
+  /** Sign in to claude.ai in the side pane. From an artifact, come back to it afterwards. */
+  signInClaude(): void {
+    const v = this.state.viewer;
+    if (v && !/^https:\/\/claude\.ai\/login/.test(v.url)) this.returnAfterSignIn = v.url;
+    this.closePanel();
+    this.openLink('https://claude.ai/login', { target: 'patchroom' });
+  }
+
+  async signOutClaude(): Promise<string> {
+    const how = await this.ipc.viewerSignOut();
+    setClaudeAccount(false);
+    return how === 'cleared'
+      ? 'Signed out. The side pane forgot every sign-in it held, claude.ai included.'
+      : 'Signed out of claude.ai.';
   }
 
   closeViewer(): void {

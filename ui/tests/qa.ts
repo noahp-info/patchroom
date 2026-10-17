@@ -61,7 +61,7 @@ export async function overlapFindings(page: Page, opts: OverlapOptions = {}): Pr
           const cs = getComputedStyle(e);
           if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0)
             return true;
-          if (e.classList.contains('sr-only')) return true;
+          if (e.classList.contains('sr-only') || cs.clipPath === 'inset(50%)') return true;
           if (e.hasAttribute('inert')) return false;
         }
         return false;
@@ -142,6 +142,9 @@ export async function overlapFindings(page: Page, opts: OverlapOptions = {}): Pr
           if (a.layer !== b.layer || a.sticky !== b.sticky) continue;
           if (a.el === b.el) continue;
           if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+          // A field's own drawn text (a placeholder laid over it in the same wrapper).
+          const field = (x: Ink) => x.el.matches('input, textarea, select');
+          if ((field(a) || field(b)) && a.el.parentElement === b.el.parentElement) continue;
           const w = Math.min(a.box.right, b.box.right) - Math.max(a.box.left, b.box.left);
           const h = Math.min(a.box.bottom, b.box.bottom) - Math.max(a.box.top, b.box.top);
           if (w > SLACK && h > SLACK) out.push(`overlap: ${a.label} x ${b.label}`);

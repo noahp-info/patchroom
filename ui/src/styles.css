@@ -115,7 +115,7 @@ body {
    + the cwd floor (60) + one 10px gap, rounded up. Pixels: Figtree's ch is wide. */
 .pr-app .ch .meta {
   flex: 1 1 0;
-  min-width: min-content;
+  min-width: 208px;
 }
 .ch .meta > .ch__cwd {
   gap: 0;
@@ -321,7 +321,7 @@ body {
 }
 .sel select {
   height: 28px;
-  max-width: 140px;
+  max-width: 130px;
   text-overflow: ellipsis;
   padding: 0 6px;
   border: 1px solid var(--box-line);
@@ -2002,21 +2002,23 @@ body.dragging * {
 
 /* conversation: toolbar, hover bar, marks, hit highlight */
 /* A floating toolbar: it never takes height from the log, so scroll positions stay put. */
+/* The chat tools sit in the conversation header, in flow: they never cover the log. */
+.pr-app .ch__chat {
+  display: contents;
+}
 .pr-app .chatbar {
-  position: absolute;
-  top: 8px;
-  right: 22px;
-  z-index: 4;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface);
+  min-width: 0;
   color: var(--muted);
   font-size: 12.5px;
-  box-shadow: 0 2px 8px -2px rgb(0 0 0 / 0.25);
+}
+.pr-app .ch .tools .chatbar__btn {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  border-color: transparent;
 }
 .pr-app .chatbar__btn {
   display: inline-flex;
@@ -2052,6 +2054,10 @@ body.dragging * {
   font-weight: 700;
 }
 .pr-app .chatbar__filter {
+  min-width: 0;
+  max-width: 22ch;
+  overflow: hidden;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2082,20 +2088,57 @@ body.dragging * {
   box-shadow: inset 3px 0 0 var(--mark-line);
   border-radius: var(--r-sm);
 }
+/* The hover bar never covers content (DESIGN.md, Overlap rule). A named row reserves room at
+   the right end of its name line and the bar sits there; a continuation row gets one button in
+   its empty avatar gutter. */
+.pr-app .msg.head > .who {
+  min-height: 26px;
+  padding-right: 120px;
+  align-items: center;
+}
 .pr-app .hbar {
   position: absolute;
-  top: -8px;
-  /* Clear of the floating toolbar, which owns the top-right corner of the log. */
-  right: 134px;
+  top: 0;
+  right: 0;
   z-index: 2;
   display: flex;
   gap: 1px;
-  padding: 2px;
+  padding: 1px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   background: var(--surface);
   opacity: 0;
   pointer-events: none;
+}
+.pr-app .hbar--gutter {
+  right: auto;
+  left: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.pr-app .hbar-pop {
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+}
+.pr-app .hbar-pop button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pr-app .hbar-pop button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+.pr-app .hbar-pop button[aria-pressed='true'] {
+  color: var(--accent-text);
 }
 .pr-app .msg:hover > .hbar,
 .pr-app .msg:focus-within > .hbar,
@@ -2106,8 +2149,8 @@ body.dragging * {
 .pr-app .hbar button {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 22px;
   border: 0;
   border-radius: 4px;
   background: transparent;
@@ -3218,7 +3261,7 @@ body.dragging .sbe__grip {
 .chat .clines {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--ring-gap);
   margin: 0;
   padding: 8px 8px 0;
   list-style: none;
@@ -3228,7 +3271,7 @@ body.dragging .sbe__grip {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  padding: 2px 2px 2px 0;
+  padding: 3px calc(var(--ring-pad) / 2) 3px 0;
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--mark) 35%, transparent);
   box-shadow: inset 3px 0 0 var(--mark-line);
@@ -3260,6 +3303,19 @@ body.dragging .sbe__grip {
   white-space: nowrap;
   text-overflow: ellipsis;
   font-style: italic;
+}
+.chat .cline__shot {
+  flex: none;
+  display: block;
+  margin-left: 10px;
+  line-height: 0;
+}
+.chat .cline__shot img {
+  max-width: 96px;
+  max-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  object-fit: cover;
 }
 .chat .cline__quote svg.i {
   flex: none;
@@ -3390,7 +3446,7 @@ body.dragging .sbe__grip {
   /* The pane gives way before the conversation drops under 320px, so nothing spills sideways. */
   grid-template-columns:
     var(--side-w) minmax(320px, 1fr)
-    minmax(0, var(--viewer-w, clamp(320px, 44vw, 960px)));
+    minmax(0, var(--viewer-w, clamp(300px, 38vw, 960px)));
 }
 /* A narrow conversation (side pane open, small window) collapses its header from the edges:
    the section picker and parent path go first, then the folder, then the status text. The
@@ -3408,8 +3464,14 @@ body.dragging .sbe__grip {
   .pr-app .ch .meta > .ch__cwd {
     display: none;
   }
+  .pr-app .ch .meta {
+    min-width: min-content;
+  }
 }
 @container conv (max-width: 380px) {
+  .pr-app .ch .meta {
+    min-width: 0;
+  }
   .pr-app .ch .meta > .ch__status {
     position: absolute;
     width: 1px;
@@ -3462,6 +3524,9 @@ body.dragging .sbe__grip {
 }
 .viewer__ext {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--box-line);
@@ -3485,6 +3550,53 @@ body.dragging .sbe__grip {
 .viewer__wait {
   color: var(--muted);
   --fs: 13px;
+}
+/* The frozen page, shown while an overlay is open and the native view is hidden. */
+.viewer__still {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+}
+/* claude.ai asked to sign in: one line above the page, in flow, so it covers nothing. */
+.viewer__signin {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px var(--group-gap);
+  padding: var(--ring-pad) 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  --fs: 13px;
+}
+.viewer__signin span {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+/* A narrow pane folds its bar from the middle: the button keeps only its icon, then forward
+   and reload step out. Back, the title, comment and close always stay. */
+.viewer {
+  container: viewer / inline-size;
+}
+@container viewer (max-width: 460px) {
+  .viewer__ext {
+    padding: 0 7px;
+  }
+  .viewer__ext-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@container viewer (max-width: 340px) {
+  .viewer__bar .viewer__opt {
+    display: none;
+  }
 }
 
 /* An artifact pin: a tag and an Open button next to the unpin control. */
@@ -3511,4 +3623,125 @@ body.dragging .sbe__grip {
 }
 .markrow__open:hover {
   background: var(--hover);
+}
+
+/* Screenshot-to-steer: the frozen window, the box, and the note pinned to it. */
+.shot {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  background: rgb(0 0 0 / 0.18);
+}
+.shot[data-step='note'] {
+  cursor: default;
+}
+.shot__frame {
+  position: absolute;
+  inset: 0 auto auto 0;
+  pointer-events: none;
+  filter: brightness(0.82);
+}
+.shot__help {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: var(--ring-pad) 14px;
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.08),
+    0 12px 28px -12px rgb(0 0 0 / 0.4);
+  --fs: 13px;
+  pointer-events: none;
+}
+.shot__box {
+  position: absolute;
+  outline: 2px solid var(--link);
+  outline-offset: 0;
+  /* The box shows the live pixels: everything outside it dims. */
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.28);
+  pointer-events: none;
+}
+.shot__note {
+  position: absolute;
+  display: grid;
+  gap: var(--ring-pad);
+  padding: var(--ring-pad);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.08),
+    0 18px 40px -18px rgb(0 0 0 / 0.45);
+  cursor: default;
+}
+.shot__input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: 6px 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  --fs: 13px;
+  resize: none;
+}
+.shot__input:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+.shot__btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.shot__hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  --fs: 11px;
+}
+.shot__ok {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.shot__ok:hover {
+  background: var(--accent-hover);
+}
+
+/* First-time hint: one line in flow under the header. Never covers or blocks anything. */
+.hint {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px var(--group-gap);
+  margin: var(--ring-pad) var(--gutter) 0;
+  padding: var(--ring-pad) var(--ring-pad) var(--ring-pad) 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  --fs: 13px;
+}
+.hint > svg.i {
+  flex: none;
+  color: var(--accent-text);
+}
+.hint__text {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.hint__btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
 }

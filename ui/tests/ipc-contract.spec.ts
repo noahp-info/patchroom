@@ -97,6 +97,17 @@ const SOUND_COMMANDS = [
 ];
 /** Theme import from other tools: read only. */
 const THEME_IMPORT_COMMANDS = ['theme_import_detect', 'theme_import_file'];
+/** Steering: screenshot-to-steer, the frozen viewer, the viewer selection, claude.ai sign-out. */
+const STEER_COMMANDS = [
+  'shot_begin',
+  'shot_cancel',
+  'shot_commit',
+  'viewer_find',
+  'viewer_reveal',
+  'viewer_selection',
+  'viewer_sign_out',
+  'viewer_snapshot',
+];
 /** Declared by the backend beyond the fixed contract; the UI uses them when present. */
 const P2_OPTIONAL = ['session_view', 'session_focus'];
 const P1B_EVENTS = ['pty:exit', 'pty:output', 'session:status', 'session:title'];
@@ -144,7 +155,10 @@ const camel = (s: string) => s.replace(/_([a-z])/g, (_, c: string) => c.toUpperC
 
 /** `#[tauri::command] pub async fn name(params...)` blocks from commands.rs. */
 function declaredCommands(): Map<string, Declared> {
-  const src = readFileSync(join(RUST, 'commands.rs'), 'utf8');
+  // Steering commands live in their own module (src-tauri/src/steer.rs).
+  const src = ['commands.rs', 'steer.rs']
+    .map((f) => readFileSync(join(RUST, f), 'utf8'))
+    .join('\n');
   const out = new Map<string, Declared>();
   const rx = /#\[tauri::command\]\s*pub\s+async\s+fn\s+(\w+)\s*\(([\s\S]*?)\)\s*->/g;
   for (const m of src.matchAll(rx)) {
@@ -317,6 +331,14 @@ async function recordTauriCalls(): Promise<Call[]> {
   await ipc.viewerPlace(rect);
   await ipc.viewerGo('back');
   await ipc.viewerHide();
+  await ipc.viewerSnapshot(rect);
+  await ipc.viewerReveal(rect);
+  await ipc.viewerSelection();
+  await ipc.viewerFind('quote');
+  await ipc.viewerSignOut();
+  await ipc.shotBegin();
+  await ipc.shotCommit('i', rect);
+  await ipc.shotCancel();
   const ended = await ipc.sessionMirrorEnd('i', 80, 24);
   expect(ended).toMatchObject({ id: 'd', mirror: null });
   void listens;
@@ -345,9 +367,11 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     for (const c of SOUND_COMMANDS) expect(declared, `sound command ${c}`).toContain(c);
     for (const c of THEME_IMPORT_COMMANDS)
       expect(declared, `theme import command ${c}`).toContain(c);
+    for (const c of STEER_COMMANDS) expect(declared, `steer command ${c}`).toContain(c);
     const known = new Set([
       ...SOUND_COMMANDS,
       ...THEME_IMPORT_COMMANDS,
+      ...STEER_COMMANDS,
       ...P1B_COMMANDS,
       ...SIDEBAR_COMMANDS,
       ...LINK_COMMANDS,

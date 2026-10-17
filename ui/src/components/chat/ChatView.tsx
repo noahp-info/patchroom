@@ -7,6 +7,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import { createPortal } from 'react-dom';
 import type { ChatItem, MarkInfo, PromptAnswer, SessionInfo, SubagentItem } from '../../ipc';
 import { emojiName } from '../../lib/emoji';
 import { itemText } from '../../lib/itemText';
@@ -31,6 +32,8 @@ export interface ChatViewProps {
   session: SessionInfo;
   /** Chat is the visible view. Hidden, it stays mounted so scroll and drafts survive. */
   visible: boolean;
+  /** Where the chat tools (find, pins, reactions) render: a slot in the conversation header. */
+  toolSlot?: HTMLElement | null;
   unread: number;
   thread: ReturnType<AppStore['getSnapshot']>['thread'];
   /** The global prefs, for the status strip layout. */
@@ -91,23 +94,25 @@ function ChatBar({
         <span className="sr-only">Pins</span>
         {pins.length > 0 && <span className="ct">{pins.length}</span>}
       </button>
-      <button
-        type="button"
-        className="chatbar__btn"
-        aria-haspopup="dialog"
-        aria-expanded={open?.kind === 'react'}
-        aria-pressed={filter !== null}
-        disabled={reactions.size === 0 && filter === null}
-        title="Show messages with a reaction"
-        data-testid="reaction-filter-btn"
-        onClick={(e) => setOpen({ kind: 'react', rect: e.currentTarget.getBoundingClientRect() })}
-      >
-        <Icon name="smile" />
-        <span className="sr-only">Reactions</span>
-      </button>
+      {/* No reactions yet: nothing to filter, so the button waits until there is. */}
+      {(reactions.size > 0 || filter !== null) && (
+        <button
+          type="button"
+          className="chatbar__btn"
+          aria-haspopup="dialog"
+          aria-expanded={open?.kind === 'react'}
+          aria-pressed={filter !== null}
+          title="Show messages with a reaction"
+          data-testid="reaction-filter-btn"
+          onClick={(e) => setOpen({ kind: 'react', rect: e.currentTarget.getBoundingClientRect() })}
+        >
+          <Icon name="smile" />
+          <span className="sr-only">Reactions</span>
+        </button>
+      )}
       {filter && (
         <span className="chatbar__filter" data-testid="reaction-filter-on">
-          Showing messages with <b>:{emojiName(filter)}:</b> {filter}
+          Showing <b>:{emojiName(filter)}:</b> {filter}
           <button type="button" onClick={() => onFilter(null)} aria-label="Clear reaction filter">
             <Icon name="x" />
           </button>
@@ -179,7 +184,16 @@ function ChatBar({
 }
 
 /** The chat for one DM: log, composer and status strip, plus the subagent thread pane. */
-export function ChatView({ store, session, visible, unread, thread, prefs, marks }: ChatViewProps) {
+export function ChatView({
+  store,
+  session,
+  visible,
+  unread,
+  thread,
+  prefs,
+  marks,
+  toolSlot = null,
+}: ChatViewProps) {
   const id = session.id;
   const model = store.chat(id);
   const snap = useSyncExternalStore(model.subscribe, model.getSnapshot);
@@ -326,14 +340,20 @@ export function ChatView({ store, session, visible, unread, thread, prefs, marks
         inert={!visible}
       >
         <div className="chat-main">
-          <ChatBar
-            store={store}
-            session={session}
-            pins={pins}
-            reactions={reactionCounts}
-            filter={filter}
-            onFilter={(e) => model.setReactionFilter(e)}
-          />
+          {/* The tools live in the conversation header, in flow, so they never cover the log. */}
+          {visible &&
+            toolSlot &&
+            createPortal(
+              <ChatBar
+                store={store}
+                session={session}
+                pins={pins}
+                reactions={reactionCounts}
+                filter={filter}
+                onFilter={(e) => model.setReactionFilter(e)}
+              />,
+              toolSlot,
+            )}
           {mirrored && (
             <MirrorBanner
               session={session}
@@ -413,6 +433,8 @@ export function ChatView({ store, session, visible, unread, thread, prefs, marks
             }
             blocked={dialog}
             notice={snap.notice}
+            onShot={() => void store.startShot()}
+            onRevealLink={(link, quote) => store.revealComment(link, quote)}
             onBlocked={() =>
               model.setNotice({
                 kind: 'blocked',

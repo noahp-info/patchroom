@@ -167,6 +167,21 @@ export class ChatModel {
     this.commit();
     return id;
   }
+  /** A comment on a quote from the side-pane page; `link` jumps back to it. */
+  addLinkedComment(quote: string, link: string): string {
+    const id = this.addComment(null, quote);
+    this.comments = this.comments.map((c) => (c.id === id ? { ...c, link } : c));
+    this.commit();
+    return id;
+  }
+  /** A screenshot line: the saved crop and the steer typed in the note box. */
+  addShot(image: { path: string; src: string }, note: string): string {
+    this.commentSeq += 1;
+    const id = `c${this.commentSeq}`;
+    this.comments = [...this.comments, { id, key: null, quote: '', text: note, image }];
+    this.commit();
+    return id;
+  }
   updateComment(id: string, text: string): void {
     this.comments = this.comments.map((c) => (c.id === id ? { ...c, text } : c));
     this.commit();

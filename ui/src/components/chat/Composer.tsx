@@ -36,6 +36,10 @@ export interface ComposerProps {
   onStop(): void;
   /** Save a pasted image; its absolute path lands in the draft. */
   onPasteImage(file: Blob): Promise<void> | void;
+  /** Start screenshot-to-steer (Cmd+Shift+2). */
+  onShot?(): void;
+  /** A side-pane comment line's jump back. */
+  onRevealLink?(link: string, quote: string): void;
 }
 
 const MAX_HEIGHT = 200;
@@ -55,6 +59,8 @@ export function Composer({
   onBlocked,
   onStop,
   onPasteImage,
+  onShot,
+  onRevealLink,
 }: ComposerProps) {
   const [text, setText] = useState(model.draft);
   const { comments } = useSyncExternalStore(model.subscribe, model.getSnapshot);
@@ -184,6 +190,7 @@ export function Composer({
                 key={c.id}
                 comment={c}
                 model={model}
+                onReveal={onRevealLink}
                 onSubmit={send}
                 onDone={() => box.current?.focus()}
               />
@@ -233,6 +240,19 @@ export function Composer({
           >
             <Icon name="slash" />
           </button>
+          {onShot && (
+            <button
+              type="button"
+              className="ib"
+              aria-label="Screenshot to steer"
+              title={'Point at part of the window with a screenshot (\u2318\u21E72)'}
+              data-testid="shot-btn"
+              disabled={off}
+              onClick={onShot}
+            >
+              <Icon name="shot" />
+            </button>
+          )}
           <span className="hint-keys" data-testid="composer-hint">
             {readOnly
               ? 'Read-only. Sending is off.'
@@ -271,11 +291,13 @@ export function Composer({
 function CommentLine({
   comment,
   model,
+  onReveal,
   onSubmit,
   onDone,
 }: {
   comment: DraftComment;
   model: ChatModel;
+  onReveal?(link: string, quote: string): void;
   onSubmit(): void;
   onDone(): void;
 }) {
@@ -283,25 +305,53 @@ function CommentLine({
   useEffect(() => {
     if (model.claimCommentFocus(comment.id)) input.current?.focus();
   }, [model, comment.id]);
-  const first = comment.quote.split('\n')[0];
+  const first = comment.image ? 'Screenshot' : comment.quote.split('\n')[0];
+  const link = comment.link;
+  const key = comment.key;
+  const jump = key
+    ? () => model.jumpTo(key)
+    : link && onReveal
+      ? () => onReveal(link, comment.quote)
+      : null;
   return (
-    <li className="cline" data-testid="comment-line" data-key={comment.key ?? undefined}>
-      <button
-        type="button"
-        className="cline__quote"
-        title={comment.key ? `${comment.quote}\n\nClick to jump to it` : comment.quote}
-        disabled={!comment.key}
-        onClick={() => comment.key && model.jumpTo(comment.key)}
-      >
-        <Icon name="chat" />
-        <span>{first}</span>
-      </button>
+    <li
+      className="cline"
+      data-testid="comment-line"
+      data-key={comment.key ?? undefined}
+      data-kind={comment.image ? 'shot' : link ? 'page' : 'chat'}
+    >
+      {comment.image ? (
+        <a
+          className="cline__shot"
+          href={comment.image.src}
+          title={`${comment.image.path}\n\nSent as this file's path`}
+          onClick={(e) => e.preventDefault()}
+        >
+          <img src={comment.image.src} alt="Screenshot to send" data-testid="comment-shot" />
+        </a>
+      ) : (
+        <button
+          type="button"
+          className="cline__quote"
+          title={
+            jump
+              ? `${comment.quote}\n\nClick to jump to it${link ? ' in the side pane' : ''}`
+              : comment.quote
+          }
+          disabled={!jump}
+          data-link={link}
+          onClick={() => jump?.()}
+        >
+          <Icon name={link ? 'ext' : 'chat'} />
+          <span>{first}</span>
+        </button>
+      )}
       <input
         ref={input}
         className="cline__note"
         value={comment.text}
-        placeholder="Add a comment"
-        aria-label={`Comment on "${first.slice(0, 40)}"`}
+        placeholder={comment.image ? 'Add a note' : 'Add a comment'}
+        aria-label={comment.image ? 'Screenshot note' : `Comment on "${first.slice(0, 40)}"`}
         data-testid="comment-note"
         onFocus={() => model.setActiveComment(comment.id)}
         onBlur={() => model.setActiveComment(null)}
