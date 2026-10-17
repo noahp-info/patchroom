@@ -46,6 +46,8 @@ spacing:
   row-height: "28px"
   log-gap: "14px"
   group-gap: "12px"
+  ring-pad: "8px"
+  ring-gap: "6px"
 components:
   sidebar-row:
     height: "28px"
@@ -124,6 +126,15 @@ Every token becomes `--<token>` on the `.pr-app` root. Values are `#rgb`, `#rgba
 ### Slack theme-string import
 
 `importSlackTheme(string, { base, id, name })` also derives `cable` from `active_item` and `plug` from a lightened `text_color`. It maps Slack's ten colors, in order, to tokens: `column_bg` to `side-bg` and `panel`, `menu_bg_hover` to `side-hover` (when `hover_item` is absent), `active_item` to `side-active`, `accent`, `link` and `ws-mark`, `active_item_text` to `side-active-fg`, `hover_item` to `side-hover`, `text_color` to `side-fg`, `active_presence` to `busy`, `mention_badge` to `needs`, `top_nav_bg` to `tb-bg`, `top_nav_text` to `tb-fg`. The first four are required. The base theme supplies every other token. Failing text pairs are repaired to AA, foreground only.
+
+### Import from another app
+
+Settings > Themes and Settings > Terminal each have "Import from...". It lists only tools found on the Mac and reads their files, never writes them: iTerm2 profiles and picked `.itermcolors` files, Ghostty's config and named themes, Warp themes, VS Code and Cursor (the active color theme and `terminal.*` customizations) and Terminal.app profiles. A profile whose colors cannot be decoded is listed as skipped, with the reason.
+
+- An import carries the terminal palette (16 ANSI colors, background, foreground, cursor, selection), the font and the size. Palettes are kept in prefs (`termPalettes`, palette id `import:<id>`).
+- The app theme is derived from the background and the accent through `importSlackTheme`, then repaired to AA like any theme.
+- Every import previews before Apply, and Apply has one Undo.
+- Parsing lives in `crates/patchroom-themeimport`. Its tests use fixture files under a temp HOME, never the real user's files.
 
 ### Cable presets
 
@@ -224,6 +235,8 @@ A three-column grid under a 40px title bar: sidebar, conversation, artifact pane
 | `--gutter` | 18px | 18px (40px log left) | Pane side padding |
 | `--log-gap` | 14px | 14px | Space between messages |
 | `--group-gap` | 12px | 12px | Least space between a control row and adjacent text |
+| `--ring-pad` | 8px | 8px | Least space between an outline, ring, border or highlight box and its content |
+| `--ring-gap` | 6px | 6px | Least space between two outlined siblings |
 | `--text` | 14px | 14px | Base text size |
 | `--f-ui` `--f-mono` `--f-label` `--f-prose` | per base | per base | Type stacks |
 | `--app-w` `--app-h` `--app-radius` | 100% / 100% / 12px | Patch Bay sets 6px radius | Host sizing |
@@ -238,6 +251,44 @@ A control row and the text next to it always get the group gap, `--group-gap` (1
 - Use `var(--group-gap)`, never a literal. In Settings, a shared rule in `prefs.css` applies it to every `.pf-hint` next to a control.
 - Inside one card (a pack card, a theme card), the card's own internal gap applies. The card as a whole still keeps the group gap from text outside it.
 - `ui/tests/prefs-spacing.spec.ts` measures every Settings tab and fails on any pair closer than the token.
+
+### Ring rule (hard)
+
+An outline, ring, border or highlight box never hugs what it holds, and two of them never touch.
+
+- Content keeps `--ring-pad` (8px) from the frame's inner edge on every side.
+- Outlined siblings sit at least `--ring-gap` (6px) apart. A stacked list sets `gap: var(--ring-gap)`.
+- In a list where some rows gain a ring (a changed sound row, a selected card), every row carries the ring room. A row that gains the ring never shifts.
+- Dense filled rows (the sidebar) keep `--ring-pad` inline. Their height comes from `--row-h`.
+- Single-line controls are exempt: buttons, fields, chips and segmented controls. Their own height sets the room.
+- Use the tokens, never literals. `ringFindings` in `ui/tests/qa.ts` checks Settings (`prefs-spacing.spec.ts`) and the sidebar, menus and pickers (`overlap-qa.spec.ts`).
+
+### Overlap rule (hard)
+
+Nothing draws over anything else unless it is an intentional layer.
+
+- Intentional layers: menus, pickers, popovers, dialogs, Settings, Cmd+K, search and the screenshot overlay. Everything else is in flow.
+- Hover bars and toolbars never cover content. A named message row reserves room at the right end of its name line for its bar. A continuation row gets one button in its empty avatar gutter, which opens the actions as a popover. The chat tools (find, pins, reactions) sit in the conversation header.
+- Text never clips without an ellipsis, and nothing scrolls the window sideways.
+- A narrow conversation collapses its header from the edges with container queries: the section picker and parent path go first, then the folder, then the status text. The session name wins room before the path. The side pane gives way before the conversation drops under 320px, and its bar folds Open in browser to an icon, then drops forward and reload.
+- `expectNoOverlap` (`ui/tests/qa.ts`) compares the boxes of every visible text line and control and fails on an intersection inside one layer. `ui/tests/overlap-qa.spec.ts` runs it on every main surface at the minimum window (880px), a narrow split with the pane open and 1440px, in light and dark.
+
+### The side pane and overlays
+
+The side-pane viewer is a native webview. It draws above all HTML, so no z-index can put a menu over it.
+
+- Every overlay registers while it is open (`useOverlay` in `ui/src/state/overlays.ts`). `Floating`, Settings, Cmd+K, search, the New session dialog and the screenshot overlay already do.
+- While any overlay is registered, the pane shows a frozen picture of the page (`viewer_snapshot`, the window's own pixels) and then hides the native view. The picture is painted first, so the pane never flashes blank. The last overlay to close shows the page again.
+- A new overlay registers too, and gets a step in `overlap-qa.spec.ts` with the pane open.
+
+### First-time hints
+
+Every feature ships with its first-use path designed.
+
+- One shared component: `Hint` (`ui/src/components/Hint.tsx`). Entries live in `ui/src/lib/hints.ts`. Seen ids live in prefs (`hints.seen`), so a hint shows once, ever.
+- At most one hint at a time. It sits in flow under the conversation header, never covers or blocks anything, and has an X.
+- Every hint has a button that opens the setting it names.
+- First hint: the first time someone uses Open in browser, a hint waits for focus to come back to Patchroom. It says "Want links to always open in your browser? Change it in Settings > Links." Its button opens that section.
 
 ### Bases
 
@@ -272,6 +323,9 @@ Homeroom: 5px controls, 8px panels, 14px chips, 9px count badges, 8px avatars. P
 - **Composer**: chips that prefill (never send), a box with a queued comment, an input, attach, screenshot and slash buttons, Stop, Send.
 - **Status strip**: model, folder, context meter, cost, mode, PR, and a verb line.
 - **Artifact pane**: tabs, a sheet with a diff and gutters, and a note line.
+- **Side-pane viewer**: back, forward, reload, the page title, Comment on selection, Open in browser and close. A claude.ai sign-in screen adds one Sign in line above the page. Settings > Accounts is the one place to sign in to claude.ai, in the pane's own web storage, and to sign out.
+- **Screenshot-to-steer**: Cmd+Shift+2 or the composer's screenshot button freezes the window. Drag a box anywhere, side pane included. A note box pins under the box. Check adds the crop and the note as one composer line; X or Esc discards both.
+- **Comment lines**: a chat quote (click jumps to the row), a side-pane quote (click scrolls the pane to it through a `#:~:text=` link) or a screenshot thumbnail, each with its note. Nothing sends before Send.
 
 ## Preview and verification
 

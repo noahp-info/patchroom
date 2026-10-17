@@ -30,7 +30,7 @@ import { MOCK_IMPORT_FILE, MOCK_IMPORT_SOURCES } from '../theme/themeImport.ts';
 
 /** A 1x1 PNG, for the mock's snapshots and screenshots. */
 const MOCK_PNG =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGN49PTJfwAJAwOr4dAuwQAAAABJRU5ErkJggg==';
 
 /** Test and browser-dev handle, exposed as `window.__PR_MOCK__`. */
 
@@ -803,7 +803,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     },
     async viewerSnapshot() {
       control.viewer.push('snapshot');
-      // A flat 1x1 picture: the pane shows "something", which is all a test can check.
+      // A flat grey 1x1 picture: the pane shows a still, which is all a test can check.
       return MOCK_PNG;
     },
     async viewerReveal() {

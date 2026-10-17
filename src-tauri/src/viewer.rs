@@ -201,6 +201,11 @@ pub fn show(app: &AppHandle, url: &str, r: Rect) -> Result<(), String> {
         place(app, r)?;
         return w.show().map_err(|e| e.to_string());
     }
+    create(app, u, r)
+}
+
+/// Build the viewer webview over `r`, loading `u`.
+fn create(app: &AppHandle, u: Url, r: Rect) -> Result<(), String> {
     let win = app.get_window("main").ok_or("no main window")?;
     let (on_nav, on_load, on_title) = (app.clone(), app.clone(), app.clone());
     #[allow(unused_mut)]
@@ -339,10 +344,21 @@ pub fn find_text(app: &AppHandle, text: &str) -> Result<(), String> {
         return Ok(());
     };
     let lit = serde_json::to_string(text).map_err(|e| e.to_string())?;
-    w.eval(format!(
-        "(function(){{var t={lit};try{{window.getSelection().removeAllRanges();window.find(t,false,false,true);}}catch(e){{}}}})();"
-    ))
-    .map_err(|e| e.to_string())
+    w.eval(find_script(&lit)).map_err(|e| e.to_string())
+}
+
+/// Select the first text node holding `lit` (a JSON string literal) and scroll it into view.
+/// A tree walk, not `window.find`, so it also works while the window is in the background.
+#[must_use]
+pub fn find_script(lit: &str) -> String {
+    format!(
+        "(function(){{var t={lit};try{{var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);\
+         for(var n=w.nextNode();n;n=w.nextNode()){{var i=n.data.indexOf(t);if(i<0)continue;\
+         var r=document.createRange();r.setStart(n,i);r.setEnd(n,i+t.length);\
+         var s=window.getSelection();s.removeAllRanges();s.addRange(r);\
+         (n.parentElement||document.body).scrollIntoView({{block:'center'}});return;}}\
+         window.find(t,false,false,true);}}catch(e){{}}}})();"
+    )
 }
 
 /// Sign out of claude.ai in the viewer. With its own data store (macOS 14+) that store is
@@ -350,12 +366,26 @@ pub fn find_text(app: &AppHandle, text: &str) -> Result<(), String> {
 /// shared with the app, so only claude.ai's own sign-out page runs. Returns what happened.
 pub fn sign_out(app: &AppHandle) -> Result<&'static str, String> {
     let separate = shared(app).is_some_and(|s| s.store_id.is_some()) && custom_store_os();
-    let Some(w) = app.get_webview(LABEL) else {
-        if separate {
-            // No viewer yet: nothing is stored in its store either.
-            return Ok("cleared");
+    if app.get_webview(LABEL).is_none() {
+        if !separate {
+            return Err("open a claude.ai page in the pane first".into());
         }
-        return Err("open a claude.ai page in the pane first".into());
+        // Not opened this run, but its store persists: open it blank and hidden to clear it.
+        let blank = Url::parse("about:blank").map_err(|e| e.to_string())?;
+        create(
+            app,
+            blank,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+        )?;
+        hide(app)?;
+    }
+    let Some(w) = app.get_webview(LABEL) else {
+        return Err("the pane did not open".into());
     };
     if separate {
         w.clear_all_browsing_data().map_err(|e| e.to_string())?;

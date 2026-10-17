@@ -39,7 +39,7 @@ export function AccountsSection() {
               Sign in
             </button>
           )}
-          {acct.signedIn !== false && (
+          {acct.signedIn === true && (
             <button
               type="button"
               className="btn sec"

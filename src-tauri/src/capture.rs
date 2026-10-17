@@ -114,11 +114,9 @@ pub fn window_rgba(app: &tauri::AppHandle) -> Result<Frame, String> {
     use tauri::Manager;
 
     let win = app.get_window("main").ok_or("no main window")?;
-    let logical_w = win
-        .outer_size()
-        .map_err(|e| e.to_string())?
-        .to_logical::<f64>(win.scale_factor().map_err(|e| e.to_string())?)
-        .width;
+    // Device pixels per CSS pixel. The image can be smaller than the window (a window larger
+    // than its screen is cut at the screen edge), so the scale never comes from its width.
+    let device_scale = win.scale_factor().map_err(|e| e.to_string())?;
     let number = main_window_number(app)?;
     let id = u32::try_from(number).map_err(|_| "bad window number".to_owned())?;
     // CGRectNull: the window's own bounds.
@@ -146,9 +144,8 @@ pub fn window_rgba(app: &tauri::AppHandle) -> Result<Frame, String> {
         return Err("the window image is empty".into());
     }
     let rgba = bgra_to_rgba(bytes, w, h, stride);
-    #[allow(clippy::cast_precision_loss)]
-    let scale = if logical_w > 0.0 {
-        w as f64 / logical_w
+    let scale = if device_scale > 0.0 {
+        device_scale
     } else {
         1.0
     };
@@ -169,9 +166,24 @@ fn main_window_number(app: &tauri::AppHandle) -> Result<isize, String> {
     app.run_on_main_thread(move || {
         let n = MainThreadMarker::new().and_then(|mtm| {
             let ns = NSApplication::sharedApplication(mtm);
+            // Main or key when Patchroom is in front; otherwise (launched in the background,
+            // another app active) the largest visible window Patchroom owns.
             ns.mainWindow()
                 .or_else(|| ns.keyWindow())
                 .map(|w| w.windowNumber())
+                .or_else(|| {
+                    ns.windows()
+                        .iter()
+                        .filter(|w| w.isVisible() && w.windowNumber() > 0)
+                        .max_by(|a, b| {
+                            let area = |w: &objc2_app_kit::NSWindow| {
+                                let f = w.frame();
+                                f.size.width * f.size.height
+                            };
+                            area(a).total_cmp(&area(b))
+                        })
+                        .map(|w| w.windowNumber())
+                })
         });
         let _ = tx.send(n);
     })

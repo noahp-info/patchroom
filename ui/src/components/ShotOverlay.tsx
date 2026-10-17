@@ -148,7 +148,7 @@ export function ShotOverlay({ store, shot }: { store: AppStore; shot: ShotState 
             }}
           />
           <div className="shot__btns">
-            <span className="shot__hint">Enter adds it to your message. Nothing sends yet.</span>
+            <span className="shot__hint">Enter adds it. Nothing sends yet.</span>
             <button
               type="button"
               className="ib shot__x"

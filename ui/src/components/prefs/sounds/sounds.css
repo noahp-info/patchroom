@@ -102,7 +102,8 @@
   margin: 4px 0;
 }
 .mixsec {
-  scroll-margin-top: 0;
+  /* Scrolled into view, the section keeps the group gap under the dialog header. */
+  scroll-margin-top: var(--group-gap);
 }
 .mixsec__head {
   display: flex;

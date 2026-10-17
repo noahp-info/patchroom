@@ -126,7 +126,7 @@ function HoverBar({
   actions: RowActions;
   inGutter: boolean;
 }) {
-  const [open, setOpen] = useState<DOMRect | null>(null);
+  const [open, setOpen] = useState<{ x: number; y: number } | null>(null);
   if (!inGutter) {
     return (
       <div className="hbar" role="toolbar" aria-label="Message actions">
@@ -142,7 +142,11 @@ function HoverBar({
         title="Copy, react, pin or save"
         aria-haspopup="true"
         aria-expanded={open !== null}
-        onClick={(e) => setOpen(open ? null : e.currentTarget.getBoundingClientRect())}
+        onClick={(e) => {
+          // Opens beside the button, over its own row: the row being acted on.
+          const r = e.currentTarget.getBoundingClientRect();
+          setOpen(open ? null : { x: r.right + 4, y: r.top - 2 });
+        }}
       >
         <Icon name="more" />
       </button>

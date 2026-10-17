@@ -113,14 +113,17 @@ body {
 }
 /* .meta floor = the longest status ("Needs you: permission", 600 weight, 134px measured)
    + the cwd floor (60) + one 10px gap, rounded up. Pixels: Figtree's ch is wide. */
+/* .meta floor = the longest status ("Needs you: permission", 134px) + the cwd floor (52) +
+   one 10px gap. The parent path gives way first and the folder keeps a few letters, so the
+   session name keeps its room before the path does. */
 .pr-app .ch .meta {
   flex: 1 1 0;
-  min-width: 208px;
+  min-width: 204px;
 }
 .ch .meta > .ch__cwd {
   gap: 0;
   flex: 0 1 auto;
-  min-width: 60px; /* icon + about 5 letters of the folder name */
+  min-width: 52px; /* icon, the ellipsis of the cut path, and a few letters of the folder */
   overflow: hidden;
 }
 .ch__cwd svg.i {
@@ -153,6 +156,7 @@ body {
   flex: none;
 }
 .ch__status {
+  gap: 0;
   font-weight: 600;
   color: var(--fg);
 }
@@ -3269,9 +3273,9 @@ body.dragging .sbe__grip {
 .chat .cline {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  padding: 3px calc(var(--ring-pad) / 2) 3px 0;
+  padding: 4px var(--ring-pad) 4px 0;
   border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--mark) 35%, transparent);
   box-shadow: inset 3px 0 0 var(--mark-line);
@@ -3311,8 +3315,9 @@ body.dragging .sbe__grip {
   line-height: 0;
 }
 .chat .cline__shot img {
-  max-width: 96px;
-  max-height: 44px;
+  width: 64px;
+  height: 36px;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   object-fit: cover;
@@ -3461,7 +3466,8 @@ body.dragging .sbe__grip {
   }
 }
 @container conv (max-width: 440px) {
-  .pr-app .ch .meta > .ch__cwd {
+  .pr-app .ch .meta > .ch__cwd,
+  .pr-app .ch .ch__status-more {
     display: none;
   }
   .pr-app .ch .meta {
@@ -3709,6 +3715,10 @@ body.dragging .sbe__grip {
   color: var(--muted);
   --fs: 11px;
 }
+.shot__btns .ib {
+  width: 30px;
+  height: 30px;
+}
 .shot__ok {
   background: var(--accent);
   color: var(--accent-fg);
@@ -3744,4 +3754,12 @@ body.dragging .sbe__grip {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+
+/* Small icon buttons in steering surfaces keep a mouse-sized target. */
+.chat .cline .cline__x,
+.hint .ib,
+.pr-app .hbar--gutter button {
+  width: 26px;
+  height: 26px;
 }

@@ -238,7 +238,9 @@ export function App() {
               </span>
               <span className="ch__status" data-status={active.status} role="status">
                 {STATUS_TEXT[active.status]}
-                {active.status === 'waiting' && active.needs ? `: ${NEEDS_TEXT[active.needs]}` : ''}
+                {active.status === 'waiting' && active.needs && (
+                  <span className="ch__status-more">: {NEEDS_TEXT[active.needs]}</span>
+                )}
               </span>
             </div>
             <div className="tools">
