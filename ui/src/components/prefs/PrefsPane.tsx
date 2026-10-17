@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import './prefs.css';
 import { DndSection } from './DndSection.tsx';
 import { HooksSection } from './HooksSection.tsx';
+import { AccountsSection } from './AccountsSection.tsx';
 import { LinksSection } from './LinksSection.tsx';
 import { NotificationsSection } from './NotificationsSection.tsx';
 import { StatusBarSection } from './StatusBarSection.tsx';
@@ -10,6 +11,7 @@ import { getPrefsStore } from './store.ts';
 import { TerminalSection } from './TerminalSection.tsx';
 import { ThemesSection } from './ThemesSection.tsx';
 import type { PrefsDm } from './types.ts';
+import { useOverlay } from '../../state/overlays';
 
 const TABS = [
   { id: 'themes', label: 'Themes' },
@@ -20,8 +22,9 @@ const TABS = [
   { id: 'dnd', label: 'Do Not Disturb' },
   { id: 'hooks', label: 'Sound hooks' },
   { id: 'links', label: 'Links' },
+  { id: 'accounts', label: 'Accounts' },
 ] as const;
-type TabId = (typeof TABS)[number]['id'];
+export type TabId = (typeof TABS)[number]['id'];
 
 export interface PrefsPaneProps {
   onClose(): void;
@@ -37,6 +40,8 @@ export interface PrefsPaneProps {
 export function PrefsPane({ onClose, dms = [], initialTab = 'themes', targetDm }: PrefsPaneProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState<TabId>(initialTab);
+  // Settings draws over the side pane: the native viewer steps aside while it is open.
+  useOverlay('settings');
 
   useEffect(() => {
     const dlg = ref.current;
@@ -87,6 +92,7 @@ export function PrefsPane({ onClose, dms = [], initialTab = 'themes', targetDm }
           {tab === 'dnd' && <DndSection />}
           {tab === 'hooks' && <HooksSection />}
           {tab === 'links' && <LinksSection />}
+          {tab === 'accounts' && <AccountsSection />}
         </div>
       </div>
     </dialog>

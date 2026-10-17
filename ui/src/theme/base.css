@@ -21,6 +21,10 @@
   --log-gap: 14px;
   /* The group gap: the least space between a control row and the text next to it (DESIGN.md). */
   --group-gap: 12px;
+  /* Ring rule (DESIGN.md): an outline, ring, border or highlight box keeps --ring-pad between
+     itself and its content, and outlined siblings sit at least --ring-gap apart. */
+  --ring-pad: 8px;
+  --ring-gap: 6px;
   --text: 14px;
   --f-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --f-mono: ui-monospace, 'SF Mono', Menlo, monospace;

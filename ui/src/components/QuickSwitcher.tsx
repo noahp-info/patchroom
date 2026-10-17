@@ -6,6 +6,7 @@ import { fuzzy } from '../lib/fuzzy';
 import { cwdParts } from '../lib/cwd';
 import type { AppState, AppStore } from '../state/store';
 import { ClaudeGlyph } from './Icon';
+import { useOverlay } from '../state/overlays';
 
 /** A folder-section session that is not a DM yet. Opening it resumes it. */
 export interface LazyHit {
@@ -133,6 +134,7 @@ function highlight(text: string, at: number[]): ReactNode {
 
 /** Cmd+K: jump to any DM by typing a few letters. Fully keyboard driven. */
 export function QuickSwitcher({ state, store }: { state: AppState; store: AppStore }) {
+  useOverlay('switcher');
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
   const list = useRef<HTMLUListElement>(null);

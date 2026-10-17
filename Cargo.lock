@@ -2639,6 +2639,10 @@ version = "0.0.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "core-graphics",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "patchroom-bridge",
  "patchroom-claude",
  "patchroom-core",
@@ -2648,6 +2652,8 @@ dependencies = [
  "patchroom-search",
  "patchroom-sounds",
  "patchroom-store",
+ "patchroom-themeimport",
+ "png 0.17.16",
  "serde",
  "serde_json",
  "tauri",
@@ -2761,6 +2767,16 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "ulid",
+]
+
+[[package]]
+name = "patchroom-themeimport"
+version = "0.0.1"
+dependencies = [
+ "plist",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 import type { ChatItem, MarkKind, PromptAnswer, SubagentItem } from '../../ipc';
 import { emojiName } from '../../lib/emoji';
 import { EmojiPicker } from '../EmojiPicker';
+import { Floating } from '../Floating';
 import type { Row } from '../../lib/rows';
 import { systemLabel } from '../../lib/systemLabel';
 import { Markdown } from '../../lib/markdown';
@@ -40,7 +41,8 @@ export interface Decor {
   reactions: string[];
 }
 
-function HoverBar({
+/** Copy, react, pin and save for one item. */
+function ActionButtons({
   item,
   decor,
   actions,
@@ -54,7 +56,7 @@ function HoverBar({
   const pinned = decor?.pinned ?? false;
   const saved = decor?.saved ?? false;
   return (
-    <div className="hbar" role="toolbar" aria-label="Message actions">
+    <>
       <button
         type="button"
         aria-label={copied ? 'Copied' : 'Copy'}
@@ -103,6 +105,61 @@ function HoverBar({
           onPick={(e) => actions.toggleMark(item.key, 'reaction', e)}
           onClose={() => setPicker(null)}
         />
+      )}
+    </>
+  );
+}
+
+/**
+ * The hover bar. It never covers content: on a row with a name line it sits at the right end
+ * of that line, which keeps room for it. A continuation row has no name line, so its bar is one
+ * button in the empty avatar gutter that opens the actions as a popover.
+ */
+function HoverBar({
+  item,
+  decor,
+  actions,
+  inGutter,
+}: {
+  item: ChatItem;
+  decor?: Decor;
+  actions: RowActions;
+  inGutter: boolean;
+}) {
+  const [open, setOpen] = useState<{ x: number; y: number } | null>(null);
+  if (!inGutter) {
+    return (
+      <div className="hbar" role="toolbar" aria-label="Message actions">
+        <ActionButtons item={item} decor={decor} actions={actions} />
+      </div>
+    );
+  }
+  return (
+    <div className="hbar hbar--gutter">
+      <button
+        type="button"
+        aria-label="Message actions"
+        title="Copy, react, pin or save"
+        aria-haspopup="true"
+        aria-expanded={open !== null}
+        onClick={(e) => {
+          // Opens beside the button, over its own row: the row being acted on.
+          const r = e.currentTarget.getBoundingClientRect();
+          setOpen(open ? null : { x: r.right + 4, y: r.top - 2 });
+        }}
+      >
+        <Icon name="more" />
+      </button>
+      {open && (
+        <Floating
+          anchor={open}
+          label="Message actions"
+          role="toolbar"
+          className="hbar-pop"
+          onClose={() => setOpen(null)}
+        >
+          <ActionButtons item={item} decor={decor} actions={actions} />
+        </Floating>
       )}
     </div>
   );
@@ -443,6 +500,7 @@ function RowViewInner({ row, expanded, actions, decor }: RowViewProps) {
   }
   const { item } = row;
   const author = row.author;
+  const named = row.head && author !== 'none';
   return (
     <div
       className={`msg ${author === 'user' ? 'user' : author === 'claude' ? 'bot' : 'plain'}${row.head ? ' head' : ' cont'}`}
@@ -451,10 +509,12 @@ function RowViewInner({ row, expanded, actions, decor }: RowViewProps) {
       data-hit={decor?.hit ? 'true' : undefined}
       data-commented={decor?.commented ? 'true' : undefined}
     >
-      {row.head && author !== 'none' && <Who author={author} ms={row.ms} />}
+      {named && <Who author={author} ms={row.ms} />}
       <ItemBody item={item} expanded={expanded} prompt={row.prompt} actions={actions} />
       <Marks item={item} decor={decor} actions={actions} />
-      {MARKABLE.has(item.kind) && <HoverBar item={item} decor={decor} actions={actions} />}
+      {MARKABLE.has(item.kind) && (
+        <HoverBar item={item} decor={decor} actions={actions} inGutter={!named} />
+      )}
     </div>
   );
 }

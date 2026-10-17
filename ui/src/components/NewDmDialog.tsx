@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Icon } from './Icon';
+import { useOverlay } from '../state/overlays';
 
 export interface NewDmDialogProps {
   open: boolean;
@@ -28,6 +29,7 @@ export function NewDmDialog({
   onCreate,
   onPick,
 }: NewDmDialogProps) {
+  useOverlay('new-session', open);
   const ref = useRef<HTMLDialogElement>(null);
   const [cwd, setCwd] = useState(defaultCwd);
   const [name, setName] = useState('');

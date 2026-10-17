@@ -30,6 +30,7 @@ patchroom-search = { path = "../crates/patchroom-search" }
 patchroom-prefs = { path = "../crates/patchroom-prefs" }
 patchroom-folders = { path = "../crates/patchroom-folders" }
 patchroom-sounds = { path = "../crates/patchroom-sounds" }
+patchroom-themeimport = { path = "../crates/patchroom-themeimport" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 base64 = "0.22"
 vt100 = "0.16"
@@ -38,6 +39,14 @@ serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
 thiserror = "2"
 ulid = "3.0.0"
+png = "0.17"
+
+# Window capture of our own window (screenshot-to-steer, frozen viewer). Safe APIs only.
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.25"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSGeometry"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"

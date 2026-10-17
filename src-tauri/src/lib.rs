@@ -73,6 +73,7 @@
 //! claude (for example `--open-dm-arg --model --open-dm-arg haiku`).
 
 pub mod agents;
+pub mod capture;
 pub mod commands;
 #[cfg(debug_assertions)]
 pub mod e2e;
@@ -80,6 +81,7 @@ pub mod events;
 pub mod hook_path;
 pub mod manager;
 pub mod notifier;
+pub mod steer;
 pub mod viewer;
 
 use std::path::PathBuf;
@@ -103,6 +105,10 @@ impl EventSink for TauriSink {
 
 /// Menu id of the app menu's Settings item.
 const SETTINGS_MENU_ID: &str = "settings";
+/// Menu id of Edit > Comment on Selection (Cmd+Shift+M).
+const COMMENT_MENU_ID: &str = "comment-selection";
+/// Menu id of Edit > Screenshot to Steer (Cmd+Shift+2).
+const SHOT_MENU_ID: &str = "screenshot-steer";
 
 /// The default menu bar, plus "Settings..." (Cmd+,) under About in the macOS app menu.
 fn app_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
@@ -117,6 +123,29 @@ fn app_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Me
             Some("CmdOrCtrl+,"),
         )?;
         app.insert_items(&[&PredefinedMenuItem::separator(handle)?, &settings], 1)?;
+    }
+    // Steering lives in Edit. Menu accelerators fire even while the side-pane viewer has focus,
+    // which a page keydown listener never sees.
+    let edit = menu.items()?.into_iter().find_map(|i| match i {
+        MenuItemKind::Submenu(s) if s.text().is_ok_and(|t| t == "Edit") => Some(s),
+        _ => None,
+    });
+    if let Some(edit) = edit {
+        let comment = MenuItem::with_id(
+            handle,
+            COMMENT_MENU_ID,
+            "Comment on Selection",
+            true,
+            Some("CmdOrCtrl+Shift+M"),
+        )?;
+        let shot = MenuItem::with_id(
+            handle,
+            SHOT_MENU_ID,
+            "Screenshot to Steer",
+            true,
+            Some("CmdOrCtrl+Shift+2"),
+        )?;
+        edit.append_items(&[&PredefinedMenuItem::separator(handle)?, &comment, &shot])?;
     }
     Ok(menu)
 }
@@ -162,6 +191,13 @@ fn webview_store_id(data_dir_override: Option<&str>) -> Option<[u8; 16]> {
             .as_uuid()
             .as_bytes(),
     )
+}
+
+/// The side-pane viewer's own WebKit data store: derived from the data dir, so the installed
+/// app, each private run and the app's own storage never share claude.ai sign-ins. Sign out
+/// clears this store only.
+fn viewer_store_id(data_dir: &std::path::Path) -> Option<[u8; 16]> {
+    webview_store_id(Some(&format!("{}#viewer", data_dir.display())))
 }
 
 /// Opens the main window from its config (`create: false` there, so this is the only one).
@@ -280,6 +316,16 @@ macro_rules! app_handler {
             commands::sound_custom_remove,
             commands::sound_claude_profiles,
             commands::sound_import_claude_profile,
+            steer::shot_begin,
+            steer::shot_commit,
+            steer::shot_cancel,
+            steer::viewer_snapshot,
+            steer::viewer_reveal,
+            steer::viewer_selection,
+            steer::viewer_find,
+            steer::viewer_sign_out,
+            commands::theme_import_detect,
+            commands::theme_import_file,
             e2e::e2e_report,
             e2e::e2e_pgrep,
             e2e::e2e_sleep,
@@ -368,6 +414,16 @@ macro_rules! app_handler {
             commands::sound_custom_remove,
             commands::sound_claude_profiles,
             commands::sound_import_claude_profile,
+            steer::shot_begin,
+            steer::shot_commit,
+            steer::shot_cancel,
+            steer::viewer_snapshot,
+            steer::viewer_reveal,
+            steer::viewer_selection,
+            steer::viewer_find,
+            steer::viewer_sign_out,
+            commands::theme_import_detect,
+            commands::theme_import_file,
         ]
     };
 }
@@ -392,6 +448,10 @@ pub fn run() {
         .on_menu_event(|handle, event| {
             if event.id() == SETTINGS_MENU_ID {
                 TauriSink(handle.clone()).emit(UiEvent::OpenSettings);
+            } else if event.id() == COMMENT_MENU_ID {
+                let _ = handle.emit("menu:comment", ());
+            } else if event.id() == SHOT_MENU_ID {
+                let _ = handle.emit("menu:screenshot", ());
             }
         })
         .setup(|app| {
@@ -418,6 +478,8 @@ pub fn run() {
                 e2e::start_heartbeat(app.handle().clone());
             }
             app.manage(manager);
+            app.manage(steer::ShotState::default());
+            app.manage(viewer::ViewerShared::new(viewer_store_id(&data_dir(app)?)));
             open_main_window(app)?;
             Ok(())
         })
@@ -528,6 +590,32 @@ mod tests {
         assert_ne!(webview_store_id(Some("/tmp/pr-e2e-1/s2/data")), Some(a));
         let u = uuid::Uuid::from_bytes(a);
         assert_eq!(u.get_variant(), uuid::Variant::RFC4122);
+    }
+
+    #[test]
+    fn the_viewer_store_is_its_own_and_stable() {
+        let d = std::path::Path::new("/tmp/pr-e2e-1/s1/data");
+        let v = viewer_store_id(d).unwrap();
+        assert_eq!(viewer_store_id(d), Some(v));
+        assert_ne!(webview_store_id(Some("/tmp/pr-e2e-1/s1/data")), Some(v));
+        assert_ne!(viewer_store_id(std::path::Path::new("/tmp/other")), Some(v));
+    }
+
+    #[test]
+    fn steer_commands_are_in_both_handler_lists() {
+        const SRC: &str = include_str!("lib.rs");
+        for c in [
+            "shot_begin",
+            "shot_commit",
+            "shot_cancel",
+            "viewer_snapshot",
+            "viewer_reveal",
+            "viewer_selection",
+            "viewer_find",
+            "viewer_sign_out",
+        ] {
+            assert_eq!(SRC.matches(&format!("steer::{c},")).count(), 2, "{c}");
+        }
     }
 
     #[test]

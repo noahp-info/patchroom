@@ -26,8 +26,14 @@ import type {
   Unlisten,
 } from './types';
 import { createMockSoundBackend, type MockSoundControl } from './mockSounds';
+import { MOCK_IMPORT_FILE, MOCK_IMPORT_SOURCES } from '../theme/themeImport.ts';
+
+/** A 1x1 PNG, for the mock's snapshots and screenshots. */
+const MOCK_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGN49PTJfwAJAwOr4dAuwQAAAABJRU5ErkJggg==';
 
 /** Test and browser-dev handle, exposed as `window.__PR_MOCK__`. */
+
 export interface MockControl {
   /** Every byte the UI wrote to a session, in order, per session id. */
   writes: Record<string, number[]>;
@@ -47,8 +53,20 @@ export interface MockControl {
   reveals: string[];
   /** Every `link_open_external` URL. */
   external: string[];
-  /** Every viewer call, in order: `show <url>`, `place`, `hide`, `go <action>`. */
+  /**
+   * Every viewer call, in order: `show <url>`, `place`, `hide`, `go <action>`, `snapshot`,
+   * `reveal`, `selection`, `find <text>`, `signout`.
+   */
   viewer: string[];
+  /** What the viewer page has selected, handed back on `viewer_selection`. */
+  viewerPicked: string;
+  /** Edit > Comment on Selection and Edit > Screenshot to Steer, as the app menu sends them. */
+  menuComment(): void;
+  menuScreenshot(): void;
+  /** A claude.ai page in the viewer showed the user signed in or out. */
+  viewerAccount(signedIn: boolean, url?: string): void;
+  /** Every `shot_commit` rect. */
+  shots: { id: string; rect: { x: number; y: number; width: number; height: number } }[];
   /** Every `session_mirror_end` call that signaled the other copy. */
   mirrorEnds: string[];
   /** Processes the mock "spawned": session_create, session_resume, and non-mirror folder opens. */
@@ -409,6 +427,17 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     reveals: [],
     external: [],
     viewer: [],
+    viewerPicked: '',
+    shots: [],
+    menuComment() {
+      emit('menu:comment', {});
+    },
+    menuScreenshot() {
+      emit('menu:screenshot', {});
+    },
+    viewerAccount(signedIn, url = 'https://claude.ai/new') {
+      emit('viewer:account', { service: 'claude.ai', signedIn, url });
+    },
     mirrorEnds: [],
     spawns: [],
     repaintOnSlash: true,
@@ -772,6 +801,46 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     async viewerGo(action) {
       control.viewer.push(`go ${action}`);
     },
+    async viewerSnapshot() {
+      control.viewer.push('snapshot');
+      // A flat grey 1x1 picture: the pane shows a still, which is all a test can check.
+      return MOCK_PNG;
+    },
+    async viewerReveal() {
+      control.viewer.push('reveal');
+    },
+    async viewerSelection() {
+      control.viewer.push('selection');
+      const text = control.viewerPicked;
+      const shown = [...control.viewer].reverse().find((v) => v.startsWith('show '));
+      if (text && shown) {
+        window.setTimeout(
+          () => emit('viewer:selection', { text, url: shown.slice(5).split('#')[0] }),
+          5,
+        );
+      }
+      return !!shown;
+    },
+    async viewerFind(text) {
+      control.viewer.push(`find ${text}`);
+    },
+    async viewerSignOut() {
+      control.viewer.push('signout');
+      return 'cleared';
+    },
+    async shotBegin() {
+      // No capture in a browser: the overlay draws over the live page instead.
+      return { dataUrl: '', width: window.innerWidth, height: window.innerHeight };
+    },
+    async shotCommit(id, rect) {
+      control.shots.push({ id, rect });
+      control.pastes.push({ id, data: '', mediaType: 'image/png' });
+      return {
+        path: `/tmp/patchroom-mock/pastes/${id}-shot-${control.shots.length}.png`,
+        dataUrl: MOCK_PNG,
+      };
+    },
+    async shotCancel() {},
     async sessionMirrorReveal(id) {
       const s = sessions.get(id);
       if (!s?.mirror) throw new Error('this session is not a read-only mirror');
@@ -1045,6 +1114,8 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     soundCustomRemove: soundBackend.soundCustomRemove,
     soundClaudeProfiles: soundBackend.soundClaudeProfiles,
     soundImportClaudeProfile: soundBackend.soundImportClaudeProfile,
+    themeImportDetect: () => Promise.resolve(structuredClone(MOCK_IMPORT_SOURCES)),
+    themeImportFile: () => Promise.resolve(structuredClone(MOCK_IMPORT_FILE)),
     async soundHooksDetect() {
       return control.soundHooks.map((h) => ({ ...h }));
     },

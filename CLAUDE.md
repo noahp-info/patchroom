@@ -65,6 +65,31 @@ Run all checks before every push. CI runs the same set.
 - Use the token, not a literal. `ui/tests/prefs-spacing.spec.ts` enforces it in Settings.
 - Details and the inside-a-card exception: DESIGN.md, Layout, Spacing rule.
 
+## UI work: ring rule (hard)
+
+- Any outline, ring, border or highlight box keeps at least `--ring-pad` (8px) between itself and its content.
+- Two outlined siblings never touch: at least `--ring-gap` (6px) apart.
+- Give every row in a list the ring room, so a row that gains a ring never shifts.
+- Use the tokens (`ui/src/theme/base.css`), never literals. `ringFindings` in `ui/tests/qa.ts` enforces it in Settings, the sidebar, menus and pickers.
+- Single-line controls (buttons, fields, chips, segmented controls) are exempt. Their height sets the room.
+
+## UI work: overlap rule (hard)
+
+- Nothing draws over anything else unless it is an intentional layer: a menu, picker, popover, dialog or the screenshot overlay.
+- A hover bar or toolbar never covers content. Reserve room for it in flow or put it in a gutter.
+- Text never clips without an ellipsis. Nothing scrolls the window sideways.
+- A narrow window collapses controls (container queries), it never stacks them on each other. The name wins room before the path.
+- Every overlay registers with the overlay registry (`useOverlay`, `ui/src/state/overlays.ts`). The side-pane viewer is a native view above all HTML, so it steps aside for any registered overlay.
+- Every build runs `expectNoOverlap` (`ui/tests/qa.ts`) through `ui/tests/overlap-qa.spec.ts`: each main surface, every Settings section, pickers, the hover bar and every overlay with the side pane open, at the minimum window, a narrow split and 1440, in both themes. A new surface or overlay gets a step there.
+- Before the single push of a UI batch, run the vision pass: screenshot the same surfaces and widths, give them to fresh context-free judge subagents with the 10-point checklist (text overlap, clipping, wrapping, tap targets, spacing, overflow, missing content, readability, fixed bars covering content, window chrome). Fix every critical and major finding. Put the findings table in the PR body.
+
+## UI work: first-time hints
+
+- Every feature ships with its first-use path designed. If a person could miss the setting behind it, add a hint.
+- Use the one shared hint (`ui/src/components/Hint.tsx`, entries in `ui/src/lib/hints.ts`). Seen ids live in prefs (`hints.seen`).
+- At most one hint at a time. It shows once, ever. It is dismissible, sits in flow and never blocks.
+- Each hint has a button that opens the setting it mentions.
+
 ## UI work: de-slop before merge
 
 Every UI change runs the `/impeccable` skill (critique and polish) before merge. Fix what it flags. Larger UI changes also run `/slop-gauntlet`.

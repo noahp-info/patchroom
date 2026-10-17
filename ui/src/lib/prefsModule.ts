@@ -22,12 +22,24 @@ export interface ThemeRuntime {
   style: CSSProperties;
 }
 
+/** Settings sections a caller can open on. */
+export type PrefsTabId =
+  | 'themes'
+  | 'terminal'
+  | 'statusbar'
+  | 'notifications'
+  | 'sounds'
+  | 'dnd'
+  | 'hooks'
+  | 'links'
+  | 'accounts';
+
 /** What `<PrefsPane>` takes from the workspace. */
 export interface PrefsPaneProps {
   onClose(): void;
   dms?: { id: string; name: string }[];
   /** Section to open first. */
-  initialTab?: 'terminal' | 'sounds';
+  initialTab?: PrefsTabId;
   /** Open this DM's sound settings. */
   targetDm?: string;
 }
@@ -46,6 +58,8 @@ interface PrefsApi {
   soundCustomRemove: Ipc['soundCustomRemove'];
   soundClaudeProfiles: Ipc['soundClaudeProfiles'];
   soundImportClaudeProfile: Ipc['soundImportClaudeProfile'];
+  themeImportDetect: Ipc['themeImportDetect'];
+  themeImportFile: Ipc['themeImportFile'];
   onPrefsChanged(handler: (prefs: Prefs) => void): Promise<() => void>;
 }
 
@@ -101,6 +115,8 @@ export function installPrefsApi(ipc: Ipc): void {
     soundCustomRemove: (id) => ipc.soundCustomRemove(id),
     soundClaudeProfiles: () => ipc.soundClaudeProfiles(),
     soundImportClaudeProfile: (id) => ipc.soundImportClaudeProfile(id),
+    themeImportDetect: () => ipc.themeImportDetect(),
+    themeImportFile: () => ipc.themeImportFile(),
     onPrefsChanged: (handler) => ipc.on('prefs:changed', (e) => handler(e.prefs)),
   });
 }

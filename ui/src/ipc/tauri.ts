@@ -157,6 +157,14 @@ export function createTauriIpc(): Ipc {
     viewerPlace: (rect) => invoke('viewer_place', { rect }),
     viewerHide: () => invoke('viewer_hide'),
     viewerGo: (action) => invoke('viewer_go', { action }),
+    viewerSnapshot: (rect) => invoke('viewer_snapshot', { rect }),
+    viewerReveal: (rect) => invoke('viewer_reveal', { rect }),
+    viewerSelection: () => invoke('viewer_selection'),
+    viewerFind: (text) => invoke('viewer_find', { text }),
+    viewerSignOut: () => invoke('viewer_sign_out'),
+    shotBegin: () => invoke('shot_begin'),
+    shotCommit: (id, rect) => invoke('shot_commit', { id, rect }),
+    shotCancel: () => invoke('shot_cancel'),
     sessionMirrorEnd: async (id, cols, rows) =>
       wireSession(await invoke<WireSession>('session_mirror_end', { id, cols, rows })),
     pasteImage: (id, data, mediaType) =>
@@ -248,6 +256,8 @@ export function createTauriIpc(): Ipc {
     soundCustomRemove: (id) => invoke('sound_custom_remove', { id }),
     soundClaudeProfiles: () => invoke('sound_claude_profiles', {}),
     soundImportClaudeProfile: (id) => invoke('sound_import_claude_profile', { id }),
+    themeImportDetect: () => invoke('theme_import_detect', {}),
+    themeImportFile: () => invoke('theme_import_file', {}),
     sessionFocus: (id) => invoke('session_focus', { id }),
     sectionCreateFromFolder: (path, name) =>
       invoke<{ id: string }>('section_create_from_folder', { path, name }),
