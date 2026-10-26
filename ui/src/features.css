@@ -83,6 +83,9 @@
   font-size: 12px;
   cursor: pointer;
 }
+.picker__flavor-opt .emo {
+  font-size: 15px;
+}
 .picker__flavor-opt[aria-checked='true'] {
   border-color: var(--accent);
   background: var(--sel);
@@ -148,13 +151,34 @@
   }
 }
 .chat-hint-slot > .hint {
-  margin-top: 0;
-  margin-bottom: var(--ring-pad);
+  margin-top: var(--group-gap);
+  margin-bottom: var(--group-gap);
 }
 
 /* ---- the model chip and its picker ---------------------------------------------------------- */
 .chat .strip .model-chip {
   max-width: 260px;
+  border: 1px solid var(--line);
+  background: var(--chip);
+  color: var(--chip-fg);
+}
+.chat .strip .model-chip:hover {
+  background: var(--hover);
+}
+.mpick__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--group-gap);
+  margin-bottom: 4px;
+}
+.mpick__head .pop__h {
+  margin: 2px 4px;
+}
+.mpick__manage {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 .chat .strip .model-chip__t {
   min-width: 0;
@@ -327,6 +351,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.restart__why {
+  margin: var(--ring-pad) 0 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 .restart__state {
   flex: none;

@@ -43,7 +43,7 @@ export function Floating({
   // Menus and pickers draw over the side pane: the native viewer steps aside while one is open.
   useOverlay(`floating:${label}`);
   const box = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; maxHeight?: number } | null>(null);
   const close = useRef(onClose);
   useEffect(() => {
     close.current = onClose;
@@ -53,15 +53,28 @@ export function Floating({
     const el = box.current;
     if (!el) return;
     const w = el.offsetWidth;
-    const h = el.offsetHeight;
+    const h = el.scrollHeight + 2;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
+    // Never over the window's title bar: that is chrome, and its drag region.
+    const tb = document.querySelector('[data-testid="topbar"]')?.getBoundingClientRect();
+    const minTop = Math.max(8, (tb?.bottom ?? 0) + 4);
     let left = isRect(anchor) ? anchor.left : anchor.x;
     let top = isRect(anchor) ? anchor.bottom + 4 : anchor.y;
-    if (isRect(anchor) && top + h > vh - 8) top = anchor.top - h - 4;
+    let maxHeight: number | undefined;
+    if (isRect(anchor) && top + h > vh - 8) {
+      const below = vh - 8 - (anchor.bottom + 4);
+      const above = anchor.top - 4 - minTop;
+      if (h <= above) top = anchor.top - h - 4;
+      else if (above > below) {
+        // Too tall for either side: take the roomier one and scroll inside.
+        top = minTop;
+        maxHeight = above;
+      } else maxHeight = below;
+    }
     if (left + w > vw - 8) left = vw - w - 8;
-    if (top + h > vh - 8) top = vh - h - 8;
-    setPos({ left: Math.max(8, left), top: Math.max(8, top) });
+    if (maxHeight === undefined && top + h > vh - 8) top = vh - h - 8;
+    setPos({ left: Math.max(8, left), top: Math.max(minTop, top), maxHeight });
   }, [anchor]);
 
   useEffect(() => {
@@ -89,7 +102,12 @@ export function Floating({
       className={`floating ${className ?? ''}`}
       role={role ?? 'dialog'}
       aria-label={label}
-      style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden' }}
+      style={{
+        left: pos?.left ?? 0,
+        top: pos?.top ?? 0,
+        visibility: pos ? 'visible' : 'hidden',
+        ...(pos?.maxHeight !== undefined ? { maxHeight: pos.maxHeight } : {}),
+      }}
     >
       {children}
     </div>,

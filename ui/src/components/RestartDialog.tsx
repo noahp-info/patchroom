@@ -34,8 +34,9 @@ export function RestartDialog({ store, state }: { store: AppStore; state: AppSta
     >
       <h2 id="restart-title">Restart Patchroom</h2>
       <p className="restart__lede">
-        {rows.length === 1 ? 'Your session reopens' : `All ${rows.length} sessions reopen`} where
-        they are, with drafts kept.{' '}
+        {rows.length === 1
+          ? 'Your session reopens where it is, with its draft kept.'
+          : `All ${rows.length} sessions reopen where they are, with drafts kept.`}{' '}
         {busy.length === 1 ? 'One is still working.' : `${busy.length} are still working.`}
       </p>
       <ul className="restart__list">
@@ -62,6 +63,12 @@ export function RestartDialog({ store, state }: { store: AppStore; state: AppSta
           );
         })}
       </ul>
+      {busy.length > 0 && (
+        <p className="restart__why">
+          Interrupt stops the current turn, like Esc. The session still resumes after the restart.
+          Without it, Patchroom waits for the turn to finish.
+        </p>
+      )}
       {r.waiting && (
         <p className="restart__wait" role="status" data-testid="restart-waiting">
           Waiting for {busy.length === 1 ? 'one session' : `${busy.length} sessions`} to finish.
@@ -76,6 +83,7 @@ export function RestartDialog({ store, state }: { store: AppStore; state: AppSta
           type="button"
           className="btn pri"
           data-testid="restart-confirm"
+          autoFocus
           disabled={r.waiting}
           onClick={() => store.confirmRestart()}
         >

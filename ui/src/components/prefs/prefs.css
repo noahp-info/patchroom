@@ -815,17 +815,21 @@
   margin-top: var(--group-gap);
 }
 .mb-entry {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(110px, 0.8fr) minmax(140px, 1.4fr) auto;
   align-items: center;
   gap: 8px;
 }
 .mb-entry select {
-  max-width: 240px;
+  width: 100%;
 }
 .prefs .mb-entry__text {
-  flex: 1 1 180px;
+  grid-column: 2 / 4;
   font-family: var(--f-mono);
+}
+.mb-entry > .btn {
+  grid-column: 4;
+  grid-row: 1;
 }
 .mb-entry__def {
   display: inline-flex;
@@ -834,9 +838,18 @@
   font-size: 12px;
   white-space: nowrap;
 }
-.mb-entry__msg {
-  flex-basis: 100%;
+.prefs .mb-entry__msg {
+  grid-column: 2 / -1;
   margin: 0;
+}
+.mb-card__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+  margin-top: var(--ring-pad);
+  font-size: 13px;
 }
 .mb-scope {
   display: grid;

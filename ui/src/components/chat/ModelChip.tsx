@@ -46,7 +46,7 @@ export function ModelChip({ store, sessionId, chips, status, prefs, switching }:
     <>
       <button
         type="button"
-        className="sc mode model-chip"
+        className="sc model-chip"
         data-chip="model"
         data-testid="model-chip"
         data-state={switching?.state}
@@ -68,7 +68,20 @@ export function ModelChip({ store, sessionId, chips, status, prefs, switching }:
       </button>
       {rect && (
         <Floating anchor={rect} label="Models" className="pop mpick" onClose={() => setRect(null)}>
-          <h3 className="pop__h">Models</h3>
+          <div className="mpick__head">
+            <h3 className="pop__h">Models</h3>
+            <button
+              type="button"
+              className="btn sec mpick__manage"
+              data-testid="mpick-manage"
+              onClick={() => {
+                setRect(null);
+                store.openPrefs({ tab: 'models' });
+              }}
+            >
+              {models.bundles.length ? 'Manage bundles' : 'Make a bundle'}
+            </button>
+          </div>
           {found ? (
             <>
               <p className="mpick__src" data-testid="mpick-bundle">
@@ -154,19 +167,6 @@ export function ModelChip({ store, sessionId, chips, status, prefs, switching }:
             </label>
           )}
           {askChecks && <ModelChecksAsk store={store} />}
-          <div className="mpick__foot">
-            <button
-              type="button"
-              className="btn sec"
-              data-testid="mpick-manage"
-              onClick={() => {
-                setRect(null);
-                store.openPrefs({ tab: 'models' });
-              }}
-            >
-              {models.bundles.length ? 'Manage bundles' : 'Make a bundle'}
-            </button>
-          </div>
         </Floating>
       )}
     </>

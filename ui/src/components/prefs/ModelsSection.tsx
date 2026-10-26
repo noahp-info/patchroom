@@ -346,6 +346,7 @@ function BundleCard({
   onRemove(): void;
   onMakeDefault(): void;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const setEntry = (e: BundleEntry) =>
     onChange({ ...bundle, entries: bundle.entries.map((x) => (x.id === e.id ? e : x)) });
   const addEntry = () => {
@@ -388,9 +389,33 @@ function BundleCard({
             Make default
           </button>
         )}
-        <button type="button" className="btn sec" onClick={onRemove}>
+        <button
+          type="button"
+          className="btn sec"
+          aria-expanded={confirmDelete}
+          onClick={() => setConfirmDelete(true)}
+        >
           Delete
         </button>
+        {confirmDelete && (
+          <div className="mb-card__confirm" role="alert">
+            <span>
+              Delete {bundle.name}? Sections, folders and sessions that use it go back to the
+              default.
+            </span>
+            <button
+              type="button"
+              className="btn sec"
+              onClick={onRemove}
+              data-testid="bundle-delete"
+            >
+              Delete
+            </button>
+            <button type="button" className="btn sec" onClick={() => setConfirmDelete(false)}>
+              Keep
+            </button>
+          </div>
+        )}
       </div>
       <div className="mb-entries" role="list">
         {bundle.entries.map((e) => (
