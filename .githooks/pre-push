@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Local pre-push guard: every pushed commit carries a GitHub noreply email (public repo).
+# Enable once per clone: bash scripts/setup-hooks.sh
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+zero=0000000000000000000000000000000000000000
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then
+    # A new branch: check what is not on any remote branch yet.
+    range="$local_sha --not --remotes"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  # shellcheck disable=SC2086
+  bash scripts/check-author-emails.sh $range
+done

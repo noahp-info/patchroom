@@ -46,6 +46,13 @@ jobs:
         run: bash scripts/check-repo-hygiene.sh --all
       - name: Repo hygiene self-test
         run: bash scripts/test-repo-hygiene.sh
+      # Public repo: every new commit carries a GitHub noreply author and committer email.
+      - name: Commit emails
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/check-author-emails.sh "$BASE_SHA..$HEAD_SHA"
       - id: f
         name: Decide which jobs run
         env:
@@ -95,7 +102,7 @@ jobs:
           # The macOS bundle: shell, crates, Cargo, tauri config, icons and bundle resources.
           has '^(src-tauri/|crates/|plugins/sounds/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|package\.json$|pnpm-lock\.yaml$)' && tauri=true
           # Anything that is not docs and not covered above still gets the cheap ubuntu checks.
-          other="$(grep -vE '(^\.github/workflows/gitleaks\.yml$|^scripts/(check|test)-repo-hygiene\.sh$|^(crates|src-tauri|plugins|ui)/|^(Cargo\.(toml|lock)|rust-toolchain\.toml|rustfmt\.toml|clippy\.toml|package\.json|pnpm-(lock|workspace)\.yaml)$)' <<<"$files" || true)"
+          other="$(grep -vE '(^\.github/workflows/gitleaks\.yml$|^scripts/(check|test)-repo-hygiene\.sh$|^scripts/check-author-emails\.sh$|^(crates|src-tauri|plugins|ui)/|^(Cargo\.(toml|lock)|rust-toolchain\.toml|rustfmt\.toml|clippy\.toml|package\.json|pnpm-(lock|workspace)\.yaml)$)' <<<"$files" || true)"
           if [ -n "$other" ]; then rust=true; ui=true; fi
           emit "$rust" "$ui" "$tauri"
 
