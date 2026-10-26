@@ -108,7 +108,7 @@ Every token becomes `--<token>` on the `.pr-app` root. Values are `#rgb`, `#rgba
 
 ### Shipped themes
 
-- **Homeroom** (default): jade band `#135a4b` (light) and deep jade `#0e4035` (dark), marigold active row `#f2c35b`, chalk workspace mark `#f7f3e8`, teal-green primary `#0a7a62` (`#43c0a2` in dark). Cable marigold, plug silver. Layout from direction A of `looks.html`, color from the Patchroom mark.
+- **Homeroom** (default): jade band `#135a4b` (light) and deep jade `#0e4035` (dark), marigold active row `#f2c35b`, chalk workspace mark `#f7f3e8`, teal-green primary `#0a7a62` (`#43c0a2` in dark). Cable marigold, plug silver. Layout from direction A of the looks reference, color from the Patchroom mark.
 - **Patch Bay**: anodized panel greys, silkscreen ink, red primary, four chip colors, a yellow cable and grey plug metal. From direction D.
 - **Ansi Slate**: cool slate with ANSI cyan, red and amber. From direction B.
 - **Cool Paper**: cool grey paper with copy-editor blue and red pencil. From direction C.
@@ -345,7 +345,7 @@ node --experimental-strip-types tools/contrast-report.ts
 
 ### Deviations from the looks reference
 
-Homeroom and Patch Bay match directions A and D of `/Users/NDP/temp/patchroom-design/looks.html` within a few percent of pixels. These changes make every shipped theme pass WCAG AA for text:
+Homeroom and Patch Bay match directions A and D of the looks reference (an internal design board, not in this repo) within a few percent of pixels. These changes make every shipped theme pass WCAG AA for text:
 
 - `muted`, `tb-muted`, `side-muted`, `silk-muted`, `syn-*` and `ok` are nudged a few steps darker or lighter where they fell under 4.5:1.
 - New token `err-text` carries error text. `err` stays the signal color. The tool deletion count and the artifact "removed lines" count use `err-text`.

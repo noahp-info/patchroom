@@ -314,7 +314,7 @@ export interface Ipc {
   prefsSet(patch: Partial<Prefs>): Promise<Prefs>;
   soundHooksDetect(): Promise<DetectedHook[]>;
   notifyTest(): Promise<void>;
-  /** Sound packs (docs/gauntlet/SOUND-PACKS-BAR.md). */
+  /** Sound packs (the SOUND-PACKS build bar). */
   soundPacks(): Promise<PackInfo[]>;
   soundFile(packId: string, event: string): Promise<SoundFileData>;
   soundCustomList(): Promise<ImportedFile[]>;
@@ -529,7 +529,7 @@ export interface StatuslineUpdateEvent {
 }
 
 // ---------------------------------------------------------------------------------------------
-// P3 Slack layer (docs/gauntlet/P3-BAR.md). camelCase JSON.
+// P3 Slack layer (the P3 build bar). camelCase JSON.
 // ---------------------------------------------------------------------------------------------
 
 export type MarkKind = 'pin' | 'saved' | 'reaction';
@@ -650,7 +650,7 @@ export interface PrefsChangedEvent {
 }
 
 // ---------------------------------------------------------------------------------------------
-// P3 folder sections (docs/gauntlet/P3-FOLDER-SECTIONS.md). camelCase JSON.
+// P3 folder sections (the P3-FOLDER-SECTIONS build bar). camelCase JSON.
 // ---------------------------------------------------------------------------------------------
 
 /** Where a session's name came from, first match wins in this order. */

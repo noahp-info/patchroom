@@ -246,7 +246,7 @@ test.describe('layout', () => {
     await page.goto('/?mock');
     await chooseNew(page, 'New session');
     const dlg = page.getByRole('dialog', { name: 'New session' });
-    await dlg.getByLabel('Folder').fill('/Users/NDP/code/some/deeply/nested/projects/patchroom');
+    await dlg.getByLabel('Folder').fill('/Users/alex/code/some/deeply/nested/projects/patchroom');
     await dlg.getByRole('button', { name: 'Start session' }).click();
     await expect(page.locator('.ch__cwd-base')).toHaveText('patchroom');
     await expect(page.locator('.ch__cwd')).toHaveAttribute('title', /deeply\/nested/);

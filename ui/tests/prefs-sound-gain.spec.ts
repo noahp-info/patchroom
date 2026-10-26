@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { audio, HARNESS, openPrefs, resetAudio, spyAudio, tab } from './prefs-helpers';
 
-/** Per-event volume (docs/gauntlet/SOUND-PACKS-BAR.md item 11): 0 to 150 percent per sound. */
+/** Per-event volume (the SOUND-PACKS build bar, item 11): 0 to 150 percent per sound. */
 
 const EVENTS = ['needs', 'done', 'message', 'error', 'bell', 'decision', 'due', 'session'];
 const NAMES = [

@@ -60,8 +60,8 @@ mod tests {
     #[test]
     fn encodes_like_claude() {
         assert_eq!(
-            encode_dir("/Users/NDP/temp/patchroom"),
-            "-Users-NDP-temp-patchroom"
+            encode_dir("/Users/alex/temp/patchroom"),
+            "-Users-alex-temp-patchroom"
         );
         assert_eq!(
             encode_dir("/a/.claude/worktrees/x_y"),

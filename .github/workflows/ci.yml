@@ -6,7 +6,7 @@
 # job decides). Docs-only changes run no build or test job. A push whose tree equals a PR head
 # that already passed this workflow (a squash merge of an up-to-date branch) runs nothing again.
 # Skipped jobs count as passed; `CI result` is the one stable check that sums them up.
-# Secret scanning lives in gitleaks.yml and always runs.
+# Secret scanning lives in gitleaks.yml and always runs. The repo hygiene check runs in `changes`.
 name: CI
 
 on:
@@ -41,6 +41,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # Public repo: no agent-local files, transcripts, env files or real home paths. Seconds.
+      - name: Repo hygiene
+        run: bash scripts/check-repo-hygiene.sh --all
+      - name: Repo hygiene self-test
+        run: bash scripts/test-repo-hygiene.sh
       - id: f
         name: Decide which jobs run
         env:
@@ -90,7 +95,7 @@ jobs:
           # The macOS bundle: shell, crates, Cargo, tauri config, icons and bundle resources.
           has '^(src-tauri/|crates/|plugins/sounds/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|package\.json$|pnpm-lock\.yaml$)' && tauri=true
           # Anything that is not docs and not covered above still gets the cheap ubuntu checks.
-          other="$(grep -vE '(^\.github/workflows/gitleaks\.yml$|^(crates|src-tauri|plugins|ui)/|^(Cargo\.(toml|lock)|rust-toolchain\.toml|rustfmt\.toml|clippy\.toml|package\.json|pnpm-(lock|workspace)\.yaml)$)' <<<"$files" || true)"
+          other="$(grep -vE '(^\.github/workflows/gitleaks\.yml$|^scripts/(check|test)-repo-hygiene\.sh$|^(crates|src-tauri|plugins|ui)/|^(Cargo\.(toml|lock)|rust-toolchain\.toml|rustfmt\.toml|clippy\.toml|package\.json|pnpm-(lock|workspace)\.yaml)$)' <<<"$files" || true)"
           if [ -n "$other" ]; then rust=true; ui=true; fi
           emit "$rust" "$ui" "$tauri"
 

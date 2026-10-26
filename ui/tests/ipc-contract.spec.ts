@@ -27,7 +27,7 @@ const P1B_COMMANDS = [
   'session_set_section',
   'session_write',
 ];
-/** The P2 additions to the fixed IPC contract (docs/gauntlet/P2-BAR.md). */
+/** The P2 additions to the fixed IPC contract (the P2 build bar). */
 const P2_COMMANDS = [
   'chat_history',
   'chat_image',
@@ -38,7 +38,7 @@ const P2_COMMANDS = [
   'session_mark_read',
   'statusline_cycle_mode',
 ];
-/** The P3 additions to the fixed IPC contract (docs/gauntlet/P3-BAR.md). */
+/** The P3 additions to the fixed IPC contract (the P3 build bar). */
 const P3_COMMANDS = [
   'activity_list',
   'chat_locate',
@@ -59,7 +59,7 @@ const P3_COMMANDS = [
   'session_set_flags',
   'sound_hooks_detect',
 ];
-/** The folder-section additions (docs/gauntlet/P3-FOLDER-SECTIONS.md). */
+/** The folder-section additions (the P3-FOLDER-SECTIONS build bar). */
 const FOLDER_COMMANDS = [
   'folder_session_hide',
   'folder_session_open',
@@ -67,14 +67,14 @@ const FOLDER_COMMANDS = [
   'section_create_from_folder',
   'section_set_archive_days',
 ];
-/** Session parity additions (docs/gauntlet/SESSION-PARITY-BAR.md, Contract: backend). */
+/** Session parity additions (the SESSION-PARITY build bar, contract: backend). */
 const PARITY_COMMANDS = [
   'session_mirror_end',
   'session_mirror_reveal',
   'session_mirror_takeover_when_closed',
   'session_takeover',
 ];
-/** Sidebar organization: section emoji (docs/gauntlet/SIDEBAR-ORG-BAR.md). */
+/** Sidebar organization: section emoji (the SIDEBAR-ORG build bar). */
 const SIDEBAR_COMMANDS = ['section_set_emoji'];
 /** Links: the in-app viewer and the system browser. */
 const LINK_COMMANDS = [
@@ -84,7 +84,7 @@ const LINK_COMMANDS = [
   'viewer_place',
   'viewer_show',
 ];
-/** Sound packs (docs/gauntlet/SOUND-PACKS-BAR.md). The file picker is the dialog plugin, not a command. */
+/** Sound packs (the SOUND-PACKS build bar). The file picker is the dialog plugin, not a command. */
 const SOUND_COMMANDS = [
   'sound_claude_profiles',
   'sound_custom_file',

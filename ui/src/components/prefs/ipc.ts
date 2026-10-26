@@ -276,7 +276,7 @@ export interface PrefsApi {
   prefsSet(patch: Partial<Prefs>): Promise<Prefs>;
   soundHooksDetect(): Promise<HookDetect[]>;
   notifyTest(): Promise<void>;
-  /** Sound packs: the commands of docs/gauntlet/SOUND-PACKS-BAR.md. */
+  /** Sound packs: the commands of the SOUND-PACKS build bar. */
   soundPacks(): Promise<PackInfo[]>;
   /** A file or imported pack's audio. */
   soundFile(packId: string, event: string): Promise<SoundFileData>;
@@ -298,7 +298,7 @@ export interface PrefsApi {
   onPrefsChanged(handler: (prefs: Prefs) => void): Promise<() => void>;
 }
 
-/** Real backend: command names and payloads from docs/gauntlet/P3-BAR.md. */
+/** Real backend: command names and payloads from the P3 build bar. */
 export function createTauriPrefsApi(): PrefsApi {
   return {
     async prefsGet() {
