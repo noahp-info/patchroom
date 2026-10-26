@@ -36,7 +36,11 @@ test.describe('restart and resume', () => {
     await page.evaluate(() => window.__PR_MOCK__!.setStatus('b2', 'idle'));
     // After the relaunch: alpha and beta resumed, gamma (ended before) stays ended.
     await expect
-      .poll(() => page.evaluate(() => window.__PR_MOCK__!.resumes.map((r) => r.id).sort()))
+      .poll(() =>
+        page
+          .evaluate(() => window.__PR_MOCK__?.resumes.map((r) => r.id).sort())
+          .catch(() => undefined),
+      )
       .toEqual(['a1', 'b2']);
     const states = await page.evaluate(() =>
       Object.fromEntries(window.__PR_MOCK__!.sessions().map((s) => [s.id, s.status])),
@@ -56,10 +60,14 @@ test.describe('restart and resume', () => {
     await expect(dlg.getByTestId('restart-confirm')).toHaveText('Interrupt and restart');
     // The mock does not end the turn on Esc by itself: record the write, then end it.
     await dlg.getByTestId('restart-confirm').click();
-    await expect.poll(() => page.evaluate(() => window.__PR_MOCK__!.writes.b2?.[0])).toBe(27);
+    await expect.poll(() => page.evaluate(() => window.__PR_MOCK__?.writes.b2?.[0])).toBe(27);
     await page.evaluate(() => window.__PR_MOCK__!.setStatus('b2', 'idle'));
     await expect
-      .poll(() => page.evaluate(() => window.__PR_MOCK__!.resumes.map((r) => r.id).sort()))
+      .poll(() =>
+        page
+          .evaluate(() => window.__PR_MOCK__?.resumes.map((r) => r.id).sort())
+          .catch(() => undefined),
+      )
       .toEqual(['a1', 'b2']);
   });
 
@@ -78,7 +86,11 @@ test.describe('restart and resume', () => {
     await page.evaluate(() => window.__PR_MOCK__!.setStatus('b2', 'idle'));
     await page.evaluate(() => window.__PR_MOCK__!.menuRestart());
     await expect
-      .poll(() => page.evaluate(() => window.__PR_MOCK__?.resumes.map((r) => r.id).sort()))
+      .poll(() =>
+        page
+          .evaluate(() => window.__PR_MOCK__?.resumes.map((r) => r.id).sort())
+          .catch(() => undefined),
+      )
       .toEqual(['a1', 'b2']);
   });
 });
