@@ -52,6 +52,7 @@ function section(r: Loose): SectionInfo {
     archiveDays: Number(pick(r, 'archiveDays', 'archive_days') ?? 14),
     kind: r.kind === 'divider' ? 'divider' : 'section',
     emoji: (r.emoji as string | null | undefined) ?? null,
+    emojiFlavor: (pick(r, 'emojiFlavor', 'emoji_flavor') as SectionInfo['emojiFlavor']) ?? null,
   };
 }
 function folderSession(r: Loose): FolderSession {
@@ -196,7 +197,16 @@ export function createTauriIpc(): Ipc {
     sectionList: async () => (await invoke<Loose[]>('section_list')).map(section),
     sectionCreate: (name, opts) =>
       invoke('section_create', { name, kind: opts?.kind, emoji: opts?.emoji ?? undefined }),
-    sectionSetEmoji: (id, emoji) => invoke('section_set_emoji', { id, emoji }),
+    sectionSetEmoji: (id, emoji, flavor) =>
+      invoke('section_set_emoji', { id, emoji, flavor: flavor ?? undefined }),
+    sessionSetEmoji: (id, emoji, flavor) =>
+      invoke('session_set_emoji', { id, emoji, flavor: flavor ?? undefined }),
+    sessionSetModel: (id, model) => invoke('session_set_model', { id, model }),
+    catalogGet: () => invoke('catalog_get', {}),
+    catalogRefresh: () => invoke('catalog_refresh', {}),
+    updateCheck: () => invoke('update_check', {}),
+    appRestart: (ids) => invoke('app_restart', { ids }),
+    appRestartPending: async () => (await invoke<string[] | null>('app_restart_pending', {})) ?? [],
     sectionSetCollapsed: (id, collapsed) => invoke('section_set_collapsed', { id, collapsed }),
     pickFolder: (defaultPath) => invoke<string | null>('pick_folder', { defaultPath }),
     chatHistory: (id, before, limit) => invoke('chat_history', { id, before, limit }),

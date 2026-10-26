@@ -19,6 +19,8 @@ export interface FloatingProps {
   className?: string;
   label: string;
   role?: string;
+  /** Where to portal: a modal dialog's own element, so the surface is not behind its top layer. */
+  container?: HTMLElement | null;
 }
 
 const isRect = (a: Anchor): a is DOMRect => 'width' in a;
@@ -29,7 +31,15 @@ export function appRoot(): HTMLElement {
 }
 
 /** A fixed-position surface that stays inside the window and closes on Esc or an outside press. */
-export function Floating({ anchor, onClose, children, className, label, role }: FloatingProps) {
+export function Floating({
+  anchor,
+  onClose,
+  children,
+  className,
+  label,
+  role,
+  container,
+}: FloatingProps) {
   // Menus and pickers draw over the side pane: the native viewer steps aside while one is open.
   useOverlay(`floating:${label}`);
   const box = useRef<HTMLDivElement>(null);
@@ -83,7 +93,7 @@ export function Floating({ anchor, onClose, children, className, label, role }: 
     >
       {children}
     </div>,
-    appRoot(),
+    container ?? appRoot(),
   );
 }
 

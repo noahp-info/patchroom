@@ -173,7 +173,12 @@ export function termStyleFor(prefs: Prefs, dmId: string | null): ResolvedTermSty
     paletteId,
     theme,
     font,
-    fontFamily: `"${font}", Menlo, Monaco, "Courier New", monospace`,
+    // Settings > Themes > Emoji in chat also styles the terminal. The text fonts come first, so
+    // only glyphs they lack (emoji) fall through to the bundled Noto.
+    fontFamily:
+      prefs.emoji?.chat === 'noto'
+        ? `"${font}", Menlo, Monaco, "Courier New", "Noto Color Emoji Patchroom", monospace`
+        : `"${font}", Menlo, Monaco, "Courier New", monospace`,
     fontSize,
   };
 }

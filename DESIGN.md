@@ -289,6 +289,20 @@ Every feature ships with its first-use path designed.
 - At most one hint at a time. It sits in flow under the conversation header, never covers or blocks anything, and has an X.
 - Every hint has a button that opens the setting it names.
 - First hint: the first time someone uses Open in browser, a hint waits for focus to come back to Patchroom. It says "Want links to always open in your browser? Change it in Settings > Links." Its button opens that section.
+- A hint has a place, always in flow: under the conversation header (default), above the status strip by the model chip, or just above the log's bottom edge. A hint may carry extra answers before its settings button (Swap and Keep on "newer model available").
+- Model hints are once per model, tracked in model prefs (`models.seen`, `models.offered`), not in `hints.seen`.
+
+### Auto-scroll
+
+- Every scrolling log (each chat and each thread) follows new rows until the person scrolls up. A small indicator sits in flow under the log, at the right end of the jump row: "Auto-scroll on" with a filled dot, or "Paused" with a hollow one.
+- Scrolling up pauses. Jump to latest, scrolling back to the bottom, or the indicator itself turns it on again. A pause from the indicator holds at the bottom until the person scrolls.
+- The first pause shows a hint once scrolling settles. Settings > Themes > Chat can make every log open paused.
+
+### Emoji flavors
+
+- Every place a person names something (sections, dividers, sessions, the New session dialog) has an emoji button. The picker offers Apple or Noto Color for the pick, like a skin tone, and the choice is stored with the character as `{char, flavor}`.
+- Chat text and the terminal follow one setting, Settings > Themes > Emoji in chat. The text font stays first, so only emoji glyphs change.
+- Noto Color Emoji is bundled (OFL, `ui/src/theme/fonts/noto-emoji/`): a COLRv1 file for Chromium and an `sbix` bitmap file for WebKit, picked by `tech()` in one `@font-face`.
 
 ### Bases
 

@@ -67,7 +67,7 @@ test.describe('session parity: status strip without doubles', () => {
     await feed(page, id, 'patchroom on main', { model: 'Opus 4.8', cost: 1.82 });
     // "patchroom" is not the folder "patchroom-test"; "main" is not a chip here.
     await expect(chip(page, 'folder')).toHaveText('patchroom-test');
-    await expect(chip(page, 'model')).toHaveText('Opus 4.8');
+    await expect(chip(page, 'model')).toHaveText('\u2601\uFE0F Opus 4.8');
     await expect(chip(page, 'cost')).toHaveText('$1.82');
   });
 
@@ -114,7 +114,7 @@ test.describe('session parity: customize the status bar', () => {
     await feed(page, id);
     const menu = await openMenu(page);
     await menu.getByRole('button', { name: 'Add Model' }).click();
-    await expect(chip(page, 'model')).toHaveText('Opus 4.8');
+    await expect(chip(page, 'model')).toHaveText('\u2601\uFE0F Opus 4.8');
     await menu.getByRole('button', { name: 'Remove Mode', exact: true }).click();
     await expect(chip(page, 'mode')).toHaveCount(0);
     const saved = (await prefs(page))!.default!;

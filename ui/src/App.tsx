@@ -1,3 +1,5 @@
+import { hintPlace } from './lib/hints';
+import { RestartDialog } from './components/RestartDialog';
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ClaudeGlyph, Icon } from './components/Icon';
@@ -163,6 +165,7 @@ export function App() {
       data-theme={theme.id}
       data-fullscreen={fullscreen ? 'true' : undefined}
       data-viewer={state.viewer ? 'open' : undefined}
+      data-emoji={state.prefs?.emoji?.chat ?? 'apple'}
       style={style}
       onClickCapture={(e) => {
         // Links never navigate the app: they open in the viewer or the browser (Links pref).
@@ -311,7 +314,10 @@ export function App() {
           </div>
         )}
 
-        {state.hint && <Hint store={store} id={state.hint} />}
+        {state.hint && hintPlace(state.hint) === 'header' && (
+          <Hint store={store} id={state.hint} vars={state.hintVars} />
+        )}
+        {state.restart && <RestartDialog store={store} state={state} />}
 
         {state.checkFailed && (
           <div
@@ -424,6 +430,10 @@ export function App() {
               prefs={state.prefs}
               marks={state.marks}
               toolSlot={chatSlot}
+              hint={state.hint}
+              hintVars={state.hintVars}
+              modelSwitch={state.modelSwitch[active.id]}
+              catalog={state.catalog}
             />
           )}
         </div>
@@ -459,7 +469,7 @@ export function App() {
             : []
         }
         onClose={() => setNewDmOpen(false)}
-        onCreate={(cwd, name) => store.create(cwd, name, dmSection?.id ?? null)}
+        onCreate={(cwd, name, emoji) => store.create(cwd, name, dmSection?.id ?? null, emoji)}
         onPick={(p) => store.pickFolder(p)}
       />
     </div>

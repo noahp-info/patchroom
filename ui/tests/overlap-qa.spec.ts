@@ -48,10 +48,47 @@ async function setup(page: Page, width: number, height: number): Promise<string>
     },
     { key: 'qa3', ts: now, kind: 'assistant', text: `Published it: ${URL_A}` },
   ]);
-  await page.evaluate((sid) => {
+  await page.evaluate(async (sid) => {
     const m = window.__PR_MOCK__!;
     m.setTitle(sid, 'Refactor billing pipeline and reconcile ledgers');
+    // A model bundle, so the model chip and its picker are on screen (test data only).
+    await window.__PR_STORE__!.setPrefs({
+      models: {
+        bundles: [
+          {
+            id: 'daily',
+            name: 'Daily',
+            emoji: '\u2600\uFE0F',
+            entries: [
+              { id: 'opus', tool: 'claude-code', model: 'claude-opus-5-5' },
+              { id: 'fable', tool: 'claude-code', model: 'claude-fable-5-1' },
+              { id: 'sonnet', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+              { id: 'custom', tool: 'claude-code', model: 'claude-opus-4-8[1m]' },
+            ],
+            defaultEntry: 'opus',
+          },
+        ],
+        defaultBundle: 'daily',
+        perFolder: {},
+        perSection: {},
+        perSession: {},
+        labels: {},
+        groupLabels: { cloud: '\u2601\uFE0F {name}', local: '\u{1F3E0} {name}' },
+        seen: ['claude-opus-5-5'],
+        offered: ['claude-sonnet-5-5', 'claude-opus-5-5'],
+      },
+    });
+    m.setStatus(sid, 'idle');
+    m.setStatusline(sid, '', {
+      model: 'Opus 5.5',
+      modelId: 'claude-opus-5-5',
+      contextPct: 41,
+      cost: 1.82,
+      mode: 'acceptEdits',
+      branch: 'feat/a-rather-long-branch-name',
+    });
   }, id);
+  await expect(page.getByTestId('model-chip')).toBeVisible();
   return id;
 }
 
@@ -170,6 +207,49 @@ for (const scheme of SCHEMES) {
       expect(await ringFindings(page, '.floating.picker'), where('picker rings')).toEqual([]);
       await page.keyboard.press('Escape');
       await expectViewerBack(page, mark);
+      mark = (await viewerLog(page)).length;
+
+      // The model picker on the status strip.
+      await page.getByTestId('model-chip').click();
+      await expect(page.locator('.floating.mpick')).toBeVisible();
+      mark = await expectViewerStepsAside(page, mark);
+      await check('model picker', '.floating.mpick');
+      expect(await ringFindings(page, '.floating.mpick'), where('model picker rings')).toEqual([]);
+      await page.keyboard.press('Escape');
+      await expectViewerBack(page, mark);
+      mark = (await viewerLog(page)).length;
+
+      // Rename a session: the emoji picker with its Apple or Noto style choice.
+      await page.locator('.side [data-dm]').first().click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'Rename...' }).click();
+      await check('session rename row', '.side');
+      await page.getByTestId('sec-emoji-btn').click();
+      const flavors = page.locator('.floating.picker');
+      await expect(flavors.getByTestId('emoji-flavor-noto')).toBeVisible();
+      mark = await expectViewerStepsAside(page, mark);
+      await check('emoji picker with styles', '.floating.picker');
+      expect(await ringFindings(page, '.floating.picker'), where('style picker rings')).toEqual([]);
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+      await expectViewerBack(page, mark);
+      mark = (await viewerLog(page)).length;
+
+      // Restart Patchroom while a session works: the dialog over the pane.
+      await page.evaluate(() => {
+        const m = window.__PR_MOCK__!;
+        m.setStatus(m.sessions()[0].id, 'busy');
+        m.menuRestart();
+      });
+      await expect(page.getByTestId('restart-dialog')).toBeVisible();
+      mark = await expectViewerStepsAside(page, mark);
+      await check('restart dialog', '.restart');
+      expect(await ringFindings(page, '.restart'), where('restart rings')).toEqual([]);
+      await page.getByTestId('restart-dialog').getByRole('button', { name: 'Cancel' }).click();
+      await expectViewerBack(page, mark);
+      await page.evaluate(() => {
+        const m = window.__PR_MOCK__!;
+        m.setStatus(m.sessions()[0].id, 'idle');
+      });
       mark = (await viewerLog(page)).length;
 
       // The screenshot overlay: drag a box that covers part of the pane, then the note box.

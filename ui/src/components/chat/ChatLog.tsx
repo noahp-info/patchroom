@@ -92,6 +92,10 @@ export interface ChatLogProps {
   /** The window shows an old page: the pill says so and `onJumpLatest` reloads the newest. */
   detached?: boolean;
   onJumpLatest?(): Promise<void> | void;
+  /** Follow new rows from the start (Settings: auto-scroll). False starts the log paused. */
+  autoScroll?: boolean;
+  /** The user paused auto-scroll by scrolling up (not by the toggle). For the first-time hint. */
+  onPause?(): void;
 }
 
 function lowerBound(offs: Float64Array, n: number, target: number): number {
@@ -188,6 +192,17 @@ export function ChatLog(props: ChatLogProps) {
     h: 700,
   });
   const [atBottom, setAtBottom] = useState(initial.atBottom);
+  /**
+   * Auto-scroll: follow new rows. Scrolling up pauses it; Jump to latest, the toggle, or
+   * scrolling back to the bottom turns it on again. A pause from the toggle holds even at the
+   * bottom until the user scrolls.
+   */
+  const [follow, setFollow] = useState(initial.atBottom && props.autoScroll !== false);
+  const manual = useRef(false);
+  const pausedTop = useRef(0);
+  const movedSincePause = useRef(false);
+  const followShown = useRef(follow);
+  const onPauseRef = useRef(props.onPause);
   // Every pending widget is fully on screen: the "Needs you below" pill would point at nothing.
   const [pendingShown, setPendingShown] = useState(false);
   const stick = useRef(initial.atBottom);
@@ -227,7 +242,18 @@ export function ChatLog(props: ChatLogProps) {
     rowsRef.current = rows;
     loadingRef.current = loading;
     hasMoreRef.current = hasMore;
+    onPauseRef.current = props.onPause;
   });
+
+  /** Whether to follow, given that the view is (or is not) at the bottom at `st`. */
+  const resolveFollow = useCallback((near: boolean, st: number): boolean => {
+    if (manual.current) {
+      if (Math.abs(st - pausedTop.current) > 2) movedSincePause.current = true;
+      if (!near || !movedSincePause.current) return false;
+      manual.current = false;
+    }
+    return near;
+  }, []);
 
   const sync = useCallback(() => {
     const el = scroller.current;
@@ -235,20 +261,24 @@ export function ChatLog(props: ChatLogProps) {
     const o = offsRef.current;
     const st = el.scrollTop;
     const near = el.scrollHeight - st - el.clientHeight <= NEAR_BOTTOM;
-    stick.current = near;
+    stick.current = resolveFollow(near, st);
     setAtBottom((prev) => (prev === near ? prev : near));
+    const on = stick.current;
+    if (followShown.current && !on && !manual.current) onPauseRef.current?.();
+    followShown.current = on;
+    setFollow((prev) => (prev === on ? prev : on));
     // Anchor: the first row whose bottom is below the top edge.
     const a = pickAnchor(rowsRef.current, o, st);
     if (a) {
       anchor.current = a;
       anchorAt.current = st;
     }
-    onScrollState({ top: st, atBottom: near });
+    onScrollState({ top: st, atBottom: near && stick.current });
     if (st < LOAD_OLDER_AT && hasMoreRef.current && !loadingRef.current) onLoadOlder();
     setView((v) =>
       Math.abs(v.top - st) < 1 && v.h === el.clientHeight ? v : { top: st, h: el.clientHeight },
     );
-  }, [onScrollState, onLoadOlder]);
+  }, [onScrollState, onLoadOlder, resolveFollow]);
 
   useEffect(() => {
     const el = scroller.current;
@@ -257,7 +287,7 @@ export function ChatLog(props: ChatLogProps) {
       // Anchor and stick state update at once; the render waits for the next frame.
       const o = offsRef.current;
       const st = el.scrollTop;
-      stick.current = el.scrollHeight - st - el.clientHeight <= NEAR_BOTTOM;
+      stick.current = resolveFollow(el.scrollHeight - st - el.clientHeight <= NEAR_BOTTOM, st);
       const a = pickAnchor(rowsRef.current, o, st);
       if (a) {
         anchor.current = a;
@@ -284,7 +314,7 @@ export function ChatLog(props: ChatLogProps) {
       if (raf.current) cancelAnimationFrame(raf.current);
       raf.current = 0;
     };
-  }, [sync]);
+  }, [sync, resolveFollow]);
 
   // ---- measurement ----------------------------------------------------------------------
   const rowObserver = useRef<ResizeObserver | null>(null);
@@ -354,6 +384,14 @@ export function ChatLog(props: ChatLogProps) {
       restored.current = true;
       if (initial.atBottom) el.scrollTop = el.scrollHeight;
       else el.scrollTop = initial.top;
+      if (props.autoScroll === false) {
+        // Settings: logs start paused. The view opens at the bottom and stays put.
+        manual.current = true;
+        movedSincePause.current = false;
+        pausedTop.current = el.scrollTop;
+        stick.current = false;
+        followShown.current = false;
+      }
       lastTop.current = el.scrollTop;
       lastHeight.current = el.scrollHeight;
       sync();
@@ -451,6 +489,7 @@ export function ChatLog(props: ChatLogProps) {
   const jump = () => {
     const el = scroller.current;
     if (!el) return;
+    manual.current = false;
     stick.current = true;
     if (props.onJumpLatest) {
       void Promise.resolve(props.onJumpLatest()).then(() => {
@@ -462,6 +501,23 @@ export function ChatLog(props: ChatLogProps) {
     }
     el.scrollTop = el.scrollHeight;
     sync();
+  };
+
+  /** The indicator is a toggle: on pauses where the view is, paused jumps to the latest. */
+  const toggleFollow = () => {
+    const el = scroller.current;
+    if (!el) return;
+    if (!follow) {
+      jump();
+      return;
+    }
+    manual.current = true;
+    movedSincePause.current = false;
+    pausedTop.current = el.scrollTop;
+    stick.current = false;
+    followShown.current = false;
+    setFollow(false);
+    onScrollState({ top: el.scrollTop, atBottom: false });
   };
 
   const rendered: ReactNode[] = [];
@@ -506,25 +562,38 @@ export function ChatLog(props: ChatLogProps) {
         )}
         {rows.length === 0 && props.empty}
       </div>
-      {(!atBottom || props.detached) &&
-        rows.length > 0 &&
-        !(waitingCount > 0 && pendingShown && !props.detached) && (
-          <div className="jumpbar">
-            <button
-              type="button"
-              className={`jump${props.waiting ? ' needs' : ''}`}
-              onClick={jump}
-              data-testid="jump-latest"
-            >
-              <Icon name="down2" />
-              {props.detached
-                ? 'Back to latest messages'
-                : props.waiting
-                  ? 'Needs you below'
-                  : 'Jump to latest'}
-            </button>
-          </div>
-        )}
+      {rows.length > 0 && (
+        <div className="jumpbar" data-follow={follow ? 'on' : 'paused'}>
+          {(!atBottom || !follow || props.detached) &&
+            !(waitingCount > 0 && pendingShown && !props.detached) && (
+              <button
+                type="button"
+                className={`jump${props.waiting ? ' needs' : ''}`}
+                onClick={jump}
+                data-testid="jump-latest"
+              >
+                <Icon name="down2" />
+                {props.detached
+                  ? 'Back to latest messages'
+                  : props.waiting
+                    ? 'Needs you below'
+                    : 'Jump to latest'}
+              </button>
+            )}
+          <button
+            type="button"
+            className="autoscroll"
+            data-testid="autoscroll"
+            data-state={follow ? 'on' : 'paused'}
+            aria-pressed={follow}
+            title={follow ? 'Pause auto-scroll' : 'Turn auto-scroll back on'}
+            onClick={toggleFollow}
+          >
+            <span className="autoscroll__dot" aria-hidden="true" />
+            {follow ? 'Auto-scroll on' : 'Paused'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

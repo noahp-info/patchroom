@@ -32,12 +32,15 @@ export type PrefsTabId =
   | 'dnd'
   | 'hooks'
   | 'links'
-  | 'accounts';
+  | 'accounts'
+  | 'models'
+  | 'updates';
 
 /** What `<PrefsPane>` takes from the workspace. */
 export interface PrefsPaneProps {
   onClose(): void;
   dms?: { id: string; name: string }[];
+  sections?: { id: string; name: string; folder?: string | null }[];
   /** Section to open first. */
   initialTab?: PrefsTabId;
   /** Open this DM's sound settings. */
@@ -61,6 +64,9 @@ interface PrefsApi {
   themeImportDetect: Ipc['themeImportDetect'];
   themeImportFile: Ipc['themeImportFile'];
   onPrefsChanged(handler: (prefs: Prefs) => void): Promise<() => void>;
+  catalogGet: Ipc['catalogGet'];
+  catalogRefresh: Ipc['catalogRefresh'];
+  updateCheck: Ipc['updateCheck'];
 }
 
 interface PrefsExports {
@@ -118,6 +124,9 @@ export function installPrefsApi(ipc: Ipc): void {
     themeImportDetect: () => ipc.themeImportDetect(),
     themeImportFile: () => ipc.themeImportFile(),
     onPrefsChanged: (handler) => ipc.on('prefs:changed', (e) => handler(e.prefs)),
+    catalogGet: () => ipc.catalogGet(),
+    catalogRefresh: () => ipc.catalogRefresh(),
+    updateCheck: () => ipc.updateCheck(),
   });
 }
 

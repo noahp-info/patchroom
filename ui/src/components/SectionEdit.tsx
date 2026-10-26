@@ -1,16 +1,32 @@
 import { useRef, useState, type FocusEvent, type FormEvent } from 'react';
+import type { EmojiFlavor } from '../ipc';
+import { Emoji } from './Emoji';
 import { EmojiPicker } from './EmojiPicker';
 import { Icon } from './Icon';
 
-/** A small button that shows the chosen emoji and opens the picker the reactions use. */
+/**
+ * A small button that shows the chosen emoji and opens the picker the reactions use, with the
+ * Apple or Noto style choice. Every place a person names something has one.
+ */
 export function EmojiButton({
   emoji,
+  flavor,
   onPick,
   onClear,
   onToggle,
+  label = 'Section emoji',
+  testId = 'sec-emoji-btn',
+  container,
+  className = 'sec-emoji-btn',
 }: {
+  container?: HTMLElement | null;
+  className?: string;
   emoji: string | null;
-  onPick(emoji: string): void;
+  flavor?: EmojiFlavor | null;
+  onPick(emoji: string, flavor: EmojiFlavor): void;
+  /** The picker's accessible name. */
+  label?: string;
+  testId?: string;
   onClear?(): void;
   /** Called as the picker opens and closes, so a parent can hold focus rules while it is up. */
   onToggle?(open: boolean): void;
@@ -24,23 +40,26 @@ export function EmojiButton({
     <>
       <button
         type="button"
-        className="sec-emoji-btn"
+        className={className}
         aria-label={emoji ? `Emoji ${emoji}. Change it` : 'Choose an emoji'}
         aria-haspopup="dialog"
         aria-expanded={rect !== null}
-        data-testid="sec-emoji-btn"
+        data-testid={testId}
         onClick={(e) => {
           if (rect) return close();
           setRect(e.currentTarget.getBoundingClientRect());
           onToggle?.(true);
         }}
       >
-        {emoji ? <span aria-hidden="true">{emoji}</span> : <Icon name="smile" />}
+        {emoji ? <Emoji char={emoji} flavor={flavor} /> : <Icon name="smile" />}
       </button>
       {rect && (
         <EmojiPicker
           anchor={rect}
-          label="Section emoji"
+          label={label}
+          flavors
+          flavor={flavor ?? undefined}
+          container={container}
           onPick={onPick}
           onClear={emoji ? onClear : undefined}
           onClose={close}
@@ -57,19 +76,24 @@ export function AddForm({
   onCancel,
 }: {
   mode: 'section' | 'divider';
-  onSubmit(name: string, emoji: string | null): void;
+  onSubmit(name: string, emoji: string | null, flavor: EmojiFlavor): void;
   onCancel(): void;
 }) {
   const [name, setName] = useState('');
-  const [emoji, setEmoji] = useState<string | null>(null);
+  const [emoji, setEmoji] = useState<{ char: string; flavor: EmojiFlavor } | null>(null);
   const divider = mode === 'divider';
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    onSubmit(name, emoji);
+    onSubmit(name, emoji?.char ?? null, emoji?.flavor ?? 'apple');
   };
   return (
     <form className="side-add" onSubmit={submit} data-testid={`add-${mode}`}>
-      <EmojiButton emoji={emoji} onPick={setEmoji} onClear={() => setEmoji(null)} />
+      <EmojiButton
+        emoji={emoji?.char ?? null}
+        flavor={emoji?.flavor}
+        onPick={(char, flavor) => setEmoji({ char, flavor })}
+        onClear={() => setEmoji(null)}
+      />
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
@@ -92,23 +116,32 @@ export function AddForm({
 export function RenameForm({
   name,
   emoji,
+  flavor,
   divider,
   onCommit,
   onEmoji,
   onCancel,
+  label: inputLabel,
+  emojiLabel = 'Section emoji',
+  className = 'sec-h sec-edit',
 }: {
   name: string;
   emoji: string | null;
+  flavor?: EmojiFlavor | null;
   divider: boolean;
   onCommit(name: string): void;
-  onEmoji(emoji: string | null): void;
+  onEmoji(emoji: string | null, flavor: EmojiFlavor): void;
   onCancel(): void;
+  /** The name field's accessible name. Default: section or divider wording. */
+  label?: string;
+  emojiLabel?: string;
+  className?: string;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const form = useRef<HTMLFormElement>(null);
   const picking = useRef(false);
   const done = useRef(false);
-  const label = divider ? 'Divider label' : 'Section name';
+  const label = inputLabel ?? (divider ? 'Divider label' : 'Section name');
   const commit = () => {
     if (done.current) return;
     done.current = true;
@@ -122,7 +155,7 @@ export function RenameForm({
   return (
     <form
       ref={form}
-      className="sec-h sec-edit"
+      className={className}
       onSubmit={(e) => {
         e.preventDefault();
         commit();
@@ -131,12 +164,14 @@ export function RenameForm({
     >
       <EmojiButton
         emoji={emoji}
-        onPick={(e) => {
-          onEmoji(e);
+        flavor={flavor}
+        label={emojiLabel}
+        onPick={(e, f) => {
+          onEmoji(e, f);
           input.current?.focus();
         }}
         onClear={() => {
-          onEmoji(null);
+          onEmoji(null, 'apple');
           input.current?.focus();
         }}
         onToggle={(open) => {

@@ -69,6 +69,20 @@ pub struct EmojiPrefs {
     pub chat: Flavor,
 }
 
+/// Chat view preferences.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ChatPrefs {
+    /// Logs follow new messages until the user scrolls up. Off: every log starts paused.
+    pub auto_scroll: bool,
+}
+
+impl Default for ChatPrefs {
+    fn default() -> Self {
+        Self { auto_scroll: true }
+    }
+}
+
 /// Opt-in network checks (SPEC D3: opt-in). Nothing fetches while both are off.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]

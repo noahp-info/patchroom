@@ -108,6 +108,16 @@ const STEER_COMMANDS = [
   'viewer_sign_out',
   'viewer_snapshot',
 ];
+/** Model bundles, the signed catalog, opt-in update checks, restart and emoji flavors. */
+const MODEL_COMMANDS = [
+  'app_restart',
+  'app_restart_pending',
+  'catalog_get',
+  'catalog_refresh',
+  'session_set_emoji',
+  'session_set_model',
+  'update_check',
+];
 /** Declared by the backend beyond the fixed contract; the UI uses them when present. */
 const P2_OPTIONAL = ['session_view', 'session_focus'];
 const P1B_EVENTS = ['pty:exit', 'pty:output', 'session:status', 'session:title'];
@@ -270,7 +280,14 @@ async function recordTauriCalls(): Promise<Call[]> {
   await ipc.sectionList();
   await ipc.sectionCreate('n');
   await ipc.sectionCreate('Later', { kind: 'divider', emoji: '\u{1F4E6}' });
-  await ipc.sectionSetEmoji('s', '\u{1F525}');
+  await ipc.sectionSetEmoji('s', '\u{1F525}', 'noto');
+  await ipc.sessionSetEmoji('i', '\u{2728}', 'apple');
+  await ipc.sessionSetModel('i', 'claude-opus-4-8[1m]');
+  await ipc.catalogGet();
+  await ipc.catalogRefresh();
+  await ipc.updateCheck();
+  await ipc.appRestart(['i']);
+  expect(await ipc.appRestartPending()).toEqual([]);
   await ipc.sectionSetCollapsed('s', true);
   await ipc.pickFolder('/w');
   await ipc.chatHistory('i', 'k', 300);
@@ -368,7 +385,9 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     for (const c of THEME_IMPORT_COMMANDS)
       expect(declared, `theme import command ${c}`).toContain(c);
     for (const c of STEER_COMMANDS) expect(declared, `steer command ${c}`).toContain(c);
+    for (const c of MODEL_COMMANDS) expect(declared, `model command ${c}`).toContain(c);
     const known = new Set([
+      ...MODEL_COMMANDS,
       ...SOUND_COMMANDS,
       ...THEME_IMPORT_COMMANDS,
       ...STEER_COMMANDS,
@@ -437,7 +456,10 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     expect(byCmd.section_set_collapsed).toEqual({ id: 's', collapsed: true });
     // Sidebar organization: `kind` and `emoji` are optional on create; null clears an emoji.
     expect(byCmd.section_create).toEqual({ name: 'Later', kind: 'divider', emoji: '\u{1F4E6}' });
-    expect(byCmd.section_set_emoji).toEqual({ id: 's', emoji: '\u{1F525}' });
+    expect(byCmd.section_set_emoji).toEqual({ id: 's', emoji: '\u{1F525}', flavor: 'noto' });
+    expect(byCmd.session_set_emoji).toEqual({ id: 'i', emoji: '\u{2728}', flavor: 'apple' });
+    expect(byCmd.session_set_model).toEqual({ id: 'i', model: 'claude-opus-4-8[1m]' });
+    expect(byCmd.app_restart).toEqual({ ids: ['i'] });
     expect(byCmd.pick_folder).toEqual({ defaultPath: '/w' });
     expect(byCmd.chat_history).toEqual({ id: 'i', before: 'k', limit: 300 });
     expect(byCmd.chat_thread).toEqual({ id: 'i', toolUseId: 'tu' });

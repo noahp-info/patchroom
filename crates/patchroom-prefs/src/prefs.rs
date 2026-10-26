@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::dnd::{parse_hhmm, Dnd};
-use crate::models::{EmojiPrefs, Models, ModuleLabel, Updates};
+use crate::models::{ChatPrefs, EmojiPrefs, Models, ModuleLabel, Updates};
 
 /// Layout bases the UI can render.
 pub const BASES: [&str; 4] = ["homeroom", "patchbay", "scrollback", "bluepencil"];
@@ -392,6 +392,8 @@ pub struct Prefs {
     pub updates: Updates,
     /// How emoji are drawn in chat.
     pub emoji: EmojiPrefs,
+    /// Chat view: auto-scroll.
+    pub chat: ChatPrefs,
 }
 
 /// First-time hints (DESIGN.md, First-time hints). Each id shows once, ever.
@@ -479,6 +481,7 @@ impl Default for Prefs {
             models: Models::default(),
             updates: Updates::default(),
             emoji: EmojiPrefs::default(),
+            chat: ChatPrefs::default(),
         }
     }
 }
@@ -1061,6 +1064,7 @@ mod tests {
         let p = Prefs::from_stored(r#"{"themeId":"x"}"#);
         assert!(!p.updates.check_app && !p.updates.check_models && !p.updates.asked_models);
         assert!(p.models.bundles.is_empty());
+        assert!(p.chat.auto_scroll, "logs follow new messages by default");
         assert_eq!(p.emoji.chat, crate::models::Flavor::Apple);
         let p = Prefs::default()
             .patched(&json!({

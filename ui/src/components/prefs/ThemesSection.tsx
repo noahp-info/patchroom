@@ -123,6 +123,54 @@ export function ThemesSection() {
         </p>
       </fieldset>
 
+      <fieldset className="pf-group" data-testid="emoji-chat">
+        <legend>Emoji in chat</legend>
+        <div className="pf-seg" role="radiogroup" aria-label="Emoji in chat">
+          {(
+            [
+              ['apple', 'Apple'],
+              ['noto', 'Noto Color'],
+            ] as const
+          ).map(([id, label]) => (
+            <label key={id} className="pf-seg__opt">
+              <input
+                type="radio"
+                name={`${uid}-emoji`}
+                value={id}
+                checked={(prefs.emoji?.chat ?? 'apple') === id}
+                onChange={() => void store.update({ emoji: { chat: id } })}
+              />
+              <span>
+                <span className="emo pf-emo" data-flavor={id} aria-hidden="true">
+                  {'\u{1F600}'}
+                </span>
+                {label}
+              </span>
+            </label>
+          ))}
+        </div>
+        <p className="pf-hint">
+          How emoji look in messages and in the terminal. A section or session emoji keeps the style
+          it was picked in.
+        </p>
+      </fieldset>
+
+      <fieldset className="pf-group" data-testid="chat-autoscroll">
+        <legend>Chat</legend>
+        <label className="chk">
+          <input
+            type="checkbox"
+            checked={prefs.chat?.autoScroll ?? true}
+            onChange={(e) => void store.update({ chat: { autoScroll: e.target.checked } })}
+          />
+          <span>Auto-scroll to new messages</span>
+        </label>
+        <p className="pf-hint">
+          Scrolling up pauses it in that window. Jump to latest, or scrolling back to the bottom,
+          turns it back on. Off: every log opens paused.
+        </p>
+      </fieldset>
+
       <fieldset className="pf-group">
         <legend>Theme</legend>
         <ul className="tgrid" aria-label="Themes">

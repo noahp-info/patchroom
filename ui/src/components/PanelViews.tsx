@@ -145,6 +145,9 @@ export function PrefsView({ state, store }: { state: AppState; store: AppStore }
       <PrefsPane
         onClose={() => store.closePanel()}
         dms={state.sessions.map((s) => ({ id: s.id, name: s.name }))}
+        sections={state.sections
+          .filter((s) => s.kind !== 'divider')
+          .map((s) => ({ id: s.id, name: s.name, folder: s.folder ?? null }))}
         initialTab={target?.tab}
         targetDm={target?.tab === 'sounds' ? target.dmId : undefined}
       />

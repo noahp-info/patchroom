@@ -51,6 +51,20 @@ export interface SessionInfo {
   busySince?: number;
   /** The CLI's live working line while a turn runs (`session:working`). */
   working?: WorkingLine | null;
+  /** Leading emoji of the session row, drawn in `emojiFlavor`. */
+  emoji?: string | null;
+  emojiFlavor?: EmojiFlavor | null;
+  /** The `--model` the DM launches and resumes with (set by a confirmed switch). */
+  launchModel?: string | null;
+}
+
+/** How an emoji is drawn: the system's Apple Color Emoji or the bundled Noto Color Emoji. */
+export type EmojiFlavor = 'apple' | 'noto';
+
+/** An emoji someone chose for a name: the character and how it is drawn. */
+export interface EmojiChoice {
+  char: string;
+  flavor: EmojiFlavor;
 }
 
 /** "Slithering…" and "1m 31s · ↓ 409 tokens · deep in thought", read off the CLI's screen. */
@@ -92,6 +106,8 @@ export interface SectionInfo {
   kind?: SectionKind;
   /** Leading emoji of the header; null for none. */
   emoji?: string | null;
+  /** How the header emoji is drawn. Absent: apple. */
+  emojiFlavor?: EmojiFlavor | null;
 }
 
 /** What a stored sidebar row is. */
@@ -156,6 +172,8 @@ export interface IpcEvents {
   'menu:comment': Record<string, never> | null;
   /** Edit > Screenshot to Steer (Cmd+Shift+2). */
   'menu:screenshot': Record<string, never> | null;
+  /** The app menu's Restart Patchroom item. */
+  'menu:restart': Record<string, never> | null;
 }
 
 export interface TerminalWaitEvent extends TerminalWait {
@@ -270,7 +288,22 @@ export interface Ipc {
     name: string,
     opts?: { kind?: SectionKind; emoji?: string | null },
   ): Promise<{ id: string }>;
-  sectionSetEmoji(id: string, emoji: string | null): Promise<void>;
+  /** With `flavor` the pair is stored as one `{char, flavor}`. */
+  sectionSetEmoji(id: string, emoji: string | null, flavor?: EmojiFlavor): Promise<void>;
+  /** A session row's emoji as `{char, flavor}`; null clears it. */
+  sessionSetEmoji(id: string, emoji: string | null, flavor?: EmojiFlavor): Promise<void>;
+  /** After a confirmed `/model` switch: the DM resumes on this model. */
+  sessionSetModel(id: string, model: string): Promise<void>;
+  /** The signed catalog fetched earlier (verified again), or null. */
+  catalogGet(): Promise<ModelCatalog | null>;
+  /** Download and verify the signed catalog. Rejects while the setting is off. */
+  catalogRefresh(): Promise<ModelCatalog>;
+  /** Is a newer Patchroom published? Rejects while the setting is off. */
+  updateCheck(): Promise<UpdateInfo>;
+  /** Remember the DMs to reopen, then quit and relaunch. */
+  appRestart(ids: string[]): Promise<void>;
+  /** The DMs the last restart asked to reopen, once. */
+  appRestartPending(): Promise<string[]>;
   sectionSetCollapsed(id: string, collapsed: boolean): Promise<void>;
   /** Native folder picker (`pick_folder`). Resolves null when cancelled. */
   pickFolder(defaultPath?: string): Promise<string | null>;
@@ -514,6 +547,10 @@ export interface SessionBadgesEvent {
 }
 export interface StatusChips {
   model?: string;
+  /** The model id the CLI reports (`claude-opus-5-5`), for confirming a switch. */
+  modelId?: string;
+  /** The CLI talks to a local API (its base URL is localhost or 127.0.0.1). */
+  apiLocal?: boolean;
   branch?: string;
   contextPct?: number;
   cost?: number | string;
@@ -618,6 +655,86 @@ export interface Prefs {
   hints?: { seen: string[] };
   /** Terminal palettes imported from other tools. Absent in older blobs: none. */
   termPalettes?: unknown[];
+  /** Model bundles, overrides and labels. Absent in older blobs: none. */
+  models?: ModelPrefs;
+  /** Opt-in network checks. Absent: both off. */
+  updates?: UpdatePrefs;
+  /** How emoji in chat are drawn. Absent: apple. */
+  emoji?: { chat: EmojiFlavor };
+  /** Chat view. Absent: logs follow new messages. */
+  chat?: { autoScroll: boolean };
+}
+
+/** Tools a bundle entry can name. */
+export type ToolId = 'claude-code' | 'codex' | 'cursor' | 'gemini' | 'opencode';
+
+export interface BundleEntry {
+  id: string;
+  tool: ToolId;
+  /** A catalog id, free text, or `latest:<family>`. */
+  model: string;
+}
+
+export interface ModelBundle {
+  id: string;
+  name: string;
+  emoji?: string | null;
+  entries: BundleEntry[];
+  defaultEntry: string;
+}
+
+export type ModelPlace = 'cloud' | 'local';
+
+export interface ModelLabel {
+  text?: string;
+  emoji?: string;
+  place?: ModelPlace;
+}
+
+export interface ModelPrefs {
+  bundles: ModelBundle[];
+  defaultBundle?: string | null;
+  perFolder: Record<string, string>;
+  perSection: Record<string, string>;
+  perSession: Record<string, string>;
+  labels: Record<string, ModelLabel>;
+  groupLabels: { cloud: string; local: string };
+  /** Model ids the chip has shown (the label hint asks once per model). */
+  seen: string[];
+  /** Newer model ids already offered with Swap or Keep. */
+  offered: string[];
+}
+
+export interface UpdatePrefs {
+  checkApp: boolean;
+  checkModels: boolean;
+  /** "Want to check for newer models?" was answered. */
+  askedModels: boolean;
+}
+
+export interface CatalogModel {
+  id: string;
+  tool: ToolId | (string & {});
+  name: string;
+  family: string;
+  /** Dotted version within the family ("5.5"); higher is newer. */
+  version?: string;
+  released?: string;
+  where?: ModelPlace;
+}
+
+export interface ModelCatalog {
+  schema: 1;
+  generated: string;
+  tools: { id: string; name: string; providers?: string[] }[];
+  models: CatalogModel[];
+}
+
+export interface UpdateInfo {
+  current: string;
+  latest: string | null;
+  url: string | null;
+  newer: boolean;
 }
 
 /** Ids of the status strip modules, in the order the built-in default shows them. */
@@ -631,6 +748,13 @@ export type StatusModuleId =
 export interface StatusBarPrefs {
   default: string[] | null;
   perDm: Record<string, string[]>;
+  /** The user's label per module: text plus an emoji. */
+  labels?: Record<string, ModuleLabel>;
+}
+
+export interface ModuleLabel {
+  text?: string;
+  emoji?: string;
 }
 
 export interface DetectedHook {

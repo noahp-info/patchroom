@@ -12,7 +12,10 @@ import type { ChatItem, MarkInfo, PromptAnswer, SessionInfo, SubagentItem } from
 import { emojiName } from '../../lib/emoji';
 import { itemText } from '../../lib/itemText';
 import { buildRows } from '../../lib/rows';
-import { inTerminalDialog, type AppStore } from '../../state/store';
+import { inTerminalDialog, type AppStore, type ModelSwitch } from '../../state/store';
+import type { ModelCatalog } from '../../ipc';
+import { hintPlace, type HintId } from '../../lib/hints';
+import { Hint } from '../Hint';
 import { ChatContext } from './ChatContext';
 import { ChatLog, type ScrollState } from './ChatLog';
 import { Composer } from './Composer';
@@ -40,6 +43,12 @@ export interface ChatViewProps {
   prefs: ReturnType<AppStore['getSnapshot']>['prefs'];
   /** Every pin, saved item and reaction; this view reads the ones for its DM. */
   marks: MarkInfo[];
+  /** The first-time hint on screen; this view shows the ones placed by the strip or the log. */
+  hint?: HintId | null;
+  hintVars?: Record<string, string> | null;
+  /** A model switch in progress for this DM. */
+  modelSwitch?: ModelSwitch;
+  catalog?: ModelCatalog;
 }
 
 /** Hands back the previous object while a row's decoration is unchanged, so memoized rows hold. */
@@ -193,6 +202,10 @@ export function ChatView({
   prefs,
   marks,
   toolSlot = null,
+  hint = null,
+  hintVars = null,
+  modelSwitch,
+  catalog,
 }: ChatViewProps) {
   const id = session.id;
   const model = store.chat(id);
@@ -317,13 +330,39 @@ export function ChatView({
     [store, id, model],
   );
 
+  const lastScroll = useRef(0);
   const onScrollState = useCallback(
     (s: ScrollState) => {
+      lastScroll.current = performance.now();
       model.setScroll(s);
     },
     [model],
   );
   const onLoadOlder = useCallback(() => void model.loadOlder(), [model]);
+  // The first pause offers the hint once scrolling has settled, so it never costs a frame mid-scroll.
+  const pauseTimer = useRef(0);
+  const onPause = useCallback(() => {
+    if (store.getSnapshot().prefs?.hints?.seen?.includes('scroll.paused')) return;
+    window.clearTimeout(pauseTimer.current);
+    const settle = () => {
+      const quiet = performance.now() - lastScroll.current;
+      if (quiet < 900) pauseTimer.current = window.setTimeout(settle, 900 - quiet);
+      else store.showHint('scroll.paused');
+    };
+    pauseTimer.current = window.setTimeout(settle, 900);
+  }, [store]);
+  useEffect(() => () => window.clearTimeout(pauseTimer.current), []);
+  // The model chip's one-time hints: a newer model in the bundle, or a label for a new model.
+  const chipModel = snap.statusline?.chips.modelId;
+  useEffect(() => {
+    if (visible && chipModel) store.noteChipModel(id, chipModel);
+  }, [store, id, visible, chipModel, prefs]);
+  const placed = (where: 'strip' | 'log') =>
+    visible && hint && hintPlace(hint) === where ? (
+      <div className="chat-hint-slot">
+        <Hint store={store} id={hint} vars={hintVars} />
+      </div>
+    ) : null;
   const ended = session.status === 'exited';
   const mirrored = !!session.mirror;
   const dialog = !mirrored && inTerminalDialog(session);
@@ -394,6 +433,8 @@ export function ChatView({
             onFocusDone={(n) => model.consumeFocus(n)}
             detached={snap.detached}
             onJumpLatest={() => model.reload()}
+            autoScroll={prefs?.chat?.autoScroll ?? true}
+            onPause={onPause}
             empty={
               <div className="logempty" data-testid="chat-empty">
                 {snap.loaded ? (
@@ -416,6 +457,7 @@ export function ChatView({
               </div>
             }
           />
+          {placed('log')}
           <WorkingRow session={session} />
           <div className="sr-only" role="status" aria-live="polite">
             {pending > 0
@@ -448,9 +490,13 @@ export function ChatView({
             onStop={() => store.stopTurn(id)}
             onPasteImage={(f) => store.pasteImage(id, f)}
           />
+          {placed('strip')}
           <StatusStrip
             store={store}
             sessionId={id}
+            status={session.status}
+            modelSwitch={modelSwitch}
+            catalog={catalog}
             prefs={prefs}
             statusline={snap.statusline}
             cwd={session.cwd}

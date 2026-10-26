@@ -1,4 +1,12 @@
 import { DEFAULT_BASE, getBase } from '../../theme/bases.ts';
+import type {
+  EmojiFlavor,
+  ModelCatalog,
+  ModelPrefs,
+  ModuleLabel,
+  UpdateInfo,
+  UpdatePrefs,
+} from '../../ipc/types.ts';
 import {
   createMockSoundBackend,
   type MockSoundBackend,
@@ -119,7 +127,11 @@ export interface Prefs {
   dnd: { manual: boolean; schedule: DndSchedule | null };
   termPerDm: Record<string, TermStyle>;
   searchAllSessions: boolean;
-  statusBar?: { default: string[] | null; perDm: Record<string, string[]> };
+  statusBar?: {
+    default: string[] | null;
+    perDm: Record<string, string[]>;
+    labels?: Record<string, ModuleLabel>;
+  };
   sidebarWidth: number;
   /** Where a plain click opens a link. Cmd-click opens it in the other place. */
   links: { open: LinkTarget };
@@ -129,6 +141,14 @@ export interface Prefs {
   hints: { seen: string[] };
   /** Terminal palettes imported from other tools. Palette id `import:<id>`. */
   termPalettes: StoredTermPalette[];
+  /** Model bundles, overrides and labels. */
+  models?: ModelPrefs;
+  /** Opt-in network checks (both off by default). */
+  updates?: UpdatePrefs;
+  /** How emoji in chat are drawn. */
+  emoji?: { chat: EmojiFlavor };
+  /** Chat view: logs follow new messages. */
+  chat?: { autoScroll: boolean };
 }
 
 export type LinkTarget = 'patchroom' | 'browser';
@@ -296,6 +316,12 @@ export interface PrefsApi {
   themeImportFile(): Promise<ImportEntry | null>;
   /** Subscribe to `prefs:changed`. */
   onPrefsChanged(handler: (prefs: Prefs) => void): Promise<() => void>;
+  /** The signed catalog fetched earlier, or null. Absent: none. */
+  catalogGet?(): Promise<ModelCatalog | null>;
+  /** Fetch and verify the signed catalog (only while the setting is on). */
+  catalogRefresh?(): Promise<ModelCatalog>;
+  /** Is a newer Patchroom published (only while the setting is on)? */
+  updateCheck?(): Promise<UpdateInfo>;
 }
 
 /** Real backend: command names and payloads from the P3 build bar. */
@@ -365,6 +391,18 @@ export function createTauriPrefsApi(): PrefsApi {
     async themeImportFile() {
       const { invoke } = await import('@tauri-apps/api/core');
       return invoke<ImportEntry | null>('theme_import_file');
+    },
+    async catalogGet() {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<ModelCatalog | null>('catalog_get');
+    },
+    async catalogRefresh() {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<ModelCatalog>('catalog_refresh');
+    },
+    async updateCheck() {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<UpdateInfo>('update_check');
     },
     async onPrefsChanged(handler) {
       const { listen } = await import('@tauri-apps/api/event');

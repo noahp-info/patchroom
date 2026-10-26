@@ -57,6 +57,14 @@
 //! branch checked out in the section's folder (read only), so the UI draws a branch chip only
 //! when a session's branch differs.
 //!
+//! # Models, updates, restart, emoji (see `manager` `models` module)
+//! Commands: `session_set_model {id, model}`, `session_set_emoji {id, emoji?, flavor?}`,
+//! `section_set_emoji` takes an optional `flavor`, `catalog_get`, `catalog_refresh`,
+//! `update_check`, `app_restart {ids}` and `app_restart_pending`. Event: `menu:restart` (app menu,
+//! Restart Patchroom). `catalog_refresh` and `update_check` refuse unless the user turned the
+//! matching Settings > Updates check on; both are a plain GET through the system curl. The model
+//! catalog's ed25519 signature is checked against the key in `patchroom-catalog`.
+//!
 //! Per launch, claude gets `--settings <file>`: a Patchroom-owned file in the data dir
 //! (`bridge.sock.d/<id>.json`) that registers the hooks and the `patchroom-statusline`
 //! wrapper. User settings files are never written. The file keeps claude's own command

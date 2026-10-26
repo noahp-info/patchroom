@@ -198,6 +198,28 @@ export interface MockControl {
   failNextCheck: string | null;
   /** Every open or resume that passed `openAnyway`. */
   openAnyways: string[];
+
+  // ---- models, catalog, updates, restart, emoji ---------------------------------------------
+  /** Every `session_create` call, as sent. */
+  creates: import('./types').SessionCreateArgs[];
+  /** Every `session_set_model` call. */
+  modelSets: { id: string; model: string }[];
+  /** A `/model <id>` sent while idle makes the CLI report that model. Default true. */
+  modelSwitchWorks: boolean;
+  /** What `catalog_get` returns: a catalog fetched earlier. */
+  cachedCatalog: import('./types').ModelCatalog | null;
+  /** What `catalog_refresh` downloads. */
+  remoteCatalog: import('./types').ModelCatalog | null;
+  /** Number of `catalog_refresh` and `update_check` calls that reached the network. */
+  fetches: { catalog: number; update: number };
+  /** What `update_check` finds. */
+  updateInfo: import('./types').UpdateInfo;
+  /** Every `app_restart` call, with the DM ids to reopen. */
+  restarts: string[][];
+  /** The app menu's Restart Patchroom item. */
+  menuRestart(): void;
+  /** Every `session_set_emoji` call. */
+  sessionEmojis: { id: string; emoji: string | null; flavor?: string }[];
 }
 
 declare global {
@@ -213,6 +235,8 @@ type Handler = (payload: never) => void;
  * output, status and title events. It does not run any process.
  */
 const PERSIST_KEY = 'patchroom.mock.state';
+/** The DMs a mock restart reopens: survives the page reload that stands in for the relaunch. */
+const RESTART_KEY = 'patchroom.mock.restart';
 
 const DEFAULT_MIX = Object.fromEntries(
   ['needs', 'done', 'message', 'error', 'bell', 'decision', 'due', 'session'].map((e) => [
@@ -235,6 +259,14 @@ const DEFAULT_PREFS: Prefs = {
   statusBar: { default: null, perDm: {} },
   sidebarWidth: 264,
 };
+
+/** What the CLI's statusline calls a model id: `claude-opus-5-5` reads "Opus 5.5". */
+function modelName(id: string): string {
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?/.exec(id);
+  if (!m) return id;
+  const fam = m[1][0].toUpperCase() + m[1].slice(1);
+  return `${fam} ${m[2]}${m[3] ? `.${m[3]}` : ''}`;
+}
 
 /** Text a search or a snapshot can see for one chat item. */
 function searchText(it: ChatItem): string {
@@ -527,6 +559,18 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     failNextFolderRead: false,
     failNextCheck: null,
     openAnyways: [],
+    modelSets: [],
+    creates: [],
+    modelSwitchWorks: true,
+    cachedCatalog: null,
+    remoteCatalog: null,
+    fetches: { catalog: 0, update: 0 },
+    updateInfo: { current: '0.0.1', latest: '0.0.1', url: null, newer: false },
+    restarts: [],
+    menuRestart() {
+      emit('menu:restart', {});
+    },
+    sessionEmojis: [],
     folderRows: (sectionId) => (folderRows.get(sectionId) ?? []).map((r) => viewRow(sectionId, r)),
     setFolderRows(sectionId, rows) {
       folderRows.set(sectionId, rows);
@@ -701,8 +745,18 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
 
   const ipc: Ipc = {
     async sessionCreate(args) {
-      const s = control.addSession({ cwd: args.cwd, name: args.name });
+      control.creates.push(structuredClone(args));
+      const at = args.args?.indexOf('--model') ?? -1;
+      const launch = at >= 0 ? args.args?.[at + 1] : undefined;
+      const s = control.addSession({ cwd: args.cwd, name: args.name, launchModel: launch ?? null });
       control.spawns.push(s.id);
+      // The CLI's first statusline names the model it launched on.
+      if (launch) {
+        setTimeout(
+          () => control.setStatusline(s.id, '', { model: modelName(launch), modelId: launch }),
+          30,
+        );
+      }
       if (opts.banner) {
         queueMicrotask(() =>
           control.emitText(
@@ -741,6 +795,14 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       }
       if (outcome === 'blocked_dialog') return { outcome, reason: sess?.terminalWait?.reason };
       control.texts.push({ id, text });
+      // `/model <id>` switches the CLI's model: its statusline reports the new one.
+      const switched = /^\/model\s+(\S+)\s*$/.exec(text);
+      if (switched && control.modelSwitchWorks) {
+        const modelId = switched[1];
+        setTimeout(() => control.setStatusline(id, '', { model: modelName(modelId), modelId }), 60);
+        return { outcome };
+      }
+      if (switched) return { outcome };
       // A slash command that opens a TUI panel repaints the PTY and adds no transcript item.
       if (text.startsWith('/')) {
         if (control.repaintOnSlash)
@@ -911,10 +973,11 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       if (kind === 'section' && !name.trim()) throw new Error('section name must not be empty');
       return { id: control.addSection({ name: name.trim(), kind, emoji: opts?.emoji ?? null }).id };
     },
-    async sectionSetEmoji(id, emoji) {
+    async sectionSetEmoji(id, emoji, flavor) {
       const sec = sections.get(id);
       if (!sec) throw new Error(`no such section: ${id}`);
       sec.emoji = emoji?.trim() || null;
+      if (flavor !== undefined) sec.emojiFlavor = sec.emoji ? flavor : null;
       save();
     },
     async sectionSetCollapsed(id, collapsed) {
@@ -1098,6 +1161,59 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     },
     async prefsGet() {
       return structuredClone(prefs);
+    },
+    async sessionSetEmoji(id, emoji, flavor) {
+      control.sessionEmojis.push({ id, emoji, flavor });
+      const s = sessions.get(id);
+      if (!s) throw new Error(`no such session: ${id}`);
+      s.emoji = emoji?.trim() || null;
+      s.emojiFlavor = s.emoji ? (flavor ?? 'apple') : null;
+      save();
+    },
+    async sessionSetModel(id, model) {
+      if (!/^[A-Za-z0-9._:/@[\]-]{1,128}$/.test(model) || model.startsWith('-')) {
+        throw new Error(`not a model name: ${model}`);
+      }
+      control.modelSets.push({ id, model });
+      const s = sessions.get(id);
+      if (s) s.launchModel = model;
+      save();
+    },
+    async catalogGet() {
+      return control.cachedCatalog ? structuredClone(control.cachedCatalog) : null;
+    },
+    async catalogRefresh() {
+      if (!prefs.updates?.checkModels) throw new Error('Check for newer models is off in Settings');
+      control.fetches.catalog += 1;
+      if (!control.remoteCatalog) throw new Error('could not download the model catalog');
+      control.cachedCatalog = structuredClone(control.remoteCatalog);
+      return structuredClone(control.remoteCatalog);
+    },
+    async updateCheck() {
+      if (!prefs.updates?.checkApp) throw new Error('Check for app updates is off in Settings');
+      control.fetches.update += 1;
+      return { ...control.updateInfo };
+    },
+    async appRestart(ids) {
+      control.restarts.push([...ids]);
+      try {
+        window.localStorage.setItem(RESTART_KEY, JSON.stringify(ids));
+      } catch {
+        // Without storage the relaunch reopens nothing.
+      }
+      save();
+      // The page reload stands in for the relaunch (with `?persist` the backend survives it).
+      if (opts.persist) setTimeout(() => window.location.reload(), 30);
+    },
+    async appRestartPending() {
+      try {
+        const raw = window.localStorage.getItem(RESTART_KEY);
+        window.localStorage.removeItem(RESTART_KEY);
+        const ids = raw ? (JSON.parse(raw) as unknown) : [];
+        return Array.isArray(ids) ? ids.filter((x): x is string => sessions.has(String(x))) : [];
+      } catch {
+        return [];
+      }
     },
     async prefsSet(patch) {
       prefs = { ...prefs, ...structuredClone(patch) };
