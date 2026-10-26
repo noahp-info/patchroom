@@ -233,15 +233,86 @@ pub async fn section_create(
 }
 
 /// `section_set_emoji {id, emoji|null}`.
+/// With `flavor` (`apple` or `noto`) the pair is stored as one `{char, flavor}`.
 #[tauri::command]
 pub async fn section_set_emoji(
     state: State<'_, SessionManager>,
     id: String,
     emoji: Option<String>,
+    flavor: Option<String>,
+) -> CmdResult<()> {
+    match flavor {
+        Some(f) => state.set_section_emoji_flavor(&id, emoji.as_deref(), Some(&f)),
+        None => state.set_section_emoji(&id, emoji.as_deref()),
+    }
+    .map_err(|e| e.to_string())
+}
+
+/// `session_set_emoji {id, emoji?, flavor?}`: a session row's emoji as `{char, flavor}`.
+#[tauri::command]
+pub async fn session_set_emoji(
+    state: State<'_, SessionManager>,
+    id: String,
+    emoji: Option<String>,
+    flavor: Option<String>,
 ) -> CmdResult<()> {
     state
-        .set_section_emoji(&id, emoji.as_deref())
+        .set_session_emoji(&id, emoji.as_deref(), flavor.as_deref())
         .map_err(|e| e.to_string())
+}
+
+/// `session_set_model {id, model}`: after a confirmed `/model` switch, the DM resumes on it.
+#[tauri::command]
+pub async fn session_set_model(
+    state: State<'_, SessionManager>,
+    id: String,
+    model: String,
+) -> CmdResult<()> {
+    state.set_model(&id, &model).map_err(|e| e.to_string())
+}
+
+/// `catalog_get -> catalog | null`: the signed catalog fetched earlier, verified again.
+#[tauri::command]
+pub async fn catalog_get(state: State<'_, SessionManager>) -> CmdResult<Option<Value>> {
+    let m = state.inner().clone();
+    blocking(move || Ok(m.catalog_cached())).await
+}
+
+/// `catalog_refresh -> catalog`: download and verify it. Fails while the setting is off.
+#[tauri::command]
+pub async fn catalog_refresh(state: State<'_, SessionManager>) -> CmdResult<Value> {
+    let m = state.inner().clone();
+    blocking(move || m.catalog_refresh()).await
+}
+
+/// `update_check -> {current, latest, url, newer}`. Fails while the setting is off.
+#[tauri::command]
+pub async fn update_check(
+    state: State<'_, SessionManager>,
+) -> CmdResult<crate::manager::UpdateInfo> {
+    let m = state.inner().clone();
+    blocking(move || m.update_check()).await
+}
+
+/// `app_restart {ids}`: remember the DMs to reopen, then quit and relaunch. Sessions end
+/// through the normal quit path first.
+#[tauri::command]
+pub async fn app_restart(
+    app: AppHandle,
+    state: State<'_, SessionManager>,
+    ids: Vec<String>,
+) -> CmdResult<()> {
+    let m = state.inner().clone();
+    blocking(move || m.prepare_restart(&ids)).await?;
+    app.request_restart();
+    Ok(())
+}
+
+/// `app_restart_pending -> [id]`: the DMs the last restart asked to reopen, once.
+#[tauri::command]
+pub async fn app_restart_pending(state: State<'_, SessionManager>) -> CmdResult<Vec<String>> {
+    let m = state.inner().clone();
+    blocking(move || Ok(m.take_restart())).await
 }
 
 /// `section_set_collapsed {id, collapsed}`.

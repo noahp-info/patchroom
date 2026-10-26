@@ -200,6 +200,8 @@ pub struct StatuslineRecord {
     pub payload: Value,
     /// Output of the user's own statusLine command (ANSI included), empty without one.
     pub output: String,
+    /// The CLI talks to a local API (see [`crate::statusline::is_local_base_url`]).
+    pub api_local: Option<bool>,
 }
 
 /// The CLI asked to open a URL.

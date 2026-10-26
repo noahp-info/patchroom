@@ -28,6 +28,7 @@ patchroom-store = { path = "../crates/patchroom-store" }
 patchroom-claude = { path = "../crates/patchroom-claude" }
 patchroom-search = { path = "../crates/patchroom-search" }
 patchroom-prefs = { path = "../crates/patchroom-prefs" }
+patchroom-catalog = { path = "../crates/patchroom-catalog" }
 patchroom-folders = { path = "../crates/patchroom-folders" }
 patchroom-sounds = { path = "../crates/patchroom-sounds" }
 patchroom-themeimport = { path = "../crates/patchroom-themeimport" }

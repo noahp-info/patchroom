@@ -88,6 +88,10 @@ pub enum ClientMessage {
         /// user has no statusLine.
         #[serde(default)]
         output: String,
+        /// Whether the CLI talks to a local API (its `ANTHROPIC_BASE_URL` is localhost or
+        /// 127.0.0.1). `None` when the wrapper did not say.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        api_local: Option<bool>,
     },
 }
 

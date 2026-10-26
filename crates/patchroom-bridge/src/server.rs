@@ -573,7 +573,8 @@ fn serve_connection(inner: &Arc<Inner>, stream: UnixStream) {
             session_key,
             payload,
             output,
-        }) => inner.handle_statusline(session_key, payload, output),
+            api_local,
+        }) => inner.handle_statusline(session_key, payload, output, api_local),
         Ok(ClientMessage::OpenUrl { session_key, url }) => inner.handle_open_url(session_key, url),
     };
     let _ = protocol::write_frame(&mut out, &reply);
@@ -637,6 +638,7 @@ impl Inner {
         session_key: Option<String>,
         payload: Value,
         output: String,
+        api_local: Option<bool>,
     ) -> ServerMessage {
         let info = HookInfo {
             event: "Statusline".to_owned(),
@@ -665,6 +667,7 @@ impl Inner {
             session,
             payload,
             output,
+            api_local,
         }));
         ServerMessage::Ack
     }

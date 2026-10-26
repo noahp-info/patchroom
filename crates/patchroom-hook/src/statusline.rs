@@ -121,7 +121,13 @@ fn run_user_command(command: &str, input: &[u8], timeout: Duration) -> Vec<u8> {
 }
 
 /// Best-effort tee to the bridge. Never waits for a reply.
-fn tee(socket: &Path, session_key: Option<String>, payload: Value, output: &[u8]) {
+fn tee(
+    socket: &Path,
+    session_key: Option<String>,
+    payload: Value,
+    output: &[u8],
+    api_local: Option<bool>,
+) {
     let Ok(mut stream) = UnixStream::connect(socket) else {
         return;
     };
@@ -130,6 +136,7 @@ fn tee(socket: &Path, session_key: Option<String>, payload: Value, output: &[u8]
         session_key,
         payload,
         output: String::from_utf8_lossy(output).into_owned(),
+        api_local,
     };
     let _ = protocol::write_frame(&mut stream, &msg);
 }
@@ -159,7 +166,14 @@ fn run() -> Vec<u8> {
         run_user_command(&s.command, &input, USER_TIMEOUT)
     });
     if let Some(socket) = &args.socket {
-        tee(socket, args.session_key, payload, &output);
+        // Claude passes its effective env (settings `env` included) to this command, so the
+        // base URL here is the one the CLI uses. Only "is it local" leaves the process.
+        let api_local = Some(
+            std::env::var("ANTHROPIC_BASE_URL")
+                .ok()
+                .is_some_and(|u| patchroom_bridge::statusline::is_local_base_url(&u)),
+        );
+        tee(socket, args.session_key, payload, &output, api_local);
     }
     output
 }

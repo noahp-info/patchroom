@@ -1,0 +1,144 @@
+{
+  "schema": 1,
+  "note": "Checked-in fallback for scripts/update-model-catalog.mjs. The weekly job keeps these and adds what providers publish.",
+  "tools": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "providers": [
+        "anthropic"
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "providers": [
+        "openai"
+      ]
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor CLI",
+      "providers": [
+        "anthropic",
+        "openai",
+        "google"
+      ]
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini CLI",
+      "providers": [
+        "google"
+      ]
+    },
+    {
+      "id": "opencode",
+      "name": "opencode",
+      "providers": [
+        "anthropic",
+        "openai",
+        "google",
+        "ollama"
+      ]
+    }
+  ],
+  "models": [
+    {
+      "id": "claude-fable-5-1",
+      "tool": "claude-code",
+      "name": "Fable 5.1",
+      "family": "fable",
+      "version": "5.1",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-fable-5",
+      "tool": "claude-code",
+      "name": "Fable 5",
+      "family": "fable",
+      "version": "5",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-opus-5-5",
+      "tool": "claude-code",
+      "name": "Opus 5.5",
+      "family": "opus",
+      "version": "5.5",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-opus-5",
+      "tool": "claude-code",
+      "name": "Opus 5",
+      "family": "opus",
+      "version": "5",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-opus-4-8",
+      "tool": "claude-code",
+      "name": "Opus 4.8",
+      "family": "opus",
+      "version": "4.8",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-opus-4-7",
+      "tool": "claude-code",
+      "name": "Opus 4.7",
+      "family": "opus",
+      "version": "4.7",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-opus-4-6",
+      "tool": "claude-code",
+      "name": "Opus 4.6",
+      "family": "opus",
+      "version": "4.6",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "tool": "claude-code",
+      "name": "Sonnet 5.5",
+      "family": "sonnet",
+      "version": "5.5",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-sonnet-5",
+      "tool": "claude-code",
+      "name": "Sonnet 5",
+      "family": "sonnet",
+      "version": "5",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "tool": "claude-code",
+      "name": "Sonnet 4.6",
+      "family": "sonnet",
+      "version": "4.6",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-haiku-5-5",
+      "tool": "claude-code",
+      "name": "Haiku 5.5",
+      "family": "haiku",
+      "version": "5.5",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "tool": "claude-code",
+      "name": "Haiku 4.5",
+      "family": "haiku",
+      "version": "4.5",
+      "where": "cloud"
+    }
+  ]
+}

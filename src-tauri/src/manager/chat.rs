@@ -1192,6 +1192,7 @@ impl Manager {
             let mut st = lock(&chat.state);
             st.status_text.clone_from(&rec.output);
             st.payload_chips = chips_from_payload(&rec.payload);
+            st.payload_chips.api_local = rec.api_local;
         }
         let meta = chat.watcher.with(|a| a.meta().clone());
         self.refresh_statusline(key, &chat, &meta);

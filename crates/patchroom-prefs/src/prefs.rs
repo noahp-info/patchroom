@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::dnd::{parse_hhmm, Dnd};
+use crate::models::{EmojiPrefs, Models, ModuleLabel, Updates};
 
 /// Layout bases the UI can render.
 pub const BASES: [&str; 4] = ["homeroom", "patchbay", "scrollback", "bluepencil"];
@@ -385,6 +386,12 @@ pub struct Prefs {
     /// Terminal palettes imported from other tools (read once, stored here). The shape belongs
     /// to the UI's theme import.
     pub term_palettes: Vec<Value>,
+    /// Model bundles, overrides and labels.
+    pub models: Models,
+    /// Opt-in network checks. Both off by default.
+    pub updates: Updates,
+    /// How emoji are drawn in chat.
+    pub emoji: EmojiPrefs,
 }
 
 /// First-time hints (DESIGN.md, First-time hints). Each id shows once, ever.
@@ -420,6 +427,8 @@ pub struct StatusBar {
     pub default: Option<Vec<String>>,
     /// Module ids per DM id.
     pub per_dm: BTreeMap<String, Vec<String>>,
+    /// The user's label per module id (text plus emoji).
+    pub labels: BTreeMap<String, ModuleLabel>,
 }
 
 /// Where a clicked link opens. Cmd-click opens it in the other place.
@@ -467,6 +476,9 @@ impl Default for Prefs {
             artifacts: Artifacts::default(),
             hints: Hints::default(),
             term_palettes: Vec::new(),
+            models: Models::default(),
+            updates: Updates::default(),
+            emoji: EmojiPrefs::default(),
         }
     }
 }
@@ -665,6 +677,11 @@ impl Prefs {
             return Err(PrefsError("cablePreset must not be empty".into()));
         }
         self.sidebar_width = self.sidebar_width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
+        self.models.validate()?;
+        if self.status_bar.labels.len() > 32 || self.status_bar.labels.values().any(|l| !l.valid())
+        {
+            return Err(PrefsError("bad status bar label".into()));
+        }
         Ok(self)
     }
 }
@@ -1036,6 +1053,35 @@ mod tests {
         assert_eq!(hi.sidebar_width, 420);
         assert!(Prefs::default()
             .patched(&json!({"sidebarWidth": "wide"}))
+            .is_err());
+    }
+
+    #[test]
+    fn new_groups_default_off_and_round_trip() {
+        let p = Prefs::from_stored(r#"{"themeId":"x"}"#);
+        assert!(!p.updates.check_app && !p.updates.check_models && !p.updates.asked_models);
+        assert!(p.models.bundles.is_empty());
+        assert_eq!(p.emoji.chat, crate::models::Flavor::Apple);
+        let p = Prefs::default()
+            .patched(&json!({
+                "updates": {"checkModels": true, "askedModels": true},
+                "emoji": {"chat": "noto"},
+                "statusBar": {"default": null, "perDm": {}, "labels": {"cost": {"text": "Spend", "emoji": "\u{1f4b8}"}}},
+                "models": {"bundles": [{"id": "daily", "name": "Daily", "entries": [
+                    {"id": "a", "tool": "claude-code", "model": "claude-opus-5-5"},
+                    {"id": "b", "tool": "claude-code", "model": "claude-opus-4-8[1m]"}],
+                    "defaultEntry": "a"}], "defaultBundle": "daily",
+                    "labels": {"claude-opus-5-5": {"text": "Big", "place": "cloud"}}}
+            }))
+            .unwrap();
+        assert!(p.updates.check_models && !p.updates.check_app);
+        assert_eq!(p.emoji.chat, crate::models::Flavor::Noto);
+        assert_eq!(p.models.bundles[0].entries.len(), 2);
+        assert_eq!(p.status_bar.labels["cost"].text.as_deref(), Some("Spend"));
+        assert_eq!(Prefs::from_stored(&serde_json::to_string(&p).unwrap()), p);
+        assert!(Prefs::default()
+            .patched(&json!({"models": {"bundles": [{"id": "d", "name": "D", "entries": [
+                {"id": "a", "tool": "claude-code", "model": "x; rm -rf ~"}], "defaultEntry": "a"}]}}))
             .is_err());
     }
 }
