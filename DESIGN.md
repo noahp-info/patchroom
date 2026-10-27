@@ -213,6 +213,15 @@ Claude's brand is a terracotta orange (our `g-claude` glyph, `#c96442` light). P
 **Patch Bay:** Barlow for body, Barlow Condensed in caps with 0.06 to 0.14em tracking for silkscreen labels, Red Hat Mono for code.
 Fonts are self-hosted Latin subsets in `ui/src/theme/fonts` (OFL), declared in `fonts.css`.
 
+### Fonts per area
+
+Settings > Themes > Fonts sets a family and a size for five areas: UI (the default for everything), Chat messages, Code and terminal, Sidebar and Status bar. Code lists fixed-pitch families only.
+
+- An unset area inherits: chat and sidebar from UI, status bar from code (family) and UI (size), code from the base's mono. The picker shows the inherited value and where it comes from.
+- Families are the bundled OFL faces plus the Mac's installed ones (`fonts_list`, Core Text, read only). Each previews in its own face.
+- The values reach CSS only as variables on `.pr-app`: `--f-ui`, `--f-mono`, `--f-chat`, `--f-side`, `--f-strip`, and the size scales `--fz-ui`, `--fz-chat`, `--fz-side`, `--fz-strip`, `--fz-code` (chosen size over base size). `base.css` rebinds them per area container; never set a font literal in a component.
+- A section or a session overrides its chat font from its sidebar menu (Chat font...). Themes and theme imports never change fonts; a terminal import fills the code font only where it is unset.
+
 ### Hierarchy (Homeroom)
 - **Channel title** (700, 16px): the open conversation.
 - **Message** (400, 14px, 1.45, 72ch max): user and assistant text.
@@ -291,6 +300,16 @@ Every feature ships with its first-use path designed.
 - First hint: the first time someone uses Open in browser, a hint waits for focus to come back to Patchroom. It says "Want links to always open in your browser? Change it in Settings > Links." Its button opens that section.
 - A hint has a place, always in flow: under the conversation header (default), above the status strip by the model chip, or just above the log's bottom edge. A hint may carry extra answers before its settings button (Swap and Keep on "newer model available").
 - Model hints are once per model, tracked in model prefs (`models.seen`, `models.offered`), not in `hints.seen`.
+
+### Settings search
+
+- A field tops the Settings sidebar; Cmd+F focuses it. Results list section, then setting.
+- Every setting row carries `data-setting="<id>"` and an entry in `ui/src/components/prefs/registry.ts` (label, description, keywords). `ui/tests/prefs-search.spec.ts` fails on a row without one.
+- Choosing a result opens the section and flashes a ring one `--ring-pad` outside the row. The ring is its own box, so nothing shifts.
+
+### Queued messages
+
+A message sent while Claude is busy shows at once at the bottom of the log, muted, labeled Queued, with Send now. The transcript entry replaces it. After an interrupt or the session's end it reads Not sent, with Retry and Remove.
 
 ### Auto-scroll
 
