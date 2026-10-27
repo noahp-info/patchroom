@@ -880,6 +880,17 @@ pub async fn viewer_go(app: AppHandle, action: String) -> CmdResult<()> {
     crate::viewer::go(&app, &action)
 }
 
+// ---- Fonts (read only) ----
+
+/// `fonts_list {} -> [{family, mono}]`: the installed font families from Core Text, sorted,
+/// with the fixed-pitch trait. Read only.
+#[tauri::command]
+pub async fn fonts_list() -> CmdResult<Vec<patchroom_prefs::FontFamily>> {
+    tauri::async_runtime::spawn_blocking(crate::fonts::installed)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ---- Theme import (read only) ----
 
 /// `theme_import_detect {} -> [{id, name, entries, skipped}]`: the terminal looks the user's
