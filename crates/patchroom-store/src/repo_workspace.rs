@@ -11,10 +11,10 @@ use crate::types::{
 
 const WS_COLS: &str = "id, author, created_at, updated_at, name";
 const SEC_COLS: &str = "id, author, created_at, updated_at, workspace_id, name, position, \
-                        collapsed, folder, archive_days, kind, emoji";
+                        collapsed, folder, archive_days, kind, emoji, emoji_flavor";
 const CONV_COLS: &str = "id, author, created_at, updated_at, workspace_id, section_id, position, \
                          kind, name, provider, cwd, worktree, session_id, adapter_state, \
-                         assign_mode, lead_id, starred, archived";
+                         assign_mode, lead_id, starred, archived, emoji, emoji_flavor";
 const MEM_COLS: &str = "id, author, created_at, updated_at, channel_id, dm_id";
 
 fn ws_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
@@ -41,6 +41,7 @@ fn sec_row(r: &Row<'_>) -> rusqlite::Result<Section> {
         archive_days: r.get(9)?,
         kind: col_parse(r, 10)?,
         emoji: r.get(11)?,
+        emoji_flavor: r.get(12)?,
     })
 }
 
@@ -64,6 +65,8 @@ fn conv_row(r: &Row<'_>) -> rusqlite::Result<Conversation> {
         lead_id: col_opt_id(r, 15)?,
         starred: r.get(16)?,
         archived: r.get(17)?,
+        emoji: r.get(18)?,
+        emoji_flavor: r.get(19)?,
     })
 }
 
@@ -97,6 +100,15 @@ fn clean_emoji(emoji: Option<&str>) -> Result<Option<String>> {
         }
     }
     Ok(e.map(str::to_owned))
+}
+
+/// An emoji flavor: `apple` or `noto`; blank means none (apple).
+fn clean_flavor(flavor: Option<&str>) -> Result<Option<String>> {
+    match flavor.map(str::trim).filter(|f| !f.is_empty()) {
+        None => Ok(None),
+        Some(f @ ("apple" | "noto")) => Ok(Some(f.to_owned())),
+        Some(f) => Err(Error::invalid(format!("unknown emoji flavor {f:?}"))),
+    }
 }
 
 impl Store {
@@ -200,12 +212,58 @@ impl Store {
         self.section(id)
     }
 
-    /// Set or clear the emoji of a section or divider.
+    /// Set or clear a session's emoji and its flavor (`apple` or `noto`).
+    pub fn set_conversation_emoji(
+        &self,
+        id: Id,
+        emoji: Option<&str>,
+        flavor: Option<&str>,
+    ) -> Result<Conversation> {
+        let emoji = clean_emoji(emoji)?;
+        let flavor = if emoji.is_some() {
+            clean_flavor(flavor)?
+        } else {
+            None
+        };
+        let n = self.conn.execute(
+            "UPDATE conversation SET emoji = ?2, emoji_flavor = ?3, updated_at = ?4 WHERE id = ?1",
+            params![id.to_string(), emoji, flavor, now()],
+        )?;
+        if n == 0 {
+            return Err(Error::not_found("conversation", id));
+        }
+        self.conversation(id)
+    }
+
+    /// Set or clear the emoji of a section or divider. The flavor stays as it was.
     pub fn set_section_emoji(&self, id: Id, emoji: Option<&str>) -> Result<Section> {
         let emoji = clean_emoji(emoji)?;
         let n = self.conn.execute(
             "UPDATE section SET emoji = ?2, updated_at = ?3 WHERE id = ?1",
             params![id.to_string(), emoji, now()],
+        )?;
+        if n == 0 {
+            return Err(Error::not_found("section", id));
+        }
+        self.section(id)
+    }
+
+    /// Set or clear a section's emoji with its flavor (`apple` or `noto`), as one `{char, flavor}`.
+    pub fn set_section_emoji_flavor(
+        &self,
+        id: Id,
+        emoji: Option<&str>,
+        flavor: Option<&str>,
+    ) -> Result<Section> {
+        let emoji = clean_emoji(emoji)?;
+        let flavor = if emoji.is_some() {
+            clean_flavor(flavor)?
+        } else {
+            None
+        };
+        let n = self.conn.execute(
+            "UPDATE section SET emoji = ?2, emoji_flavor = ?3, updated_at = ?4 WHERE id = ?1",
+            params![id.to_string(), emoji, flavor, now()],
         )?;
         if n == 0 {
             return Err(Error::not_found("section", id));

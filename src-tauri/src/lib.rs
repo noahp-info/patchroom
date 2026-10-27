@@ -57,6 +57,14 @@
 //! branch checked out in the section's folder (read only), so the UI draws a branch chip only
 //! when a session's branch differs.
 //!
+//! # Models, updates, restart, emoji (see `manager` `models` module)
+//! Commands: `session_set_model {id, model}`, `session_set_emoji {id, emoji?, flavor?}`,
+//! `section_set_emoji` takes an optional `flavor`, `catalog_get`, `catalog_refresh`,
+//! `update_check`, `app_restart {ids}` and `app_restart_pending`. Event: `menu:restart` (app menu,
+//! Restart Patchroom). `catalog_refresh` and `update_check` refuse unless the user turned the
+//! matching Settings > Updates check on; both are a plain GET through the system curl. The model
+//! catalog's ed25519 signature is checked against the key in `patchroom-catalog`.
+//!
 //! Per launch, claude gets `--settings <file>`: a Patchroom-owned file in the data dir
 //! (`bridge.sock.d/<id>.json`) that registers the hooks and the `patchroom-statusline`
 //! wrapper. User settings files are never written. The file keeps claude's own command
@@ -109,6 +117,8 @@ const SETTINGS_MENU_ID: &str = "settings";
 const COMMENT_MENU_ID: &str = "comment-selection";
 /// Menu id of Edit > Screenshot to Steer (Cmd+Shift+2).
 const SHOT_MENU_ID: &str = "screenshot-steer";
+/// Menu id of the app menu's "Restart Patchroom".
+const RESTART_MENU_ID: &str = "restart";
 
 /// The default menu bar, plus "Settings..." (Cmd+,) under About in the macOS app menu.
 fn app_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
@@ -123,6 +133,15 @@ fn app_menu<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::Result<Me
             Some("CmdOrCtrl+,"),
         )?;
         app.insert_items(&[&PredefinedMenuItem::separator(handle)?, &settings], 1)?;
+        // Restart and resume: the UI waits for idle sessions, then calls `app_restart`.
+        let restart = MenuItem::with_id(
+            handle,
+            RESTART_MENU_ID,
+            "Restart Patchroom\u{2026}",
+            true,
+            None::<&str>,
+        )?;
+        app.insert_items(&[&restart], 3)?;
     }
     // Steering lives in Edit. Menu accelerators fire even while the side-pane viewer has focus,
     // which a page keydown listener never sees.
@@ -326,6 +345,13 @@ macro_rules! app_handler {
             steer::viewer_sign_out,
             commands::theme_import_detect,
             commands::theme_import_file,
+            commands::session_set_emoji,
+            commands::session_set_model,
+            commands::catalog_get,
+            commands::catalog_refresh,
+            commands::update_check,
+            commands::app_restart,
+            commands::app_restart_pending,
             e2e::e2e_report,
             e2e::e2e_pgrep,
             e2e::e2e_sleep,
@@ -424,6 +450,13 @@ macro_rules! app_handler {
             steer::viewer_sign_out,
             commands::theme_import_detect,
             commands::theme_import_file,
+            commands::session_set_emoji,
+            commands::session_set_model,
+            commands::catalog_get,
+            commands::catalog_refresh,
+            commands::update_check,
+            commands::app_restart,
+            commands::app_restart_pending,
         ]
     };
 }
@@ -452,6 +485,8 @@ pub fn run() {
                 let _ = handle.emit("menu:comment", ());
             } else if event.id() == SHOT_MENU_ID {
                 let _ = handle.emit("menu:screenshot", ());
+            } else if event.id() == RESTART_MENU_ID {
+                let _ = handle.emit("menu:restart", ());
             }
         })
         .setup(|app| {

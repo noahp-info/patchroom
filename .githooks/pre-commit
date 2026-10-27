@@ -11,6 +11,12 @@ export PATH="$HOME/.cargo/bin:$PATH"
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 has() { printf '%s\n' "$staged" | grep -qE "$1"; }
 
+echo "pre-commit: repo hygiene (staged files)"
+bash scripts/check-repo-hygiene.sh --staged
+if has '^scripts/(check|test)-repo-hygiene\.sh$'; then
+  bash scripts/test-repo-hygiene.sh >/dev/null
+fi
+
 if has '\.(rs|toml)$' && command -v cargo >/dev/null 2>&1; then
   echo "pre-commit: cargo fmt --check"
   cargo fmt --check

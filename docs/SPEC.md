@@ -66,6 +66,15 @@ Every feature lists its acceptance check.
 - Structured chips from statusLine JSON: model, context %, cost, permission mode (click cycles, same as Shift+Tab), worktree, PR link.
 - Plugins can add chips (CI budget, rate limits).
 
+### 3.3a Model bundles
+- **Bundle:** a named set of model entries (tool plus a catalog id, a free-text model string, or `latest:<family>`), one default, a label and an emoji. A global default bundle, with optional per folder, per section and per session overrides (session wins, then section, then folder, then the default).
+- **Launch:** a new session starts on the bundle default through the tool adapter's launch flag (Claude Code: `--model <id>`). *Check: `session_create` carries `--model`.*
+- **Switch:** the status-bar model chip opens a picker limited to the active bundle. A switch types the tool's switch command (`/model <id>`) only while the session is idle, then waits for the CLI to report the model in its statusLine JSON and shows an error if it did not take. A confirmed switch is stored as the DM's `--model`, so a resume comes back on it. *Check: no keystroke while busy; a refused switch says so.*
+- **Adapters:** one tool-neutral interface (launch flag, switch command, read current model). Claude Code is implemented; Codex, Cursor CLI, Gemini CLI and opencode are declared stubs until P6. Cross-tool routing between members waits for P5.
+- **Never auto-swap a pinned model.** When the catalog has a newer model in the same family as a fixed entry, the chip shows a one-time hint with Swap and Keep, once per new model. `latest:<family>` entries follow the catalog by themselves.
+- **Labels:** each status-bar module takes a label (text plus emoji). The model chip reads the model's own label, then the Cloud (`☁️ {name}`) or Local (`🏠 {name}`) template, then the plain name. Local means the session's `ANTHROPIC_BASE_URL` is on this machine, or the user set the model to Local.
+- **Catalog:** shipped in the app (`ui/src/lib/models/catalog.json`), refreshed by a weekly scheduled CI job that opens a PR, and fetched between builds only when the user opted in (D3).
+
 ### 3.4 Notifications and sounds
 - Native macOS notifications for needs-you and turn-complete, per conversation: all, needs-you only, mute.
 - **Sound packs** per event (needs-you, turn complete, message, error), per-conversation override, volume, Do Not Disturb with schedule.
@@ -154,7 +163,7 @@ Phases are ordered by dependency. Each phase is a gauntlet loop: parallel builde
 
 - **D1** GitHub repo owner (personal account vs an org). Domains: patchroom.dev registered by Noah on 2026-10-14. patchroom.app registration failed; Noah is following up. patchroom.com is taken.
 - **D2** Gauntlet budget per phase (iterations cap and model tier for builders vs judges).
-- **D3** Auto-update check: on by default, or opt-in. It only fetches (GitHub Releases), never listens. Waiting on Noah.
+- **D3** Decided by Noah, 2026-10-16: **opt-in.** Settings > Updates has "Check for app updates" and "Check for newer models", both off by default. The bundle editor and the model picker ask once ("Want to check for newer models?", Turn on or Not now). Nothing fetches until one is on. Each check is a plain GET (GitHub Releases, and a model catalog with a detached ed25519 signature checked against a key built into the app); Patchroom never listens. Every build still ships the latest model catalog.
 
 ## 10. Business model
 

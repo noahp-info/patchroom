@@ -108,7 +108,7 @@ Every token becomes `--<token>` on the `.pr-app` root. Values are `#rgb`, `#rgba
 
 ### Shipped themes
 
-- **Homeroom** (default): jade band `#135a4b` (light) and deep jade `#0e4035` (dark), marigold active row `#f2c35b`, chalk workspace mark `#f7f3e8`, teal-green primary `#0a7a62` (`#43c0a2` in dark). Cable marigold, plug silver. Layout from direction A of `looks.html`, color from the Patchroom mark.
+- **Homeroom** (default): jade band `#135a4b` (light) and deep jade `#0e4035` (dark), marigold active row `#f2c35b`, chalk workspace mark `#f7f3e8`, teal-green primary `#0a7a62` (`#43c0a2` in dark). Cable marigold, plug silver. Layout from direction A of the looks reference, color from the Patchroom mark.
 - **Patch Bay**: anodized panel greys, silkscreen ink, red primary, four chip colors, a yellow cable and grey plug metal. From direction D.
 - **Ansi Slate**: cool slate with ANSI cyan, red and amber. From direction B.
 - **Cool Paper**: cool grey paper with copy-editor blue and red pencil. From direction C.
@@ -289,6 +289,20 @@ Every feature ships with its first-use path designed.
 - At most one hint at a time. It sits in flow under the conversation header, never covers or blocks anything, and has an X.
 - Every hint has a button that opens the setting it names.
 - First hint: the first time someone uses Open in browser, a hint waits for focus to come back to Patchroom. It says "Want links to always open in your browser? Change it in Settings > Links." Its button opens that section.
+- A hint has a place, always in flow: under the conversation header (default), above the status strip by the model chip, or just above the log's bottom edge. A hint may carry extra answers before its settings button (Swap and Keep on "newer model available").
+- Model hints are once per model, tracked in model prefs (`models.seen`, `models.offered`), not in `hints.seen`.
+
+### Auto-scroll
+
+- Every scrolling log (each chat and each thread) follows new rows until the person scrolls up. A small indicator sits in flow under the log, at the right end of the jump row: "Auto-scroll on" with a filled dot, or "Paused" with a hollow one.
+- Scrolling up pauses. Jump to latest, scrolling back to the bottom, or the indicator itself turns it on again. A pause from the indicator holds at the bottom until the person scrolls.
+- The first pause shows a hint once scrolling settles. Settings > Themes > Chat can make every log open paused.
+
+### Emoji flavors
+
+- Every place a person names something (sections, dividers, sessions, the New session dialog) has an emoji button. The picker offers Apple or Noto Color for the pick, like a skin tone, and the choice is stored with the character as `{char, flavor}`.
+- Chat text and the terminal follow one setting, Settings > Themes > Emoji in chat. The text font stays first, so only emoji glyphs change.
+- Noto Color Emoji is bundled (OFL, `ui/src/theme/fonts/noto-emoji/`): a COLRv1 file for Chromium and an `sbix` bitmap file for WebKit, picked by `tech()` in one `@font-face`.
 
 ### Bases
 
@@ -345,7 +359,7 @@ node --experimental-strip-types tools/contrast-report.ts
 
 ### Deviations from the looks reference
 
-Homeroom and Patch Bay match directions A and D of `/Users/NDP/temp/patchroom-design/looks.html` within a few percent of pixels. These changes make every shipped theme pass WCAG AA for text:
+Homeroom and Patch Bay match directions A and D of the looks reference (an internal design board, not in this repo) within a few percent of pixels. These changes make every shipped theme pass WCAG AA for text:
 
 - `muted`, `tb-muted`, `side-muted`, `silk-muted`, `syn-*` and `ok` are nudged a few steps darker or lighter where they fell under 4.5:1.
 - New token `err-text` carries error text. `err` stays the signal color. The tool deletion count and the artifact "removed lines" count use `err-text`.

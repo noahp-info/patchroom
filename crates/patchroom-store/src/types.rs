@@ -264,6 +264,8 @@ pub struct Section {
     pub kind: SectionKind,
     /// Leading emoji of the header; `None` for none.
     pub emoji: Option<String>,
+    /// How the emoji is drawn: `apple` or `noto`; `None` is apple.
+    pub emoji_flavor: Option<String>,
 }
 
 /// Input for [`crate::Store::create_conversation`].
@@ -328,6 +330,10 @@ pub struct Conversation {
     pub starred: bool,
     /// Archived: hidden from the main list, no badges.
     pub archived: bool,
+    /// Leading emoji of the session row; `None` for none.
+    pub emoji: Option<String>,
+    /// How the emoji is drawn: `apple` or `noto`; `None` is apple.
+    pub emoji_flavor: Option<String>,
 }
 
 /// A DM that belongs to a channel.

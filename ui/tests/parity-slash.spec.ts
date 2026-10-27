@@ -3,7 +3,7 @@ import { openChat, peekWrites, watchErrors } from './helpers';
 
 // Session parity item 5: slash commands that open TUI panels fall back to the terminal.
 
-// The list in docs/gauntlet/SESSION-PARITY-BAR.md, item 5.
+// The list in the SESSION-PARITY build bar, item 5.
 const INTERACTIVE = [
   'usage',
   'config',

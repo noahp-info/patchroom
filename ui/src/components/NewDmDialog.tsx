@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import type { EmojiFlavor } from '../ipc';
 import { Icon } from './Icon';
+import { EmojiButton } from './SectionEdit';
 import { useOverlay } from '../state/overlays';
 
 export interface NewDmDialogProps {
@@ -10,7 +12,7 @@ export interface NewDmDialogProps {
   /** Launch folders under that section's home (the home first), for the worktree switch. */
   folders?: string[];
   onClose(): void;
-  onCreate(cwd: string, name: string): Promise<void>;
+  onCreate(cwd: string, name: string, emoji?: { char: string; flavor: EmojiFlavor }): Promise<void>;
   onPick(defaultPath: string): Promise<string | null>;
 }
 
@@ -33,6 +35,8 @@ export function NewDmDialog({
   const ref = useRef<HTMLDialogElement>(null);
   const [cwd, setCwd] = useState(defaultCwd);
   const [name, setName] = useState('');
+  const [emoji, setEmoji] = useState<{ char: string; flavor: EmojiFlavor } | null>(null);
+  const [dlgEl, setDlgEl] = useState<HTMLDialogElement | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -41,6 +45,7 @@ export function NewDmDialog({
     if (open && !dlg.open) {
       setCwd(defaultCwd);
       setName('');
+      setEmoji(null);
       dlg.showModal();
     } else if (!open && dlg.open) {
       dlg.close();
@@ -53,7 +58,7 @@ export function NewDmDialog({
     if (!folder || busy) return;
     setBusy(true);
     try {
-      await onCreate(folder, name.trim());
+      await onCreate(folder, name.trim(), emoji ?? undefined);
       onClose();
     } finally {
       setBusy(false);
@@ -66,7 +71,15 @@ export function NewDmDialog({
   }
 
   return (
-    <dialog ref={ref} className="newdm" onClose={onClose} aria-labelledby="newdm-title">
+    <dialog
+      ref={(el) => {
+        ref.current = el;
+        setDlgEl(el);
+      }}
+      className="newdm"
+      onClose={onClose}
+      aria-labelledby="newdm-title"
+    >
       <form onSubmit={submit}>
         <h2 id="newdm-title">New session</h2>
         <p className="newdm__lede">
@@ -108,10 +121,27 @@ export function NewDmDialog({
             </button>
           </span>
         </label>
-        <label className="field">
-          <span>Name (optional)</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Folder name" />
-        </label>
+        <div className="field">
+          <label htmlFor="newdm-name">Name (optional)</label>
+          <span className="field__row">
+            <EmojiButton
+              emoji={emoji?.char ?? null}
+              flavor={emoji?.flavor}
+              label="Session emoji"
+              testId="newdm-emoji"
+              className="btn sec newdm__emoji"
+              container={dlgEl}
+              onPick={(char, flavor) => setEmoji({ char, flavor })}
+              onClear={() => setEmoji(null)}
+            />
+            <input
+              id="newdm-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Folder name"
+            />
+          </span>
+        </div>
         <div className="newdm__foot">
           <button type="button" className="btn sec" onClick={onClose}>
             Cancel

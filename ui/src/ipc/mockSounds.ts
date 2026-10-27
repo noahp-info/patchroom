@@ -8,7 +8,7 @@ import type {
 import generated from '../../../plugins/sounds/generated-packs.json';
 
 /**
- * The sound-pack commands of docs/gauntlet/SOUND-PACKS-BAR.md for the browser and Playwright.
+ * The sound-pack commands of the SOUND-PACKS build bar for the browser and Playwright.
  * The pack list is the real one: the four generated packs and the seven CC0 file packs in
  * plugins/sounds. In dev the real m4a files are served; elsewhere a short tone stands in.
  */

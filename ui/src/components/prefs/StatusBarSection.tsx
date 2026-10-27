@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { StatusModuleId } from '../../ipc';
-import { MODULE_IDS } from '../../lib/statusBar.ts';
+import { MODULE_IDS, MODULES } from '../../lib/statusBar.ts';
 import { StatusBarEditor } from '../chat/StatusBarEditor.tsx';
 import { getPrefsStore, usePrefs } from './store.ts';
 import type { PrefsDm } from './types.ts';
@@ -68,6 +68,45 @@ export function StatusBarSection({ dms }: { dms: PrefsDm[] }) {
         >
           {scope === ALL ? 'Reset to the built-in layout' : 'Use the default layout'}
         </button>
+      </div>
+
+      <h3>Labels</h3>
+      <p className="pf-hint">
+        Give a module a label of its own: text and an emoji in front of its value. Labels apply to
+        every session and every layout. The model chip names the model; set those in Models.
+      </p>
+      <div className="sb-labels" data-testid="sb-labels">
+        {MODULES.filter((m) => m.id !== 'statusline' && m.id !== 'model').map((m) => {
+          const l = sb.labels?.[m.id] ?? {};
+          const put = (patch: { text?: string; emoji?: string }) => {
+            const next = { ...l, ...patch };
+            const labels = { ...(sb.labels ?? {}) };
+            if (!next.text && !next.emoji) delete labels[m.id];
+            else labels[m.id] = next;
+            void store.update({ statusBar: { ...sb, labels } });
+          };
+          return (
+            <div key={m.id} className="sb-label" data-module-label={m.id}>
+              <span className="sb-label__name">{m.label}</span>
+              <input
+                className="sb-label__emoji"
+                aria-label={`${m.label} label emoji`}
+                value={l.emoji ?? ''}
+                maxLength={16}
+                placeholder="Emoji"
+                onChange={(e) => put({ emoji: e.target.value || undefined })}
+              />
+              <input
+                className="sb-label__text"
+                aria-label={`${m.label} label text`}
+                value={l.text ?? ''}
+                maxLength={48}
+                placeholder="Label"
+                onChange={(e) => put({ text: e.target.value || undefined })}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

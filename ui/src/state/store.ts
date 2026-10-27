@@ -2,6 +2,11 @@ import { useSyncExternalStore } from 'react';
 import type {
   ChatItem,
   ActivityRow,
+  BundleEntry,
+  EmojiFlavor,
+  ModelCatalog,
+  ModelPrefs,
+  UpdateInfo,
   FolderSession,
   Ipc,
   MarkInfo,
@@ -28,6 +33,33 @@ import { overlayCount, subscribeOverlays } from './overlays';
 import { bindAccountActions, setClaudeAccount } from '../lib/accounts';
 import { cleanQuote, textFragmentLink } from '../lib/comments';
 import { HINTS, type HintId } from '../lib/hints';
+import { adapterOf, modelTook } from '../lib/models/adapters';
+import { activeBundle, launchArgsFor, modelsOf, type BundleScope } from '../lib/models/bundles';
+import {
+  mergeCatalogs,
+  modelName,
+  newerThan,
+  resolveModel,
+  SHIPPED_CATALOG,
+} from '../lib/models/catalog';
+
+/** How long a `/model` switch gets to show up in the CLI's statusline before it counts as failed. */
+export const MODEL_SWITCH_WAIT_MS = 8000;
+
+/** A model switch in progress or the reason it failed, per DM. */
+export interface ModelSwitch {
+  target: string;
+  state: 'pending' | 'error';
+  message?: string;
+}
+
+/** Restart Patchroom: the DMs to reopen, and the busy ones the user chose to interrupt. */
+export interface RestartState {
+  ids: string[];
+  interrupt: string[];
+  /** Waiting for every DM to go idle before relaunching. */
+  waiting: boolean;
+}
 
 export type ViewMode = 'chat' | 'terminal';
 
@@ -101,6 +133,16 @@ export interface AppState {
   overlays: number;
   /** The first-time hint on screen, at most one. */
   hint: HintId | null;
+  /** Values for the hint's `{slot}`s. */
+  hintVars: Record<string, string> | null;
+  /** The model catalog: shipped, merged with a signed one fetched on opt-in. */
+  catalog: ModelCatalog;
+  /** Model switches per DM. */
+  modelSwitch: Record<string, ModelSwitch>;
+  /** Restart Patchroom in progress (the dialog), or null. */
+  restart: RestartState | null;
+  /** The last app update check, when the user turned it on. */
+  update: UpdateInfo | null;
   /** Screenshot-to-steer in progress. */
   shot: ShotState | null;
   sessions: SessionInfo[];
@@ -152,6 +194,8 @@ export function inTerminalDialog(s: Pick<SessionInfo, 'terminalWait'> | undefine
 export const ECHO_WAIT_MS = 3000;
 
 const LAST_CWD_KEY = 'patchroom.lastCwd';
+/** The DM on screen when Restart Patchroom ran, shown again after the relaunch. */
+const RESTART_ACTIVE_KEY = 'patchroom.restartActive';
 const RECENT_KEY = 'patchroom.recentDms';
 const DRAFT_DEBOUNCE_MS = 400;
 
@@ -239,6 +283,11 @@ export class AppStore {
     viewer: null,
     overlays: 0,
     hint: null,
+    hintVars: null,
+    catalog: SHIPPED_CATALOG,
+    modelSwitch: {},
+    restart: null,
+    update: null,
     shot: null,
     prefsTarget: null,
     searchScope: 'all',
@@ -560,6 +609,7 @@ export class AppStore {
       this.ipc.on('session:title', (e) => this.patchSession(e.id, { title: e.title })),
       this.ipc.on('session:status', (e) => {
         const was = this.state.sessions.find((s) => s.id === e.id)?.status;
+        if (this.state.restart?.waiting) queueMicrotask(() => this.checkRestart());
         this.patchSession(e.id, {
           status: e.status,
           needs: e.status === 'waiting' ? e.needs : undefined,
@@ -594,6 +644,7 @@ export class AppStore {
       this.ipc.on('viewer:account', (e) => this.noteAccount(e.signedIn, e.url)),
       this.ipc.on('menu:comment', () => this.commentOnSelection()),
       this.ipc.on('menu:screenshot', () => void this.startShot()),
+      this.ipc.on('menu:restart', () => this.requestRestart()),
       this.ipc.on('session:working', (e) =>
         this.patchSession(e.id, {
           working: e.verb ? { verb: e.verb, detail: e.detail ?? '' } : null,
@@ -659,6 +710,9 @@ export class AppStore {
       this.ipc.prefsGet().catch(() => null),
     ]);
     this.set({ ...(marks ? { marks } : {}), ...(prefs ? { prefs } : {}) });
+    void this.loadCatalog();
+    void this.reopenAfterRestart();
+    if (prefs?.updates?.checkApp) void this.checkForUpdate();
     await this.loadActivity();
   }
 
@@ -690,10 +744,22 @@ export class AppStore {
     if (this.viewOf(id) === 'terminal') this.hintView(id, 'terminal');
   }
 
-  async create(cwd: string, name?: string, sectionId?: string | null): Promise<void> {
+  async create(
+    cwd: string,
+    name?: string,
+    sectionId?: string | null,
+    emoji?: { char: string; flavor: EmojiFlavor },
+  ): Promise<void> {
     try {
-      const { id } = await this.ipc.sessionCreate({ cwd, name: name || folderName(cwd) });
+      // A bundle that applies here launches the session on its default model.
+      const args = launchArgsFor(this.state.prefs, this.state.catalog, { sectionId, cwd });
+      const { id } = await this.ipc.sessionCreate({
+        cwd,
+        name: name || folderName(cwd),
+        ...(args ? { args } : {}),
+      });
       if (sectionId) await this.ipc.sessionSetSection(id, sectionId);
+      if (emoji) await this.ipc.sessionSetEmoji(id, emoji.char, emoji.flavor);
       writeLastCwd(cwd);
       const known = this.state.sessions.find((s) => s.id === id);
       const sessions = known
@@ -776,11 +842,17 @@ export class AppStore {
     this.syncFolders();
   }
 
-  async createSection(name: string, emoji?: string | null): Promise<void> {
+  async createSection(
+    name: string,
+    emoji?: string | null,
+    flavor: EmojiFlavor = 'apple',
+  ): Promise<void> {
     const trimmed = name.trim();
     if (!trimmed) return;
     try {
-      await this.ipc.sectionCreate(trimmed, emoji ? { emoji } : undefined);
+      const { id } = await this.ipc.sectionCreate(trimmed, emoji ? { emoji } : undefined);
+      // The flavor is half of the `{char, flavor}` pair: store it with the emoji.
+      if (emoji && flavor !== 'apple') await this.ipc.sectionSetEmoji(id, emoji, flavor);
       await this.refresh();
     } catch (err) {
       this.set({ error: `Could not add the section: ${String(err)}` });
@@ -810,14 +882,51 @@ export class AppStore {
     }
   }
 
-  /** Set or clear the leading emoji of a section or divider. */
-  async setSectionEmoji(id: string, emoji: string | null): Promise<void> {
+  /** Set or clear the leading emoji of a section or divider, with its flavor. */
+  async setSectionEmoji(
+    id: string,
+    emoji: string | null,
+    flavor: EmojiFlavor = 'apple',
+  ): Promise<void> {
     const prev = this.state.sections;
-    this.set({ sections: prev.map((s) => (s.id === id ? { ...s, emoji } : s)) });
+    const emojiFlavor = emoji ? flavor : null;
+    this.set({ sections: prev.map((s) => (s.id === id ? { ...s, emoji, emojiFlavor } : s)) });
     try {
-      await this.ipc.sectionSetEmoji(id, emoji);
+      await this.ipc.sectionSetEmoji(id, emoji, flavor);
+      if (emoji) this.showHint('emoji.flavor');
     } catch (err) {
       this.set({ sections: prev, error: `Could not save the emoji: ${String(err)}` });
+    }
+  }
+
+  /** Rename a session row. Blank names are ignored. */
+  async renameSession(id: string, name: string): Promise<void> {
+    const trimmed = name.trim();
+    const prev = this.state.sessions.find((s) => s.id === id);
+    if (!trimmed || !prev || prev.name === trimmed) return;
+    this.patchSession(id, { name: trimmed });
+    try {
+      await this.ipc.sessionRename(id, trimmed);
+    } catch (err) {
+      this.patchSession(id, { name: prev.name });
+      this.set({ error: `Could not rename the session: ${String(err)}` });
+    }
+  }
+
+  /** Set or clear a session row's emoji, with its flavor. */
+  async setSessionEmoji(
+    id: string,
+    emoji: string | null,
+    flavor: EmojiFlavor = 'apple',
+  ): Promise<void> {
+    const prev = this.state.sessions.find((s) => s.id === id);
+    this.patchSession(id, { emoji, emojiFlavor: emoji ? flavor : null });
+    try {
+      await this.ipc.sessionSetEmoji(id, emoji, flavor);
+      if (emoji) this.showHint('emoji.flavor');
+    } catch (err) {
+      if (prev) this.patchSession(id, { emoji: prev.emoji, emojiFlavor: prev.emojiFlavor });
+      this.set({ error: `Could not save the emoji: ${String(err)}` });
     }
   }
 
@@ -1142,26 +1251,343 @@ export class AppStore {
     if (id) this.showHint(id);
   };
 
-  /** Show a first-time hint unless it was seen before or another hint is up. */
-  showHint(id: HintId): void {
-    if (this.state.hint) return;
-    const seen = this.state.prefs?.hints?.seen ?? [];
-    if (seen.includes(id)) return;
-    this.set({ hint: id });
+  /**
+   * Show a first-time hint unless it was seen before or another hint is up. `once` overrides the
+   * id that marks it seen (the per-model hints are once per model, tracked in model prefs).
+   */
+  showHint(id: HintId, vars: Record<string, string> | null = null, once = true): boolean {
+    if (this.state.hint || !this.state.prefs) return false;
+    const seen = this.state.prefs.hints?.seen ?? [];
+    if (once && seen.includes(id)) return false;
+    this.set({ hint: id, hintVars: vars });
     // Shown counts as seen: a hint never comes back, even if the app quits now.
-    void this.setPrefs({ hints: { seen: [...seen, id] } });
+    if (once) void this.setPrefs({ hints: { seen: [...seen, id] } });
+    return true;
   }
 
   dismissHint(): void {
-    if (this.state.hint) this.set({ hint: null });
+    if (this.state.hint) this.set({ hint: null, hintVars: null });
   }
 
   /** The hint's button: open the setting it names. */
   hintAction(): void {
     const id = this.state.hint;
     if (!id) return;
-    this.set({ hint: null });
+    this.set({ hint: null, hintVars: null });
     this.openPrefs({ tab: HINTS[id].action.tab });
+  }
+
+  /** One of a hint's extra answers (Swap or Keep on "newer model available"). */
+  hintChoice(choice: string): void {
+    const id = this.state.hint;
+    const vars = this.state.hintVars ?? {};
+    this.set({ hint: null, hintVars: null });
+    if (id === 'models.newer' && choice === 'swap' && vars.bundle && vars.entry && vars.newerId) {
+      void this.swapEntryModel(vars.bundle, vars.entry, vars.newerId);
+    }
+  }
+
+  // ---- models: bundles, switching, the catalog ---------------------------------------------
+
+  private get models(): ModelPrefs {
+    return modelsOf(this.state.prefs);
+  }
+
+  private async saveModels(next: ModelPrefs): Promise<void> {
+    if (this.state.prefs) this.set({ prefs: { ...this.state.prefs, models: next } });
+    await this.setPrefs({ models: next });
+  }
+
+  /** The catalog: the shipped one, a signed one fetched earlier, and a fresh fetch on opt-in. */
+  async loadCatalog(): Promise<void> {
+    const cached = await this.ipc.catalogGet().catch(() => null);
+    if (cached) this.set({ catalog: mergeCatalogs(SHIPPED_CATALOG, cached) });
+    if (!this.state.prefs?.updates?.checkModels) return;
+    await this.refreshCatalog();
+  }
+
+  /** Fetch the signed catalog now. Only runs when "Check for newer models" is on. */
+  async refreshCatalog(): Promise<string | null> {
+    if (!this.state.prefs?.updates?.checkModels) return 'Check for newer models is off.';
+    try {
+      const fresh = await this.ipc.catalogRefresh();
+      this.set({ catalog: mergeCatalogs(SHIPPED_CATALOG, fresh) });
+      return null;
+    } catch (err) {
+      return String(err).replace(/^Error: /, '');
+    }
+  }
+
+  /** Ask GitHub Releases for a newer Patchroom. Only runs when "Check for app updates" is on. */
+  async checkForUpdate(): Promise<string | null> {
+    if (!this.state.prefs?.updates?.checkApp) return 'Check for app updates is off.';
+    try {
+      this.set({ update: await this.ipc.updateCheck() });
+      return null;
+    } catch (err) {
+      return String(err).replace(/^Error: /, '');
+    }
+  }
+
+  /** Answer "Want to check for newer models?": Turn on (and fetch now) or Not now. */
+  async answerModelChecks(on: boolean): Promise<void> {
+    const cur = this.state.prefs?.updates ?? {
+      checkApp: false,
+      checkModels: false,
+      askedModels: false,
+    };
+    await this.setPrefs({
+      updates: { ...cur, checkModels: on || cur.checkModels, askedModels: true },
+    });
+    if (on) void this.refreshCatalog();
+  }
+
+  /** Where a DM sits, for its bundle. */
+  scopeOf(sessionId: string): BundleScope {
+    const s = this.state.sessions.find((x) => x.id === sessionId);
+    return { sessionId, sectionId: s?.sectionId ?? null, cwd: s?.cwd ?? null };
+  }
+
+  /** Use `bundleId` for one DM (null: follow its section, folder or the default again). */
+  async setSessionBundle(sessionId: string, bundleId: string | null): Promise<void> {
+    const m = this.models;
+    const perSession = { ...m.perSession };
+    if (bundleId) perSession[sessionId] = bundleId;
+    else delete perSession[sessionId];
+    await this.saveModels({ ...m, perSession });
+  }
+
+  /**
+   * Switch an idle DM to a bundle entry's model: type the tool's switch command, then wait for the
+   * CLI to report it. Never while busy. Success remembers it for resume; a miss shows why.
+   */
+  async switchModel(sessionId: string, entry: BundleEntry): Promise<void> {
+    const s = this.state.sessions.find((x) => x.id === sessionId);
+    const model = resolveModel(this.state.catalog, entry.tool, entry.model);
+    const fail = (message: string) =>
+      this.set({
+        modelSwitch: {
+          ...this.state.modelSwitch,
+          [sessionId]: { target: model, state: 'error', message },
+        },
+      });
+    if (!s) return;
+    if (s.status !== 'idle') {
+      fail('Claude is working. Switch models when it is idle.');
+      return;
+    }
+    const adapter = adapterOf(entry.tool);
+    const cmd = adapter?.switchCommand(model);
+    if (!adapter?.ready || !cmd) {
+      fail(`${adapter?.name ?? entry.tool} cannot switch models from Patchroom yet.`);
+      return;
+    }
+    const chat = this.chat(sessionId);
+    if (modelTook(model, chat.getSnapshot().statusline?.chips)) return;
+    this.set({
+      modelSwitch: { ...this.state.modelSwitch, [sessionId]: { target: model, state: 'pending' } },
+    });
+    try {
+      const r = await this.ipc.sessionSendText(sessionId, cmd);
+      const outcome = r ? r.outcome : 'sent';
+      if (outcome !== 'sent') {
+        fail(
+          outcome === 'queued'
+            ? 'Claude is working. Switch models when it is idle.'
+            : 'Claude is showing something in the terminal. Nothing was typed.',
+        );
+        return;
+      }
+    } catch (err) {
+      fail(`Could not switch: ${String(err).replace(/^Error: /, '')}`);
+      return;
+    }
+    const took = await new Promise<boolean>((resolve) => {
+      const check = () => modelTook(model, chat.getSnapshot().statusline?.chips);
+      if (check()) return resolve(true);
+      const off = chat.subscribe(() => {
+        if (check()) {
+          off();
+          window.clearTimeout(timer);
+          resolve(true);
+        }
+      });
+      const timer = window.setTimeout(() => {
+        off();
+        resolve(check());
+      }, MODEL_SWITCH_WAIT_MS);
+    });
+    if (!took) {
+      const now = chat.getSnapshot().statusline?.chips;
+      const reported = now?.modelId ?? now?.model;
+      fail(
+        `Claude did not switch to ${modelName(this.state.catalog, model)}.${
+          reported ? ` It still reports ${reported}.` : ''
+        }`,
+      );
+      return;
+    }
+    const rest = { ...this.state.modelSwitch };
+    delete rest[sessionId];
+    this.set({ modelSwitch: rest });
+    void this.ipc.sessionSetModel(sessionId, model).catch(() => undefined);
+  }
+
+  clearModelSwitch(sessionId: string): void {
+    if (!this.state.modelSwitch[sessionId]) return;
+    const rest = { ...this.state.modelSwitch };
+    delete rest[sessionId];
+    this.set({ modelSwitch: rest });
+  }
+
+  /** Replace one bundle entry's model (the Swap answer). The entry stays where it is. */
+  async swapEntryModel(bundleId: string, entryId: string, model: string): Promise<void> {
+    const m = this.models;
+    const bundles = m.bundles.map((b) =>
+      b.id !== bundleId
+        ? b
+        : { ...b, entries: b.entries.map((e) => (e.id === entryId ? { ...e, model } : e)) },
+    );
+    await this.saveModels({ ...m, bundles });
+  }
+
+  /**
+   * The model chip showed `modelId` in a DM. Once per model: offer a newer one in the same
+   * family (for a pinned entry; `latest:` entries follow by themselves), else offer a label.
+   */
+  noteChipModel(sessionId: string, modelId: string | undefined): void {
+    if (!modelId || !this.state.prefs || this.state.hint) return;
+    const m = this.models;
+    const found = activeBundle(m, this.scopeOf(sessionId));
+    if (!found && m.bundles.length === 0) {
+      this.showHint('models.bundles');
+      return;
+    }
+    if (found) {
+      for (const e of found.bundle.entries) {
+        if (e.model.startsWith('latest:')) continue;
+        const nw = newerThan(this.state.catalog, e.model, e.tool);
+        if (!nw || m.offered.includes(nw.id)) continue;
+        const vars = {
+          model: modelName(this.state.catalog, e.model, e.tool),
+          newer: nw.name,
+          newerId: nw.id,
+          bundle: found.bundle.id,
+          entry: e.id,
+        };
+        if (this.showHint('models.newer', vars, false)) {
+          void this.saveModels({ ...m, offered: [...m.offered, nw.id] });
+        }
+        return;
+      }
+    }
+    if (m.seen.includes(modelId)) return;
+    const name = modelName(this.state.catalog, modelId);
+    // The first model ever seen just joins the list; each one after it gets the label offer.
+    const first = m.seen.length === 0;
+    const shown =
+      !first && !m.labels[modelId] && this.showHint('models.label', { model: name }, false);
+    if (first || shown || m.labels[modelId])
+      void this.saveModels({ ...m, seen: [...m.seen, modelId] });
+  }
+
+  // ---- restart and resume --------------------------------------------------------------------
+
+  /** DMs that run here now: what a restart reopens. */
+  private liveIds(): string[] {
+    return this.state.sessions.filter((s) => s.status !== 'exited' && !s.mirror).map((s) => s.id);
+  }
+
+  /** The app menu's Restart Patchroom: relaunch now if all is idle, else ask. */
+  requestRestart(): void {
+    const ids = this.liveIds();
+    const busy = this.busyIds(ids);
+    if (busy.length === 0) {
+      void this.restartNow(ids);
+      return;
+    }
+    this.set({ restart: { ids, interrupt: [], waiting: false } });
+  }
+
+  busyIds(ids: string[] = this.state.restart?.ids ?? []): string[] {
+    return ids.filter((id) => {
+      const s = this.state.sessions.find((x) => x.id === id);
+      return s && (s.status === 'busy' || s.status === 'waiting');
+    });
+  }
+
+  setRestartInterrupt(id: string, on: boolean): void {
+    const r = this.state.restart;
+    if (!r) return;
+    const interrupt = on ? [...new Set([...r.interrupt, id])] : r.interrupt.filter((x) => x !== id);
+    this.set({ restart: { ...r, interrupt } });
+  }
+
+  /** Interrupt the chosen DMs, then relaunch once every DM is idle. */
+  confirmRestart(): void {
+    const r = this.state.restart;
+    if (!r) return;
+    for (const id of r.interrupt) this.stopTurn(id);
+    this.set({ restart: { ...r, waiting: true } });
+    this.checkRestart();
+  }
+
+  cancelRestart(): void {
+    if (this.state.restart) this.set({ restart: null });
+  }
+
+  private checkRestart(): void {
+    const r = this.state.restart;
+    if (!r?.waiting) return;
+    if (this.busyIds(r.ids).length === 0) void this.restartNow(r.ids);
+  }
+
+  private restarting = false;
+
+  /** Save drafts and the open DM, then relaunch and reopen `ids`. */
+  async restartNow(ids: string[]): Promise<void> {
+    if (this.restarting) return;
+    this.restarting = true;
+    for (const id of [...this.dirtyDrafts]) {
+      window.clearTimeout(this.draftTimers.get(id));
+      this.dirtyDrafts.delete(id);
+      const chat = this.chats.get(id);
+      if (chat) await this.ipc.draftSet(id, chat.draft).catch(() => undefined);
+    }
+    try {
+      window.localStorage.setItem(RESTART_ACTIVE_KEY, this.state.activeId ?? '');
+    } catch {
+      // The open DM is a convenience.
+    }
+    try {
+      await this.ipc.appRestart(ids);
+    } catch (err) {
+      this.restarting = false;
+      this.set({ restart: null, error: `Could not restart: ${String(err)}` });
+    }
+  }
+
+  /** After a restart: resume every DM it reopens with `--resume`, and show the one that was open. */
+  private async reopenAfterRestart(): Promise<void> {
+    const ids = await this.ipc.appRestartPending().catch(() => [] as string[]);
+    if (ids.length === 0) return;
+    let active = '';
+    try {
+      active = window.localStorage.getItem(RESTART_ACTIVE_KEY) ?? '';
+      window.localStorage.removeItem(RESTART_ACTIVE_KEY);
+    } catch {
+      // Keep the default.
+    }
+    let n = 0;
+    for (const id of ids) {
+      const s = this.state.sessions.find((x) => x.id === id);
+      if (!s || s.status !== 'exited') continue;
+      await this.resume(s);
+      n += 1;
+    }
+    const keep = this.state.sessions.some((s) => s.id === active) ? active : null;
+    if (keep) this.select(keep);
+    this.showHint('restart', { count: n === 1 ? '1 session' : `${n} sessions` });
   }
 
   // ---- steering: the side-pane selection, screenshots ----------------------------------

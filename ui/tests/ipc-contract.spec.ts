@@ -27,7 +27,7 @@ const P1B_COMMANDS = [
   'session_set_section',
   'session_write',
 ];
-/** The P2 additions to the fixed IPC contract (docs/gauntlet/P2-BAR.md). */
+/** The P2 additions to the fixed IPC contract (the P2 build bar). */
 const P2_COMMANDS = [
   'chat_history',
   'chat_image',
@@ -38,7 +38,7 @@ const P2_COMMANDS = [
   'session_mark_read',
   'statusline_cycle_mode',
 ];
-/** The P3 additions to the fixed IPC contract (docs/gauntlet/P3-BAR.md). */
+/** The P3 additions to the fixed IPC contract (the P3 build bar). */
 const P3_COMMANDS = [
   'activity_list',
   'chat_locate',
@@ -59,7 +59,7 @@ const P3_COMMANDS = [
   'session_set_flags',
   'sound_hooks_detect',
 ];
-/** The folder-section additions (docs/gauntlet/P3-FOLDER-SECTIONS.md). */
+/** The folder-section additions (the P3-FOLDER-SECTIONS build bar). */
 const FOLDER_COMMANDS = [
   'folder_session_hide',
   'folder_session_open',
@@ -67,14 +67,14 @@ const FOLDER_COMMANDS = [
   'section_create_from_folder',
   'section_set_archive_days',
 ];
-/** Session parity additions (docs/gauntlet/SESSION-PARITY-BAR.md, Contract: backend). */
+/** Session parity additions (the SESSION-PARITY build bar, contract: backend). */
 const PARITY_COMMANDS = [
   'session_mirror_end',
   'session_mirror_reveal',
   'session_mirror_takeover_when_closed',
   'session_takeover',
 ];
-/** Sidebar organization: section emoji (docs/gauntlet/SIDEBAR-ORG-BAR.md). */
+/** Sidebar organization: section emoji (the SIDEBAR-ORG build bar). */
 const SIDEBAR_COMMANDS = ['section_set_emoji'];
 /** Links: the in-app viewer and the system browser. */
 const LINK_COMMANDS = [
@@ -84,7 +84,7 @@ const LINK_COMMANDS = [
   'viewer_place',
   'viewer_show',
 ];
-/** Sound packs (docs/gauntlet/SOUND-PACKS-BAR.md). The file picker is the dialog plugin, not a command. */
+/** Sound packs (the SOUND-PACKS build bar). The file picker is the dialog plugin, not a command. */
 const SOUND_COMMANDS = [
   'sound_claude_profiles',
   'sound_custom_file',
@@ -107,6 +107,16 @@ const STEER_COMMANDS = [
   'viewer_selection',
   'viewer_sign_out',
   'viewer_snapshot',
+];
+/** Model bundles, the signed catalog, opt-in update checks, restart and emoji flavors. */
+const MODEL_COMMANDS = [
+  'app_restart',
+  'app_restart_pending',
+  'catalog_get',
+  'catalog_refresh',
+  'session_set_emoji',
+  'session_set_model',
+  'update_check',
 ];
 /** Declared by the backend beyond the fixed contract; the UI uses them when present. */
 const P2_OPTIONAL = ['session_view', 'session_focus'];
@@ -270,7 +280,14 @@ async function recordTauriCalls(): Promise<Call[]> {
   await ipc.sectionList();
   await ipc.sectionCreate('n');
   await ipc.sectionCreate('Later', { kind: 'divider', emoji: '\u{1F4E6}' });
-  await ipc.sectionSetEmoji('s', '\u{1F525}');
+  await ipc.sectionSetEmoji('s', '\u{1F525}', 'noto');
+  await ipc.sessionSetEmoji('i', '\u{2728}', 'apple');
+  await ipc.sessionSetModel('i', 'claude-opus-4-8[1m]');
+  await ipc.catalogGet();
+  await ipc.catalogRefresh();
+  await ipc.updateCheck();
+  await ipc.appRestart(['i']);
+  expect(await ipc.appRestartPending()).toEqual([]);
   await ipc.sectionSetCollapsed('s', true);
   await ipc.pickFolder('/w');
   await ipc.chatHistory('i', 'k', 300);
@@ -368,7 +385,9 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     for (const c of THEME_IMPORT_COMMANDS)
       expect(declared, `theme import command ${c}`).toContain(c);
     for (const c of STEER_COMMANDS) expect(declared, `steer command ${c}`).toContain(c);
+    for (const c of MODEL_COMMANDS) expect(declared, `model command ${c}`).toContain(c);
     const known = new Set([
+      ...MODEL_COMMANDS,
       ...SOUND_COMMANDS,
       ...THEME_IMPORT_COMMANDS,
       ...STEER_COMMANDS,
@@ -437,7 +456,10 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     expect(byCmd.section_set_collapsed).toEqual({ id: 's', collapsed: true });
     // Sidebar organization: `kind` and `emoji` are optional on create; null clears an emoji.
     expect(byCmd.section_create).toEqual({ name: 'Later', kind: 'divider', emoji: '\u{1F4E6}' });
-    expect(byCmd.section_set_emoji).toEqual({ id: 's', emoji: '\u{1F525}' });
+    expect(byCmd.section_set_emoji).toEqual({ id: 's', emoji: '\u{1F525}', flavor: 'noto' });
+    expect(byCmd.session_set_emoji).toEqual({ id: 'i', emoji: '\u{2728}', flavor: 'apple' });
+    expect(byCmd.session_set_model).toEqual({ id: 'i', model: 'claude-opus-4-8[1m]' });
+    expect(byCmd.app_restart).toEqual({ ids: ['i'] });
     expect(byCmd.pick_folder).toEqual({ defaultPath: '/w' });
     expect(byCmd.chat_history).toEqual({ id: 'i', before: 'k', limit: 300 });
     expect(byCmd.chat_thread).toEqual({ id: 'i', toolUseId: 'tu' });

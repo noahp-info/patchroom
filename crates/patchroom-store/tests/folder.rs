@@ -140,12 +140,12 @@ fn v4_database(dir: &std::path::Path) {
 }
 
 #[test]
-fn migration_5_applies_to_a_p3_database_and_loads_old_sections_unchanged() {
+fn migrations_5_and_6_apply_to_a_p3_database_and_load_old_sections_unchanged() {
     let dir = tempfile::tempdir().unwrap();
     v4_database(dir.path());
     let store = Store::open(dir.path()).unwrap();
-    assert_eq!(migrate::LATEST_VERSION, 5);
-    assert_eq!(store.schema_version().unwrap(), 5);
+    assert_eq!(migrate::LATEST_VERSION, 6);
+    assert_eq!(store.schema_version().unwrap(), 6);
     let ws = store.list_workspaces().unwrap().remove(0);
     let secs = store.list_sections(ws.id).unwrap();
     assert_eq!(secs.len(), 2);
@@ -172,7 +172,28 @@ fn migration_5_applies_to_a_p3_database_and_loads_old_sections_unchanged() {
     // Reopening a migrated database is a no-op.
     drop(store);
     let again = Store::open(dir.path()).unwrap();
-    assert_eq!(again.schema_version().unwrap(), 5);
+    assert_eq!(again.schema_version().unwrap(), 6);
+    assert_eq!(convs[0].emoji, None);
+    assert_eq!(secs[0].emoji_flavor, None);
+    // Emoji with a flavor round-trips; a cleared emoji drops its flavor; odd flavors are refused.
+    let s = again
+        .set_section_emoji_flavor(secs[0].id, Some("\u{1f680}"), Some("noto"))
+        .unwrap();
+    assert_eq!(
+        (s.emoji.as_deref(), s.emoji_flavor.as_deref()),
+        (Some("\u{1f680}"), Some("noto"))
+    );
+    let c = again
+        .set_conversation_emoji(convs[0].id, Some("\u{2728}"), Some("apple"))
+        .unwrap();
+    assert_eq!(c.emoji_flavor.as_deref(), Some("apple"));
+    let c = again
+        .set_conversation_emoji(convs[0].id, None, Some("noto"))
+        .unwrap();
+    assert_eq!((c.emoji, c.emoji_flavor), (None, None));
+    assert!(again
+        .set_conversation_emoji(convs[0].id, Some("x"), Some("twemoji"))
+        .is_err());
 }
 
 #[test]

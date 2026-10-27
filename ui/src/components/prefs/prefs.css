@@ -761,3 +761,145 @@
   margin: 6px 0 0;
   padding-left: 18px;
 }
+
+/* Models: bundles, where they apply, labels. Updates. Ring rule: boxes keep --ring-pad inside and
+   --ring-gap between them. */
+.pf-ask {
+  margin: 0 0 var(--group-gap);
+  padding: var(--ring-pad) 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.pf-ask__q {
+  margin: 0;
+  font-weight: 700;
+}
+.mb-list {
+  display: grid;
+  gap: var(--ring-gap);
+}
+.mb-card {
+  min-width: 0;
+  margin: 0;
+  padding: var(--ring-pad) 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.mb-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.prefs .mb-card__emoji,
+.prefs .mb-label__emoji,
+.prefs .sb-label__emoji {
+  width: 64px;
+  text-align: center;
+}
+.prefs .mb-card__name {
+  flex: 1 1 160px;
+  font-weight: 600;
+}
+.mb-card__tag {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--chip);
+  color: var(--chip-fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.mb-entries {
+  display: grid;
+  gap: var(--ring-gap);
+  margin-top: var(--group-gap);
+}
+.mb-entry {
+  display: grid;
+  grid-template-columns: auto minmax(110px, 0.8fr) minmax(140px, 1.4fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.mb-entry select {
+  width: 100%;
+}
+.prefs .mb-entry__text {
+  grid-column: 2 / 4;
+  font-family: var(--f-mono);
+}
+.mb-entry > .btn {
+  grid-column: 4;
+  grid-row: 1;
+}
+.mb-entry__def {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.prefs .mb-entry__msg {
+  grid-column: 2 / -1;
+  margin: 0;
+}
+.mb-card__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+  margin-top: var(--ring-pad);
+  font-size: 13px;
+}
+.mb-scope {
+  display: grid;
+  gap: var(--ring-gap);
+  margin-top: var(--group-gap);
+}
+.mb-scope__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.mb-scope__name {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-scope__kind {
+  color: var(--muted);
+  font-size: 12px;
+}
+.mb-labels,
+.sb-labels {
+  display: grid;
+  gap: var(--ring-gap);
+  margin-top: var(--group-gap);
+}
+.mb-label,
+.sb-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.mb-label__name,
+.sb-label__name {
+  flex: 0 0 140px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.prefs .mb-label__text,
+.prefs .sb-label__text {
+  flex: 1 1 140px;
+}
+.pf-emo {
+  margin-right: 6px;
+}

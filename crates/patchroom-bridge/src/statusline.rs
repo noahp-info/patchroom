@@ -51,6 +51,26 @@ fn read_status_line(path: &Path) -> Option<StatusLineSpec> {
     })
 }
 
+/// Is `url` an API on this machine? `localhost`, `127.0.0.1`, `[::1]` or a `*.localhost` host.
+#[must_use]
+pub fn is_local_base_url(url: &str) -> bool {
+    let rest = url.trim();
+    let rest = rest.split_once("://").map_or(rest, |(_, r)| r);
+    let host_port = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = host_port.rsplit_once('@').map_or(host_port, |(_, h)| h);
+    let host = if let Some(v6) = host_port.strip_prefix('[') {
+        v6.split(']').next().unwrap_or("")
+    } else {
+        host_port.split(':').next().unwrap_or("")
+    };
+    let host = host.to_ascii_lowercase();
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host == "::1"
+        || host == "0.0.0.0"
+        || host.starts_with("127.")
+}
+
 /// Claude's config dir: `$CLAUDE_CONFIG_DIR`, else `<home>/.claude`.
 #[must_use]
 pub fn config_dir(env_config_dir: Option<&str>, home: Option<&Path>) -> Option<PathBuf> {
@@ -109,6 +129,12 @@ pub struct Chips {
     /// Model display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Model id as the CLI reports it (`claude-opus-5-5`), for confirming a model switch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    /// The CLI talks to a local API (localhost or 127.0.0.1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_local: Option<bool>,
     /// Context window used, in percent (0 to 100).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_pct: Option<f64>,
@@ -134,7 +160,16 @@ impl Chips {
                 if self.$f.is_none() { self.$f.clone_from(&other.$f); }
             )*};
         }
-        fill!(model, context_pct, cost, mode, worktree, pr_url);
+        fill!(
+            model,
+            model_id,
+            api_local,
+            context_pct,
+            cost,
+            mode,
+            worktree,
+            pr_url
+        );
     }
 }
 
@@ -160,6 +195,9 @@ fn num_at(v: &Value, path: &[&str]) -> Option<f64> {
 pub fn chips_from_payload(v: &Value) -> Chips {
     let model = str_at(v, &["model", "display_name"])
         .or_else(|| str_at(v, &["model", "id"]))
+        .or_else(|| v.get("model").and_then(Value::as_str))
+        .map(str::to_owned);
+    let model_id = str_at(v, &["model", "id"])
         .or_else(|| v.get("model").and_then(Value::as_str))
         .map(str::to_owned);
     let context_pct = num_at(v, &["context_window", "used_percentage"])
@@ -190,6 +228,8 @@ pub fn chips_from_payload(v: &Value) -> Chips {
         .map(str::to_owned);
     Chips {
         model,
+        model_id,
+        api_local: None,
         context_pct,
         cost,
         mode,
@@ -210,6 +250,28 @@ mod tests {
 
     fn sl(cmd: &str) -> Value {
         json!({"statusLine": {"type": "command", "command": cmd, "padding": 2}})
+    }
+
+    #[test]
+    fn local_base_urls_are_recognized() {
+        for u in [
+            "http://localhost:11434",
+            "http://127.0.0.1:8080/v1",
+            "https://user:pw@localhost/x",
+            "http://[::1]:9000",
+            "http://api.localhost",
+            "localhost:4000",
+        ] {
+            assert!(is_local_base_url(u), "{u}");
+        }
+        for u in [
+            "https://api.anthropic.com",
+            "https://localhost.example.com",
+            "",
+            "http://10.0.0.2",
+        ] {
+            assert!(!is_local_base_url(u), "{u}");
+        }
     }
 
     #[test]

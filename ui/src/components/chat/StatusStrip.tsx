@@ -1,5 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Prefs, StatusChips } from '../../ipc';
+import type { ModelCatalog, Prefs, SessionStatus, StatusChips } from '../../ipc';
+import type { ModelSwitch } from '../../state/store';
+import { ModelChip } from './ModelChip';
 import { ansiCss, parseAnsi } from '../../lib/ansi';
 import { cwdParts } from '../../lib/cwd';
 import {
@@ -25,6 +27,9 @@ export interface StatusStripProps {
   cwd: string;
   prefs: Prefs | null;
   onCycleMode(): void;
+  status?: SessionStatus;
+  modelSwitch?: ModelSwitch;
+  catalog?: ModelCatalog;
 }
 
 const NO_CHIPS: StatusChips = {};
@@ -43,7 +48,20 @@ export function StatusStrip({
   cwd,
   prefs,
   onCycleMode,
+  status = 'idle',
+  modelSwitch,
 }: StatusStripProps) {
+  const labels = prefs?.statusBar?.labels ?? {};
+  /** The user's label for a module (text plus emoji), shown in front of its value. */
+  const lab = (id: string) => {
+    const l = labels[id];
+    const t = [l?.emoji, l?.text].filter(Boolean).join(' ');
+    return t ? (
+      <span className="sc__lab" data-testid={`sc-label-${id}`}>
+        {t}
+      </span>
+    ) : null;
+  };
   const chips = statusline?.chips ?? NO_CHIPS;
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const facts = useMemo<StatusFacts>(
@@ -80,13 +98,20 @@ export function StatusStrip({
     switch (id) {
       case 'model':
         return (
-          <span key={id} className="sc" data-chip="model">
-            {chips.model}
-          </span>
+          <ModelChip
+            key={id}
+            store={store}
+            sessionId={sessionId}
+            chips={chips}
+            status={status}
+            prefs={prefs}
+            switching={modelSwitch}
+          />
         );
       case 'folder':
         return (
           <span key={id} className="sc" data-chip="folder" title={cwd}>
+            {lab('folder')}
             <Icon name="folder" />
             {cwdParts(cwd).base || cwd}
           </span>
@@ -94,6 +119,7 @@ export function StatusStrip({
       case 'context':
         return (
           <span key={id} className="sc" data-chip="context">
+            {lab('context')}
             <span
               className="meter"
               style={{ '--pct': `${pct}%` } as React.CSSProperties}
@@ -105,6 +131,7 @@ export function StatusStrip({
       case 'cost':
         return (
           <span key={id} className="sc" data-chip="cost">
+            {lab('cost')}
             {costText(chips.cost!)}
           </span>
         );
@@ -118,12 +145,14 @@ export function StatusStrip({
             onClick={onCycleMode}
             title="Cycle permission mode (Shift+Tab)"
           >
+            {lab('mode')}
             {modeText(chips.mode!)}
           </button>
         );
       case 'worktree':
         return (
           <span key={id} className="sc" data-chip="worktree">
+            {lab('worktree')}
             <Icon name="branch" />
             {chips.worktree}
           </span>
@@ -131,6 +160,7 @@ export function StatusStrip({
       case 'branch':
         return (
           <span key={id} className="sc" data-chip="branch">
+            {lab('branch')}
             <Icon name="branch" />
             {chips.branch}
           </span>
@@ -145,6 +175,7 @@ export function StatusStrip({
             target="_blank"
             rel="noopener noreferrer"
           >
+            {lab('pr')}
             {prLabel(chips.prUrl!)}
           </a>
         );

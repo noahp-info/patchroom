@@ -455,7 +455,7 @@ test.describe('status strip', () => {
     const bold = (await style('feat/p2')).weight;
     expect(Number(bold)).toBeGreaterThanOrEqual(600);
     const strip = page.getByTestId('status-strip');
-    await expect(strip.locator('[data-chip="model"]')).toHaveText('Opus 4.8');
+    await expect(strip.locator('[data-chip="model"]')).toHaveText('\u2601\uFE0F Opus 4.8');
     await expect(strip.locator('[data-chip="folder"]')).toHaveText('patchroom-test');
     await expect(strip.locator('[data-chip="context"]')).toContainText('ctx 64%');
     await expect(strip.locator('[data-chip="cost"]')).toHaveText('$1.82');
@@ -468,7 +468,7 @@ test.describe('status strip', () => {
       id,
     );
     await expect(line).toHaveText('plain');
-    await expect(strip.locator('[data-chip="model"]')).toHaveText('Haiku');
+    await expect(strip.locator('[data-chip="model"]')).toHaveText('\u2601\uFE0F Haiku');
     await expect(strip.locator('[data-chip="mode"]')).toHaveCount(0);
   });
 

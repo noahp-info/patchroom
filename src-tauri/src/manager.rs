@@ -44,6 +44,7 @@ mod chat;
 mod folder;
 mod handoff;
 mod mirror;
+mod models;
 mod needs;
 mod paste;
 mod slack;
@@ -53,6 +54,7 @@ mod terminal;
 pub use chat::{ImageData, PromptAnswer};
 pub use handoff::{SystemTerminalOps, TerminalOps};
 pub use mirror::MirrorInfo;
+pub use models::{UpdateInfo, RESTART_FILE};
 pub use needs::TRACE_LOG as NEEDS_TRACE_LOG;
 pub use slack::{ActivityRow, Located, MarkInfo, Reindexed, DECISION_LOG};
 pub use terminal::{SendOutcome, TerminalWaitInfo};
@@ -258,6 +260,14 @@ pub struct SessionInfo {
     /// Set while claude waits on something only the terminal can show (no chat prompt).
     #[serde(rename = "terminalWait")]
     pub terminal_wait: Option<TerminalWaitInfo>,
+    /// Leading emoji of the session row.
+    pub emoji: Option<String>,
+    /// How the emoji is drawn: `apple` or `noto`.
+    #[serde(rename = "emojiFlavor")]
+    pub emoji_flavor: Option<String>,
+    /// The `--model` this DM launches (and resumes) with, when it has one.
+    #[serde(rename = "launchModel")]
+    pub launch_model: Option<String>,
 }
 
 /// One section of the sidebar.
@@ -280,6 +290,9 @@ pub struct SectionInfo {
     pub kind: String,
     /// Leading emoji of the header; `None` for none.
     pub emoji: Option<String>,
+    /// How the emoji is drawn: `apple` or `noto`.
+    #[serde(rename = "emojiFlavor")]
+    pub emoji_flavor: Option<String>,
 }
 
 /// What `--open-dm` asks for.
@@ -734,6 +747,9 @@ impl Manager {
                     folder_chip,
                     mirror,
                     terminal_wait,
+                    launch_model: models::launch_model(&AdapterState::parse(&c.adapter_state).args),
+                    emoji: c.emoji,
+                    emoji_flavor: c.emoji_flavor,
                 }
             })
             .collect())
@@ -794,6 +810,7 @@ impl Manager {
                 archive_days: s.archive_days,
                 kind: s.kind.as_str().to_owned(),
                 emoji: s.emoji,
+                emoji_flavor: s.emoji_flavor,
             })
             .collect())
     }

@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import type { FolderSession, SectionInfo, SessionInfo, SessionStatus } from '../ipc';
+import type { EmojiFlavor, FolderSession, SectionInfo, SessionInfo, SessionStatus } from '../ipc';
 import { beginDrag } from '../lib/dnd';
 import { DEFAULT_ARCHIVE_DAYS, layoutFolder, type FolderEntry } from '../lib/folder';
 import {
@@ -32,6 +32,7 @@ import {
 } from './FolderRows';
 import { ClaudeGlyph, Icon } from './Icon';
 import { AddForm, RenameForm } from './SectionEdit';
+import { Emoji } from './Emoji';
 
 /** Presence class from the theme: busy filled, idle hollow, needs ringed. */
 function presence(status: SessionStatus): 'busy' | 'idle' | 'needs' {
@@ -98,6 +99,7 @@ export function Sidebar({
   const [adding, setAdding] = useState<'section' | 'divider' | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [renamingDm, setRenamingDm] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ kind: 'dm' | 'section'; id: string; label: string } | null>(
     null,
   );
@@ -233,9 +235,9 @@ export function Sidebar({
     }
   }
 
-  async function addEntry(name: string, emoji: string | null) {
+  async function addEntry(name: string, emoji: string | null, flavor: EmojiFlavor) {
     if (adding === 'divider') await store.createDivider(name);
-    else await store.createSection(name, emoji);
+    else await store.createSection(name, emoji, flavor);
     setAdding(null);
   }
 
@@ -404,6 +406,7 @@ export function Sidebar({
     const s = state.sessions.find((x) => x.id === m.id);
     if (!s) return [];
     const items: MenuItem[] = [
+      { label: 'Rename...', onSelect: () => setRenamingDm(s.id) },
       {
         label: s.starred ? 'Unstar' : 'Star',
         onSelect: () => void store.setFlags(s.id, { starred: !s.starred }),
@@ -562,6 +565,26 @@ export function Sidebar({
     const branch = info ? branchChip(info) : null;
     const wt = !!info && isWorktree(info, home);
     const before = drop?.beforeId === s.id && drop.groupId === g.id;
+    if (renamingDm === s.id) {
+      return (
+        <RenameForm
+          key={s.id}
+          name={s.name}
+          emoji={s.emoji ?? null}
+          flavor={s.emojiFlavor}
+          divider={false}
+          label="Session name"
+          emojiLabel="Session emoji"
+          className="row row-edit"
+          onCommit={(name) => {
+            setRenamingDm(null);
+            void store.renameSession(s.id, name);
+          }}
+          onEmoji={(e, f) => void store.setSessionEmoji(s.id, e, f)}
+          onCancel={() => setRenamingDm(null)}
+        />
+      );
+    }
     return (
       <button
         type="button"
@@ -620,7 +643,11 @@ export function Sidebar({
         <span
           className={`jack ${presence(s.status)}${s.id === state.activeId ? ' plugged' : ''}`}
         />
-        <ClaudeGlyph />
+        {s.emoji ? (
+          <Emoji char={s.emoji} flavor={s.emojiFlavor} className="row-emoji" testId="dm-emoji" />
+        ) : (
+          <ClaudeGlyph />
+        )}
         <span className="nm">{s.name}</span>
         {branch && <BranchChip branch={branch} />}
         {info && wt && <WorktreeGlyph info={info} />}
@@ -736,7 +763,7 @@ export function Sidebar({
       {adding && (
         <AddForm
           mode={adding}
-          onSubmit={(n, e) => void addEntry(n, e)}
+          onSubmit={(n, e, f) => void addEntry(n, e, f)}
           onCancel={() => setAdding(null)}
         />
       )}
@@ -812,12 +839,13 @@ export function Sidebar({
                 <RenameForm
                   name={g.title}
                   emoji={g.section.emoji ?? null}
+                  flavor={g.section.emojiFlavor}
                   divider={isDivider}
                   onCommit={(name) => {
                     setRenaming(null);
                     void store.renameSection(g.id, name);
                   }}
-                  onEmoji={(e) => void store.setSectionEmoji(g.id, e)}
+                  onEmoji={(e, f) => void store.setSectionEmoji(g.id, e, f)}
                   onCancel={() => setRenaming(null)}
                 />
               ) : (
@@ -860,9 +888,12 @@ export function Sidebar({
                 >
                   {toggles(g) && <Icon name={closed ? 'right' : 'down'} />}
                   {g.section?.emoji ? (
-                    <span className="sec-emoji" data-testid="sec-emoji" aria-hidden="true">
-                      {g.section.emoji}
-                    </span>
+                    <Emoji
+                      char={g.section.emoji}
+                      flavor={g.section.emojiFlavor}
+                      className="sec-emoji"
+                      testId="sec-emoji"
+                    />
                   ) : (
                     <>
                       {g.kind === 'starred' && <Icon name="star" />}

@@ -99,4 +99,14 @@ Every UI change runs the `/impeccable` skill (critique and polish) before merge.
 - Rust: `unsafe_code` is forbidden workspace-wide. Clippy is clean with `-D warnings`.
 - Tauri capabilities: grant per-feature permissions in `src-tauri/capabilities/`. No wildcards.
 - No secrets in the tree. gitleaks runs in the pre-commit hook and CI.
+
+## Repo hygiene (hard; this repo is public)
+
+- Never commit agent-local or personal files: `.claude/settings.local.json`, `.claude/.state/`, `CLAUDE.local.md`, `MEMORY.md`, `.env` and `.env.*` (`.env.example` is fine).
+- Never commit Claude transcripts. A `.jsonl` file lives only under `ui/tests/fixtures/`, and only as a scrubbed recording from a `/tmp` test run.
+- Never commit a real home path, email or machine detail. Use a placeholder: `/Users/alex/...`, `/home/runner/...`. The allowlist is at the top of `scripts/check-repo-hygiene.sh`.
+- Plans, gauntlet bars and notes that name other projects or local paths live outside the repo.
+- `scripts/check-repo-hygiene.sh` enforces this. The pre-commit hook runs it on staged files, and the CI `changes` job runs it on the whole tree.
+- `scripts/test-repo-hygiene.sh` proves every rule still fires. Change both together.
+- If the check fires, fix the file. Never bypass it with `--no-verify`.
 - Do not modify files under a user's `~/.claude` or shell profiles from app code or tests.
