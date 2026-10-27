@@ -8,6 +8,7 @@ import { systemLabel } from '../../lib/systemLabel';
 import { Markdown } from '../../lib/markdown';
 import { formatClock } from '../../lib/time';
 import type { AppStore } from '../../state/store';
+import type { QueuedMessage } from '../../state/chat';
 import { ClaudeGlyph, Icon } from '../Icon';
 import { AskWidget } from './AskWidget';
 import { ChatImage } from './ChatImage';
@@ -476,7 +477,72 @@ export interface RowViewProps {
 /** Items that get a hover bar. System lines and terminal fallbacks are not messages. */
 const MARKABLE = new Set<ChatItem['kind']>(['user', 'assistant', 'plan', 'question', 'tool']);
 
+/**
+ * A message sent while Claude was busy. Claude Code holds it until the turn ends; the real
+ * message replaces this row when its transcript entry arrives. Not sent: the turn was
+ * interrupted (the text went back to Claude's prompt) or the session ended.
+ */
+function QueuedRow({ q, actions }: { q: QueuedMessage; actions: RowActions }) {
+  const { store, sessionId } = actions;
+  const waiting = q.state === 'queued';
+  return (
+    <div
+      className="msg user head queued"
+      data-kind="queued"
+      data-state={q.state}
+      data-testid="queued-msg"
+    >
+      <Who author="user" ms={q.at} />
+      <div className="body">
+        <p className="usertext">{q.text}</p>
+        <div className="queued__bar">
+          <span className="queued__tag" data-testid="queued-tag">
+            {waiting ? 'Queued' : 'Not sent'}
+          </span>
+          <span className="queued__why">
+            {waiting
+              ? 'Claude reads it when this turn ends.'
+              : q.state === 'ended'
+                ? 'The session ended first.'
+                : 'The turn stopped. It went back to Claude\u2019s prompt.'}
+          </span>
+          {waiting ? (
+            <button
+              type="button"
+              className="lnk"
+              data-testid="queued-send-now"
+              onClick={() => store.sendQueuedNow(sessionId)}
+            >
+              Send now
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="lnk"
+                data-testid="queued-retry"
+                onClick={() => store.retryQueued(sessionId, q.id)}
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                className="lnk"
+                data-testid="queued-remove"
+                onClick={() => store.removeQueued(sessionId, q.id)}
+              >
+                Remove
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RowViewInner({ row, expanded, actions, decor }: RowViewProps) {
+  if (row.type === 'queued') return <QueuedRow q={row.queued} actions={actions} />;
   if (row.type === 'day') {
     return (
       <div className="day" role="separator" aria-label={row.label}>
@@ -533,5 +599,7 @@ export const RowView = memo(
         ? a.row.prompt === b.row.prompt && a.row.head === b.row.head
         : a.row.type === 'day' && b.row.type === 'day'
           ? a.row.label === b.row.label
-          : false),
+          : a.row.type === 'queued' && b.row.type === 'queued'
+            ? a.row.queued === b.row.queued
+            : false),
 );

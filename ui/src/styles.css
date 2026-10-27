@@ -3913,3 +3913,29 @@ body.dragging .sbe__grip {
   color: var(--fg);
   font: inherit;
 }
+
+/* A message Claude has queued (sent while busy): muted until its transcript entry replaces it. */
+.chat .msg.queued .usertext {
+  color: var(--muted);
+}
+.queued__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.queued__bar > * {
+  --fs: 11px;
+}
+.queued__tag {
+  font-weight: 700;
+  color: var(--muted);
+}
+.msg.queued:not([data-state='queued']) .queued__tag {
+  color: var(--err-text);
+}
+.queued__why {
+  min-width: 0;
+  color: var(--muted);
+}

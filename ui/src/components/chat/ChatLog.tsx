@@ -36,6 +36,7 @@ class HeightCache {
 function estimate(row: Row): number {
   if (row.type === 'day') return 36;
   if (row.type === 'prompt') return 200;
+  if (row.type === 'queued') return 96;
   const it = row.item;
   const head = row.head ? 42 : 4;
   switch (it.kind) {

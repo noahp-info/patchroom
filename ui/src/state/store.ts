@@ -194,6 +194,12 @@ export function inTerminalDialog(s: Pick<SessionInfo, 'terminalWait'> | undefine
 
 /** How long a sent message gets to show up as a user item before the chat says why not. */
 export const ECHO_WAIT_MS = 3000;
+/**
+ * How long a queued message may wait once Claude is idle (or after Stop) before chat says it
+ * was not sent. At a turn's end Claude Code reads its queue at once, so a message still waiting
+ * after this went back to the prompt (an interrupt).
+ */
+export const QUEUE_RETURN_MS = 2500;
 
 const LAST_CWD_KEY = 'patchroom.lastCwd';
 /** The DM on screen when Restart Patchroom ran, shown again after the relaunch. */
@@ -479,6 +485,11 @@ export class AppStore {
         kind: 'mirror',
         text: 'This session is open in another terminal. Your message was not sent. It stays in the box.',
       });
+    } else if (outcome === 'queued' && !slashName(text)) {
+      // Claude Code holds it as queued input and writes no transcript entry until it reads it:
+      // show it now, below the live turn, until that entry replaces it.
+      chat.clearNotice();
+      chat.addQueued(text);
     } else if (outcome === 'queued') {
       chat.setNotice({ kind: 'queued', text: 'Queued. Claude reads it after this turn.' }, 4000);
     } else {
@@ -592,6 +603,56 @@ export class AppStore {
   /** Esc to the PTY: interrupts the running turn. */
   stopTurn(id: string): void {
     void this.ipc.sessionWrite(id, utf8ToBase64('\x1b')).catch(() => undefined);
+    // Esc puts Claude Code's queued input back in its prompt.
+    if (this.chat(id).pendingQueued().length) this.armQueueReturn(id, true);
+  }
+
+  // ---- queued messages --------------------------------------------------------------------
+
+  private readonly queueTimers = new Map<string, number>();
+
+  /**
+   * After a quiet spell, messages still queued did not go: Claude went idle without reading
+   * them, or Stop interrupted the turn. `force` checks even if the status still says busy.
+   */
+  private armQueueReturn(id: string, force = false): void {
+    window.clearTimeout(this.queueTimers.get(id));
+    this.queueTimers.set(
+      id,
+      window.setTimeout(() => {
+        this.queueTimers.delete(id);
+        const status = this.state.sessions.find((s) => s.id === id)?.status;
+        if (!force && status === 'busy') return;
+        this.chat(id).markQueued('returned');
+      }, QUEUE_RETURN_MS),
+    );
+  }
+
+  /** "Send now" on a queued message: Claude Code's Ctrl+X Ctrl+S sends its queue at once. */
+  sendQueuedNow(id: string): void {
+    void this.ipc.sessionWrite(id, utf8ToBase64('\x18\x13')).catch(() => undefined);
+  }
+
+  /**
+   * Retry a message that was not sent. After an interrupt the text sits in Claude's prompt, so
+   * Enter sends it. After the session ended, it goes back to the composer instead.
+   */
+  retryQueued(id: string, qid: string): void {
+    const chat = this.chat(id);
+    const q = chat.getSnapshot().queued.find((x) => x.id === qid);
+    if (!q) return;
+    const s = this.state.sessions.find((x) => x.id === id);
+    if (q.state === 'returned' && s && s.status !== 'exited') {
+      chat.requeue(qid);
+      void this.ipc.sessionWrite(id, utf8ToBase64('\r')).catch(() => undefined);
+      return;
+    }
+    chat.removeQueued(qid);
+    chat.insertIntoDraft(q.text);
+  }
+
+  removeQueued(id: string, qid: string): void {
+    this.chat(id).removeQueued(qid);
   }
 
   private started = false;
@@ -607,6 +668,9 @@ export class AppStore {
       this.ipc.on('pty:exit', (e) => {
         this.patchSession(e.id, { status: 'exited', exitCode: e.code });
         this.chat(e.id).clearNotice('queued');
+        // The session ended before Claude read its queue: those messages were not sent.
+        window.clearTimeout(this.queueTimers.get(e.id));
+        this.chat(e.id).markQueued('ended');
       }),
       this.ipc.on('session:title', (e) => this.patchSession(e.id, { title: e.title })),
       this.ipc.on('session:status', (e) => {
@@ -618,6 +682,9 @@ export class AppStore {
           // When the turn began, for the working line's clock.
           ...(e.status === 'busy' && was !== 'busy' ? { busySince: Date.now() } : {}),
         });
+        if (e.status === 'busy') window.clearTimeout(this.queueTimers.get(e.id));
+        else if (e.status === 'idle' && this.chat(e.id).pendingQueued().length)
+          this.armQueueReturn(e.id);
       }),
       this.ipc.on('session:terminal_wait', (e) =>
         this.patchSession(e.id, { terminalWait: { reason: e.reason, since: e.since } }),

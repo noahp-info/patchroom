@@ -12,7 +12,7 @@ import { createPortal } from 'react-dom';
 import type { ChatItem, MarkInfo, PromptAnswer, SessionInfo, SubagentItem } from '../../ipc';
 import { emojiName } from '../../lib/emoji';
 import { itemText } from '../../lib/itemText';
-import { buildRows } from '../../lib/rows';
+import { buildRows, queuedRows } from '../../lib/rows';
 import { inTerminalDialog, type AppStore, type ModelSwitch } from '../../state/store';
 import type { ModelCatalog } from '../../ipc';
 import { hintPlace, type HintId } from '../../lib/hints';
@@ -277,7 +277,8 @@ export function ChatView({
 
   const filter = snap.reactionFilter;
   const rows = useMemo(() => {
-    if (!filter) return buildRows(snap.items, snap.prompts);
+    // Queued messages sit below the live turn until their transcript entry replaces them.
+    if (!filter) return [...buildRows(snap.items, snap.prompts), ...queuedRows(snap.queued)];
     const keep = new Set(
       mine.filter((m) => m.kind === 'reaction' && m.emoji === filter).map((m) => m.itemKey),
     );
@@ -285,7 +286,7 @@ export function ChatView({
       snap.items.filter((it: ChatItem) => keep.has(it.key)),
       [],
     );
-  }, [snap.items, snap.prompts, filter, mine]);
+  }, [snap.items, snap.prompts, snap.queued, filter, mine]);
 
   // Row decorations keep their identity while unchanged, so memoized rows do not repaint.
   const [decorCache] = useState(() => new DecorCache());

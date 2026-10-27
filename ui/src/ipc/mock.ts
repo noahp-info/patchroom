@@ -132,6 +132,18 @@ export interface MockControl {
   threadCalls: { id: string; toolUseId: string }[];
   /** Echo `session_send_text` back as a user item, like the transcript tail would. Default on. */
   autoEcho: boolean;
+  /**
+   * Text sent while busy, held the way Claude Code holds queued input: no transcript entry
+   * until `dequeue` (or Ctrl+X Ctrl+S written to the PTY). Esc written while some is held
+   * interrupts: the session goes idle and the text returns to the prompt (`returned`).
+   */
+  queuedInput: Record<string, string[]>;
+  /** Claude reads the queued input: one user entry with every held message, in order. */
+  dequeue(id: string): void;
+  /** Esc during a turn with queued input: idle, nothing written, text back in the prompt. */
+  interrupt(id: string): void;
+  /** Text that went back to Claude's prompt after an interrupt, per session. */
+  returned: Record<string, string[]>;
   /** Children returned by `chat_thread`, per tool use id. */
   threads: Record<string, ChatItem[]>;
   /** Synthetic data helpers. */
@@ -527,6 +539,29 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     threadCalls: [],
     views: [],
     autoEcho: true,
+    queuedInput: {},
+    returned: {},
+    dequeue(id) {
+      const held = control.queuedInput[id] ?? [];
+      if (!held.length) return;
+      control.queuedInput[id] = [];
+      const n = control.texts.length;
+      control.pushItems(id, [
+        {
+          key: `dq-${id}-${n}-${Date.now()}`,
+          ts: Date.now(),
+          kind: 'user',
+          text: held.join('\n'),
+          images: [],
+        },
+      ]);
+    },
+    interrupt(id) {
+      const held = control.queuedInput[id] ?? [];
+      control.queuedInput[id] = [];
+      control.returned[id] = [...(control.returned[id] ?? []), ...held];
+      control.setStatus(id, 'idle');
+    },
     threads: { 'tu-sub': syntheticThread() },
     synthetic: syntheticChat,
     bigChat,
@@ -770,7 +805,25 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     },
     async sessionWrite(id, data) {
       const arr = (control.writes[id] ??= []);
-      for (const b of base64ToBytes(data)) arr.push(b);
+      const bytes = base64ToBytes(data);
+      for (const b of bytes) arr.push(b);
+      // Claude Code's queued input: Ctrl+X Ctrl+S sends it now, Esc interrupts the turn.
+      const held = control.queuedInput[id]?.length ?? 0;
+      const str = String.fromCharCode(...bytes);
+      if (held && str === '\x18\x13') setTimeout(() => control.dequeue(id), 20);
+      else if (held && str === '\x1b') setTimeout(() => control.interrupt(id), 20);
+      else if (str === '\r' && control.returned[id]?.length) {
+        // Enter on text an interrupt put back in the prompt sends it.
+        const text = control.returned[id].join('\n');
+        control.returned[id] = [];
+        setTimeout(
+          () =>
+            control.pushItems(id, [
+              { key: `rt-${id}-${Date.now()}`, ts: Date.now(), kind: 'user', text, images: [] },
+            ]),
+          20,
+        );
+      }
     },
     async pasteImage(id, data, mediaType) {
       control.pastes.push({ id, data, mediaType });
@@ -808,6 +861,10 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       if (text.startsWith('/')) {
         if (control.repaintOnSlash)
           control.emitText(id, `\x1b[2J\x1b[H\x1b[1m${text}\x1b[0m panel\r\n`);
+        return { outcome };
+      }
+      if (outcome === 'queued' && control.autoEcho) {
+        (control.queuedInput[id] ??= []).push(text);
         return { outcome };
       }
       if (control.autoEcho) {

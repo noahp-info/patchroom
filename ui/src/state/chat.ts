@@ -45,6 +45,19 @@ export interface ChatNotice {
   text: string;
 }
 
+/**
+ * A message sent while Claude was busy. Claude Code holds it as queued input and writes the
+ * transcript entry only when it reads it, so chat shows it at once, below the live turn, until
+ * that entry arrives. `returned`: the turn was interrupted and the text went back to Claude's
+ * prompt. `ended`: the session ended first.
+ */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  at: number;
+  state: 'queued' | 'returned' | 'ended';
+}
+
 export interface ChatSnapshot {
   /** Highlight-to-comment lines waiting in the composer. Nothing sends before Send. */
   comments: DraftComment[];
@@ -69,6 +82,8 @@ export interface ChatSnapshot {
   /** Only rows carrying this reaction show. */
   reactionFilter: string | null;
   notice: ChatNotice | null;
+  /** Messages sent while Claude was busy, in send order, until their transcript entry lands. */
+  queued: QueuedMessage[];
 }
 
 /**
@@ -95,6 +110,8 @@ export class ChatModel {
   private reactionFilter: string | null = null;
   private notice: ChatNotice | null = null;
   private noticeTimer = 0;
+  private queued: QueuedMessage[] = [];
+  private queuedSeq = 0;
   private hitTimer = 0;
   private snap: ChatSnapshot;
   private readonly listeners = new Set<() => void>();
@@ -259,6 +276,7 @@ export class ChatModel {
       detached: this.detached,
       reactionFilter: this.reactionFilter,
       notice: this.notice,
+      queued: this.queued,
     };
   }
 
@@ -290,6 +308,8 @@ export class ChatModel {
       this.notice = null;
       touched = true;
     }
+    // A queued message turns into the real one in the same commit: no duplicate, no flicker.
+    if (this.queued.length && this.matchQueued(items)) touched = true;
     if (touched) this.commit();
   }
 
@@ -394,6 +414,73 @@ export class ChatModel {
   }
   clearNotice(kind?: ChatNotice['kind']): void {
     if (this.notice && (!kind || this.notice.kind === kind)) this.setNotice(null);
+  }
+
+  // ---- queued messages ---------------------------------------------------------------------
+
+  /** A send that Claude queued: show it now, at the bottom. */
+  addQueued(text: string): QueuedMessage {
+    this.queuedSeq += 1;
+    const q: QueuedMessage = { id: `q${this.queuedSeq}`, text, at: Date.now(), state: 'queued' };
+    this.queued = [...this.queued, q];
+    this.commit();
+    return q;
+  }
+
+  /**
+   * The turn was interrupted (`returned`: still-waiting messages went back to Claude's prompt)
+   * or the session ended (`ended`: every bubble left).
+   */
+  markQueued(state: 'returned' | 'ended'): void {
+    const hit = (q: QueuedMessage) =>
+      state === 'ended' ? q.state !== 'ended' : q.state === 'queued';
+    if (!this.queued.some(hit)) return;
+    this.queued = this.queued.map((q) => (hit(q) ? { ...q, state } : q));
+    this.commit();
+  }
+
+  /** Back to waiting (Retry pressed Enter on the returned text). */
+  requeue(id: string): void {
+    this.queued = this.queued.map((q) => (q.id === id ? { ...q, state: 'queued' } : q));
+    this.commit();
+  }
+
+  removeQueued(id: string): void {
+    const next = this.queued.filter((q) => q.id !== id);
+    if (next.length === this.queued.length) return;
+    this.queued = next;
+    this.commit();
+  }
+
+  /** Messages still waiting for Claude to read them. */
+  pendingQueued(): QueuedMessage[] {
+    return this.queued.filter((q) => q.state === 'queued');
+  }
+
+  /**
+   * Drop queued messages whose transcript entry arrived. Main-log user entries only (a
+   * subagent's prompt is not the person's message). First match first: each entry takes the
+   * oldest queued message it holds, and Claude Code may join several queued messages into one
+   * entry, so an entry can take more than one, in order.
+   */
+  private matchQueued(items: ChatItem[]): boolean {
+    let changed = false;
+    for (const it of items) {
+      if (it.kind !== 'user' || it.parentToolUseId || !this.queued.length) continue;
+      const body = norm(it.text);
+      let from = 0;
+      const left: QueuedMessage[] = [];
+      for (const q of this.queued) {
+        const t = norm(q.text);
+        const at = t ? body.indexOf(t, from) : -1;
+        if (at >= 0) {
+          from = at + t.length;
+          changed = true;
+        } else left.push(q);
+      }
+      this.queued = left;
+    }
+    return changed;
   }
 
   /** Main-log user messages held so far, to tell whether a send produced one. */
@@ -610,4 +697,9 @@ export class ChatModel {
     this.statusline = { text: e.text, chips: e.chips };
     this.commit();
   }
+}
+
+/** Whitespace-insensitive text, for matching a queued message to its transcript entry. */
+function norm(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
 }

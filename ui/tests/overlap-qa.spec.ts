@@ -124,6 +124,20 @@ for (const scheme of SCHEMES) {
 
       if (size.pane) await openPane(page);
 
+      // A message sent while Claude is busy: the queued bubble below the live turn.
+      const sid = await page.evaluate(() => window.__PR_MOCK__!.sessions()[0].id);
+      await page.evaluate((x) => window.__PR_MOCK__!.setStatus(x, 'busy'), sid);
+      await page.getByTestId('composer-input').fill('then run the full test suite please');
+      await page.keyboard.press('Enter');
+      await expect(page.getByTestId('queued-msg')).toBeVisible();
+      await check('queued bubble');
+      await page.evaluate((x) => {
+        const m = window.__PR_MOCK__!;
+        m.dequeue(x);
+        m.setStatus(x, 'idle');
+      }, sid);
+      await expect(page.getByTestId('queued-msg')).toHaveCount(0);
+
       // Sidebar, header, chat, composer, status strip and pane, together.
       await check('main screen');
       expect(await ringFindings(page, '.side'), where('sidebar rings')).toEqual([]);
