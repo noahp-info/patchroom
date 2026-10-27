@@ -23,7 +23,12 @@ export function AccountsSection() {
         Sign in once and claude.ai artifacts open right in the side pane. The sign-in stays in the
         pane&#8217;s own storage, apart from the rest of Patchroom, until claude.ai ends it.
       </p>
-      <div className="acct" data-testid="account-claude" data-state={String(acct.signedIn)}>
+      <div
+        className="acct"
+        data-testid="account-claude"
+        data-state={String(acct.signedIn)}
+        data-setting="accounts.claude"
+      >
         <div className="acct__who">
           <b>claude.ai</b>
           <span className="acct__state" role="status">

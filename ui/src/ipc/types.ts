@@ -8,6 +8,7 @@ import type {
 } from '../components/prefs/ipc.ts';
 import type { Theme } from '../theme/types.ts';
 import type { ImportEntry, ImportSource } from '../theme/themeImport.ts';
+import type { FontOption, FontPrefs } from '../theme/typeface.ts';
 
 /** Session status as reported by the backend (`session:status` and `session_list`). */
 export type SessionStatus = 'busy' | 'idle' | 'waiting' | 'exited';
@@ -362,6 +363,8 @@ export interface Ipc {
   themeImportDetect(): Promise<ImportSource[]>;
   /** Theme import: pick an `.itermcolors` file and read it. Null when cancelled. */
   themeImportFile(): Promise<ImportEntry | null>;
+  /** Installed font families from Core Text, read only. */
+  fontsList(): Promise<FontOption[]>;
   /** The DM the user is looking at (null: none), so it does not notify while focused. */
   sessionFocus(id: string | null): Promise<void>;
   /** P3 folder sections. */
@@ -663,6 +666,8 @@ export interface Prefs {
   emoji?: { chat: EmojiFlavor };
   /** Chat view. Absent: logs follow new messages. */
   chat?: { autoScroll: boolean };
+  /** Fonts per area, and the chat font per section or session. Absent: base defaults. */
+  fonts?: FontPrefs;
 }
 
 /** Tools a bundle entry can name. */

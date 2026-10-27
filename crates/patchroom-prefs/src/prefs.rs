@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::dnd::{parse_hhmm, Dnd};
+use crate::fonts::Fonts;
 use crate::models::{ChatPrefs, EmojiPrefs, Models, ModuleLabel, Updates};
 
 /// Layout bases the UI can render.
@@ -394,6 +395,8 @@ pub struct Prefs {
     pub emoji: EmojiPrefs,
     /// Chat view: auto-scroll.
     pub chat: ChatPrefs,
+    /// Fonts per area, and the chat font per section or session.
+    pub fonts: Fonts,
 }
 
 /// First-time hints (DESIGN.md, First-time hints). Each id shows once, ever.
@@ -482,6 +485,7 @@ impl Default for Prefs {
             updates: Updates::default(),
             emoji: EmojiPrefs::default(),
             chat: ChatPrefs::default(),
+            fonts: Fonts::default(),
         }
     }
 }
@@ -530,7 +534,33 @@ impl Prefs {
         if fresh {
             p.apply_session_default(session_hook);
         }
+        p.migrate_terminal_font();
         p
+    }
+
+    /// Before Settings > Themes > Fonts, the terminal's default font and size lived in the
+    /// `*` row of `termPerDm`. They move to the Code and terminal area, unless that area
+    /// already has its own value. Per-DM rows keep theirs.
+    pub fn migrate_terminal_font(&mut self) {
+        let Some(row) = self.term_per_dm.get_mut("*") else {
+            return;
+        };
+        if let Some(f) = row.font.take() {
+            if self.fonts.code.family.is_none() && crate::fonts::valid_family(&f) {
+                self.fonts.code.family = Some(f);
+            }
+        }
+        if let Some(s) = row.font_size.take() {
+            if self.fonts.code.size.is_none()
+                && s.is_finite()
+                && (crate::fonts::MIN_SIZE..=crate::fonts::MAX_SIZE).contains(&s)
+            {
+                self.fonts.code.size = Some(s);
+            }
+        }
+        if row.theme_id.is_none() {
+            self.term_per_dm.remove("*");
+        }
     }
 
     /// Set the `session` sound row for a user who has (or has not) a SessionStart audio hook.
@@ -681,6 +711,7 @@ impl Prefs {
         }
         self.sidebar_width = self.sidebar_width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
         self.models.validate()?;
+        self.fonts.validate()?;
         if self.status_bar.labels.len() > 32 || self.status_bar.labels.values().any(|l| !l.valid())
         {
             return Err(PrefsError("bad status bar label".into()));
@@ -1087,5 +1118,48 @@ mod tests {
             .patched(&json!({"models": {"bundles": [{"id": "d", "name": "D", "entries": [
                 {"id": "a", "tool": "claude-code", "model": "x; rm -rf ~"}], "defaultEntry": "a"}]}}))
             .is_err());
+    }
+
+    #[test]
+    fn fonts_patch_and_validate() {
+        let p = Prefs::default()
+            .patched(&json!({"fonts": {"ui": {"family": "Inter", "size": 15},
+                "perSession": {"d1": {"family": "Georgia"}}}}))
+            .unwrap();
+        assert_eq!(p.fonts.ui.family.as_deref(), Some("Inter"));
+        assert_eq!(p.fonts.per_session["d1"].family.as_deref(), Some("Georgia"));
+        assert!(Prefs::default()
+            .patched(&json!({"fonts": {"ui": {"family": "x\"; color: red"}}}))
+            .is_err());
+        assert!(Prefs::default()
+            .patched(&json!({"fonts": {"code": {"size": 99}}}))
+            .is_err());
+    }
+
+    #[test]
+    fn the_old_terminal_default_font_moves_to_the_code_area() {
+        let raw = json!({"termPerDm": {
+            "*": {"font": "Menlo", "fontSize": 14, "themeId": "iterm"},
+            "d1": {"font": "Monaco"}
+        }})
+        .to_string();
+        let p = Prefs::from_stored(&raw);
+        assert_eq!(p.fonts.code.family.as_deref(), Some("Menlo"));
+        assert_eq!(p.fonts.code.size, Some(14.0));
+        assert_eq!(p.term_per_dm["*"].theme_id.as_deref(), Some("iterm"));
+        assert!(p.term_per_dm["*"].font.is_none());
+        assert_eq!(p.term_per_dm["d1"].font.as_deref(), Some("Monaco"));
+    }
+
+    #[test]
+    fn migration_never_overwrites_a_code_font_and_drops_an_empty_row() {
+        let raw = json!({
+            "termPerDm": {"*": {"font": "Menlo"}},
+            "fonts": {"code": {"family": "SF Mono"}}
+        })
+        .to_string();
+        let p = Prefs::from_stored(&raw);
+        assert_eq!(p.fonts.code.family.as_deref(), Some("SF Mono"));
+        assert!(!p.term_per_dm.contains_key("*"));
     }
 }

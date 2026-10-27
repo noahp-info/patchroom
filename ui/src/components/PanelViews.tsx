@@ -149,6 +149,7 @@ export function PrefsView({ state, store }: { state: AppState; store: AppStore }
           .filter((s) => s.kind !== 'divider')
           .map((s) => ({ id: s.id, name: s.name, folder: s.folder ?? null }))}
         initialTab={target?.tab}
+        initialSetting={target?.setting}
         targetDm={target?.tab === 'sounds' ? target.dmId : undefined}
       />
     );

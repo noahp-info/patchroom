@@ -17,7 +17,7 @@ export function LinksSection() {
         Where a link opens when you click it. Hold &#8984; to open it in the other place. The viewer
         always has an Open in browser button.
       </p>
-      <div className="pf-seg" role="radiogroup" aria-label="Open links">
+      <div className="pf-seg" role="radiogroup" aria-label="Open links" data-setting="links.open">
         {CHOICES.map((c) => (
           <label key={c.id} className="pf-seg__opt">
             <input
@@ -31,8 +31,8 @@ export function LinksSection() {
         ))}
       </div>
 
-      <h3>Artifacts</h3>
-      <label className="chk">
+      <h3 data-setting="links.artifacts">Artifacts</h3>
+      <label className="chk" data-setting="links.autopin">
         <input
           type="checkbox"
           data-testid="artifacts-autopin"

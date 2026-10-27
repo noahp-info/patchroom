@@ -124,6 +124,20 @@ for (const scheme of SCHEMES) {
 
       if (size.pane) await openPane(page);
 
+      // A message sent while Claude is busy: the queued bubble below the live turn.
+      const sid = await page.evaluate(() => window.__PR_MOCK__!.sessions()[0].id);
+      await page.evaluate((x) => window.__PR_MOCK__!.setStatus(x, 'busy'), sid);
+      await page.getByTestId('composer-input').fill('then run the full test suite please');
+      await page.keyboard.press('Enter');
+      await expect(page.getByTestId('queued-msg')).toBeVisible();
+      await check('queued bubble');
+      await page.evaluate((x) => {
+        const m = window.__PR_MOCK__!;
+        m.dequeue(x);
+        m.setStatus(x, 'idle');
+      }, sid);
+      await expect(page.getByTestId('queued-msg')).toHaveCount(0);
+
       // Sidebar, header, chat, composer, status strip and pane, together.
       await check('main screen');
       expect(await ringFindings(page, '.side'), where('sidebar rings')).toEqual([]);
@@ -166,6 +180,25 @@ for (const scheme of SCHEMES) {
           [],
         );
       }
+      // Settings search: results, then a chosen row with its flash ring.
+      await page.keyboard.press('Meta+f');
+      await page.keyboard.type('font');
+      await expect(dlg.getByTestId('prefs-results')).toBeVisible();
+      await check('Settings search results', '.prefs');
+      expect(await ringFindings(page, '.prefs__side'), where('search rings')).toEqual([]);
+      await dlg.locator('.pres').first().click();
+      await expect(dlg.getByTestId('pf-flash')).toBeVisible();
+      await check('Settings search flash', '.prefs');
+      // A font picker over Settings.
+      await dlg.getByTestId('font-family-chat').click();
+      await expect(page.locator('.floating.flist')).toBeVisible();
+      await check('font picker', '.floating.flist');
+      expect(await ringFindings(page, '.floating.flist'), where('font picker rings')).toEqual([]);
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.floating.flist')).toHaveCount(0);
+      // Esc clears the search, the next closes Settings.
+      await page.keyboard.press('Escape');
+      await expect(dlg.getByTestId('prefs-search')).toHaveValue('');
       await page.keyboard.press('Escape');
       await expect(dlg).toHaveCount(0);
       await expectViewerBack(page, mark);
@@ -230,6 +263,17 @@ for (const scheme of SCHEMES) {
       await check('emoji picker with styles', '.floating.picker');
       expect(await ringFindings(page, '.floating.picker'), where('style picker rings')).toEqual([]);
       await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+      await expectViewerBack(page, mark);
+      mark = (await viewerLog(page)).length;
+
+      // A session's own chat font, from its sidebar menu.
+      await page.locator('.side [data-dm]').first().click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'Chat font...' }).click();
+      await expect(page.locator('.floating.cfont')).toBeVisible();
+      mark = await expectViewerStepsAside(page, mark);
+      await check('chat font popover', '.floating.cfont');
+      expect(await ringFindings(page, '.floating.cfont'), where('chat font rings')).toEqual([]);
       await page.keyboard.press('Escape');
       await expectViewerBack(page, mark);
       mark = (await viewerLog(page)).length;

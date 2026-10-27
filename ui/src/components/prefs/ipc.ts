@@ -21,6 +21,13 @@ import {
   type ImportSource,
   type StoredTermPalette,
 } from '../../theme/themeImport.ts';
+import {
+  cleanFonts,
+  MOCK_SYSTEM_FONTS,
+  validFamily,
+  type FontOption,
+  type FontPrefs,
+} from '../../theme/typeface.ts';
 
 /** Patchroom events that can make a sound or a notification. */
 export const SOUND_EVENTS = [
@@ -149,6 +156,8 @@ export interface Prefs {
   emoji?: { chat: EmojiFlavor };
   /** Chat view: logs follow new messages. */
   chat?: { autoScroll: boolean };
+  /** Fonts per area, and the chat font per section or session (Settings > Themes > Fonts). */
+  fonts?: FontPrefs;
 }
 
 export type LinkTarget = 'patchroom' | 'browser';
@@ -240,9 +249,36 @@ function normalizeStatusBar(raw: unknown): NonNullable<Prefs['statusBar']> {
   return { default: list(r.default), perDm };
 }
 
+/**
+ * Before fonts per area, the terminal's default font and size sat in `termPerDm['*']`. They
+ * move to the Code and terminal area unless it has its own (the backend does the same on load).
+ */
+function migrateTermFont(
+  termPerDm: Prefs['termPerDm'],
+  fonts: FontPrefs,
+): { termPerDm: Prefs['termPerDm']; fonts: FontPrefs } {
+  const row = termPerDm[TERM_DEFAULT_KEY];
+  if (!row || (row.font === undefined && row.fontSize === undefined)) return { termPerDm, fonts };
+  const code = { ...fonts.code };
+  if (!code.family && validFamily(row.font)) code.family = row.font;
+  if (!code.size && typeof row.fontSize === 'number' && row.fontSize >= 8 && row.fontSize <= 32)
+    code.size = row.fontSize;
+  const rest = { ...termPerDm };
+  if (row.themeId) rest[TERM_DEFAULT_KEY] = { themeId: row.themeId };
+  else delete rest[TERM_DEFAULT_KEY];
+  return {
+    termPerDm: rest,
+    fonts: code.family || code.size ? { ...fonts, code } : fonts,
+  };
+}
+
 /** Fill anything missing in stored or backend prefs from the defaults, one level deep per group. */
 export function normalizePrefs(raw: unknown): Prefs {
   const r = isRecord(raw) ? raw : {};
+  const term = migrateTermFont(
+    isRecord(r.termPerDm) ? (r.termPerDm as Prefs['termPerDm']) : {},
+    cleanFonts(r.fonts),
+  );
   const d = DEFAULT_PREFS;
   const sound = isRecord(r.sound) ? r.sound : {};
   const notify = isRecord(r.notify) ? r.notify : {};
@@ -285,7 +321,8 @@ export function normalizePrefs(raw: unknown): Prefs {
       perDm: isRecord(sound.perDm) ? cleanPerDm(sound.perDm) : {},
     },
     dnd: { ...d.dnd, ...(dnd as Partial<Prefs['dnd']>) },
-    termPerDm: isRecord(r.termPerDm) ? (r.termPerDm as Prefs['termPerDm']) : {},
+    termPerDm: term.termPerDm,
+    fonts: term.fonts,
     statusBar: normalizeStatusBar(r.statusBar),
   };
 }
@@ -322,6 +359,8 @@ export interface PrefsApi {
   catalogRefresh?(): Promise<ModelCatalog>;
   /** Is a newer Patchroom published (only while the setting is on)? */
   updateCheck?(): Promise<UpdateInfo>;
+  /** Installed font families (Core Text), read only. Absent: bundled faces only. */
+  fontsList?(): Promise<FontOption[]>;
 }
 
 /** Real backend: command names and payloads from the P3 build bar. */
@@ -404,6 +443,10 @@ export function createTauriPrefsApi(): PrefsApi {
       const { invoke } = await import('@tauri-apps/api/core');
       return invoke<UpdateInfo>('update_check');
     },
+    async fontsList() {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<FontOption[]>('fonts_list');
+    },
     async onPrefsChanged(handler) {
       const { listen } = await import('@tauri-apps/api/event');
       return listen<{ prefs: Prefs }>('prefs:changed', (e) =>
@@ -469,6 +512,7 @@ export function createMockPrefsApi(opts: MockPrefsOptions = {}): PrefsApi & {
     themeImportDetect: () =>
       Promise.resolve(structuredClone(opts.importSources ?? MOCK_IMPORT_SOURCES)),
     themeImportFile: () => Promise.resolve(structuredClone(MOCK_IMPORT_FILE)),
+    fontsList: () => Promise.resolve(structuredClone(MOCK_SYSTEM_FONTS)),
     notifyTest() {
       api.notifyTests += 1;
       return Promise.resolve();

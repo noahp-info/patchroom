@@ -90,3 +90,41 @@ test('outlined boxes keep ring padding and never touch each other', async ({ pag
   }
   expect(found).toEqual([]);
 });
+
+/*
+ * The same rules on the Settings search results and the font pickers: result rows keep ring
+ * room, the fonts rows keep the group gap between their controls and their text, and the
+ * picker list keeps ring padding.
+ */
+test('search results, fonts rows and the font picker keep their spacing', async ({ page }) => {
+  await openPrefs(page);
+  const gap = await page
+    .locator('.pr-app')
+    .evaluate((el) => parseFloat(getComputedStyle(el).getPropertyValue('--group-gap')));
+  // Fonts rows: head text, the control row, the sample text are a group gap apart.
+  await page.evaluate(() =>
+    window.__PR_PREFS__.store.update({ fonts: { code: { family: 'Menlo', size: 14 } } }),
+  );
+  const rows = await page.locator('.frow').evaluateAll((els, min) => {
+    const out: string[] = [];
+    for (const row of els) {
+      const [head, ctl, sample] = [...row.children].map((c) => c.getBoundingClientRect());
+      if (ctl.top - head.bottom < min - 0.5) out.push(`head ${ctl.top - head.bottom}px`);
+      if (sample.top - ctl.bottom < min - 0.5) out.push(`sample ${sample.top - ctl.bottom}px`);
+    }
+    return out;
+  }, gap);
+  expect(rows).toEqual([]);
+  expect(await ringFindings(page, '.frows')).toEqual([]);
+
+  await page.getByTestId('font-family-code').click();
+  await expect(page.locator('.floating.flist')).toBeVisible();
+  expect(await ringFindings(page, '.floating.flist')).toEqual([]);
+  await page.keyboard.press('Escape');
+
+  await page.getByTestId('prefs-search').fill('sound');
+  await expect(page.getByTestId('prefs-results')).toBeVisible();
+  await page.locator('.pres').first().click();
+  expect(await ringFindings(page, '.prefs__side')).toEqual([]);
+  expect(await ringFindings(page, '.prefs__main')).toEqual([]);
+});

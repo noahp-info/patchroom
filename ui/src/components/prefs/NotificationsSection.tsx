@@ -33,7 +33,7 @@ export function NotificationsSection({ dms }: { dms: PrefsDm[] }) {
   return (
     <div className="pf-section" data-testid="prefs-notifications">
       <h2>Notifications</h2>
-      <label className="pf pf--inline">
+      <label className="pf pf--inline" data-setting="notifications.default">
         <span>Notify me about</span>
         <select
           aria-label="Default notification level"
@@ -55,7 +55,7 @@ export function NotificationsSection({ dms }: { dms: PrefsDm[] }) {
         Patchroom never notifies for the session you are looking at while the window is focused.
       </p>
 
-      <h3>Per session</h3>
+      <h3 data-setting="notifications.session">Per session</h3>
       {dms.length === 0 ? (
         <p className="pf-hint">No sessions yet.</p>
       ) : (
@@ -80,7 +80,7 @@ export function NotificationsSection({ dms }: { dms: PrefsDm[] }) {
         </ul>
       )}
 
-      <div className="pf-row">
+      <div className="pf-row" data-setting="notifications.test">
         <button type="button" className="btn sec" onClick={() => void sendTest()}>
           Send test notification
         </button>

@@ -79,8 +79,8 @@ test('Terminal: applies the exact palette, font and size to every session, and u
   expect(after.termPalettes).toHaveLength(1);
   const def = after.termPerDm['*'];
   expect(def.themeId).toBe(`import:${after.termPalettes[0].id}`);
-  expect(def.font).toBe('JetBrains Mono');
-  expect(def.fontSize).toBe(14);
+  // Font and size land in Themes > Fonts > Code and terminal, which the default row shows.
+  expect(after.fonts?.code).toEqual({ family: 'JetBrains Mono', size: 14 });
   // The default row picks it up, and a live terminal restyles with the exact colors.
   const row = page.getByTestId('term-row-default');
   await expect(row.getByLabel('All sessions palette')).toHaveValue(def.themeId!);
@@ -95,6 +95,22 @@ test('Terminal: applies the exact palette, font and size to every session, and u
   const undone = await prefs(page);
   expect(undone.termPalettes).toEqual(before.termPalettes);
   expect(undone.termPerDm).toEqual(before.termPerDm);
+  expect(undone.fonts ?? {}).toEqual(before.fonts ?? {});
+});
+
+test('Terminal: an import never clobbers the code font the person chose', async ({ page }) => {
+  await openPrefs(page);
+  await page.evaluate(() =>
+    window.__PR_PREFS__.store.update({ fonts: { code: { family: 'Menlo' } } }),
+  );
+  await tab(page, 'Terminal');
+  const box = await openImport(page, 'terminal');
+  await box.getByTestId('import-apply').click();
+  await expect(box.getByTestId('import-done')).toContainText('Kept your code font (Menlo).');
+  const after = await prefs(page);
+  // The palette applies; the family stays; the unset size takes the import's.
+  expect(after.termPerDm['*'].themeId).toBe(`import:${after.termPalettes[0].id}`);
+  expect(after.fonts?.code).toEqual({ family: 'Menlo', size: 14 });
 });
 
 test('Terminal: a picked .itermcolors file previews and applies; an unknown font stays listed', async ({
@@ -109,6 +125,7 @@ test('Terminal: a picked .itermcolors file previews and applies; an unknown font
   const after = await prefs(page);
   expect(after.termPalettes[0].name).toBe('Solarized Dark');
   expect(after.termPerDm['*'].font).toBeUndefined();
+  expect(after.fonts?.code).toBeUndefined();
 
   // A font from another tool that is not in the built-in list still shows as the value.
   await page.evaluate(() =>

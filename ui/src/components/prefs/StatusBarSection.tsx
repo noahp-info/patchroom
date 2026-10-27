@@ -41,7 +41,7 @@ export function StatusBarSection({ dms }: { dms: PrefsDm[] }) {
         Drag modules to reorder them, remove the ones you do not want, and add them back from the
         tray. Until you save a layout, chips your own statusLine already prints stay hidden.
       </p>
-      <label className="pf pf--inline">
+      <label className="pf pf--inline" data-setting="statusbar.scope">
         <span>Applies to</span>
         <select
           aria-label="Status bar applies to"
@@ -70,7 +70,7 @@ export function StatusBarSection({ dms }: { dms: PrefsDm[] }) {
         </button>
       </div>
 
-      <h3>Labels</h3>
+      <h3 data-setting="statusbar.labels">Labels</h3>
       <p className="pf-hint">
         Give a module a label of its own: text and an emoji in front of its value. Labels apply to
         every session and every layout. The model chip names the model; set those in Models.

@@ -37,7 +37,7 @@ export function DmSounds(props: {
 }) {
   if (props.dms.length === 0) return <p className="pf-hint">No sessions yet.</p>;
   return (
-    <ul className="plist dmsounds">
+    <ul className="plist dmsounds" data-setting="sounds.session">
       {props.dms.map((d) => (
         <DmRow key={d.id} dm={d} {...props} />
       ))}

@@ -6,6 +6,7 @@ import {
   type Prefs,
   type PrefsApi,
 } from './ipc.ts';
+import { setFontLister } from '../../theme/typeface.ts';
 
 type Listener = () => void;
 
@@ -22,7 +23,11 @@ export class PrefsStore {
   private version = 0;
   private snap = { prefs: this.prefs, detected: this.detected, ready: false };
 
-  constructor(readonly api: PrefsApi) {}
+  constructor(readonly api: PrefsApi) {
+    // The font pickers list installed families through the same backend.
+    const list = api.fontsList?.bind(api);
+    setFontLister(list ? () => list() : null);
+  }
 
   start(): Promise<void> {
     this.started ??= (async () => {

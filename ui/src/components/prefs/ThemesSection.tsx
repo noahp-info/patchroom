@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { allThemes, shippedThemes } from '../../theme/active.ts';
 import { BASES } from '../../theme/bases.ts';
 import { currentMode } from '../../theme/active.ts';
@@ -8,7 +8,42 @@ import { contrastReport } from '../../theme/validate.ts';
 import type { ModePref } from './ipc.ts';
 import { CablePresets } from './CablePresets.tsx';
 import { CustomEditor, uniqueThemeId } from './CustomEditor.tsx';
-import { getPrefsStore, usePrefs } from './store.ts';
+import { getPrefsStore, usePrefs, usePrefsState } from './store.ts';
+import { FontsGroup } from './FontsGroup.tsx';
+import { Hint, type HintHost } from '../Hint';
+import { usePrefsNav } from './nav.ts';
+
+const FONT_HINT = 'fonts.themes';
+
+/**
+ * The first time Themes opens after fonts per area shipped, a hint points at Fonts. Shown
+ * counts as seen, so it never comes back, even if Settings closes at once.
+ */
+function useFontHint(): { show: boolean; host: HintHost } {
+  const { prefs, ready } = usePrefsState();
+  const store = getPrefsStore();
+  const nav = usePrefsNav();
+  // Decided once, when the prefs first arrive; later changes to hints.seen do not hide it.
+  const [show, setShow] = useState<boolean | null>(null);
+  if (ready && show === null) setShow(!(prefs.hints?.seen ?? []).includes(FONT_HINT));
+  const seen = prefs.hints?.seen;
+  useEffect(() => {
+    if (show && seen && !seen.includes(FONT_HINT))
+      void store.update({ hints: { seen: [...seen, FONT_HINT] } });
+  }, [show, seen, store]);
+  const host = useMemo<HintHost>(
+    () => ({
+      hintAction: () => {
+        setShow(false);
+        nav.jump('themes', 'themes.fonts');
+      },
+      hintChoice: () => setShow(false),
+      dismissHint: () => setShow(false),
+    }),
+    [nav],
+  );
+  return { show: show === true, host };
+}
 import { ThemePreview } from './ThemePreview.tsx';
 import { ImportFrom } from './ImportFrom.tsx';
 
@@ -33,6 +68,7 @@ export function ThemesSection() {
   const [slackName, setSlackName] = useState('');
   const [slackBase, setSlackBase] = useState('homeroom');
   const [slackMsg, setSlackMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const fontHint = useFontHint();
 
   const choose = (id: string) => void store.update({ themeId: id });
 
@@ -78,8 +114,13 @@ export function ThemesSection() {
   return (
     <div className="pf-section" data-testid="prefs-themes">
       <h2>Themes</h2>
+      {fontHint.show && (
+        <div className="pf-hintslot">
+          <Hint store={fontHint.host} id={FONT_HINT} />
+        </div>
+      )}
 
-      <fieldset className="pf-group">
+      <fieldset className="pf-group" data-setting="themes.appearance">
         <legend>Appearance</legend>
         <div className="pf-seg" role="radiogroup" aria-label="Light or dark">
           {MODES.map((m) => (
@@ -102,7 +143,7 @@ export function ThemesSection() {
         </p>
       </fieldset>
 
-      <fieldset className="pf-group" data-testid="style-picker">
+      <fieldset className="pf-group" data-testid="style-picker" data-setting="themes.style">
         <legend>Style</legend>
         <div className="pf-seg" role="radiogroup" aria-label="Style">
           {STYLES.map((b) => (
@@ -123,7 +164,7 @@ export function ThemesSection() {
         </p>
       </fieldset>
 
-      <fieldset className="pf-group" data-testid="emoji-chat">
+      <fieldset className="pf-group" data-testid="emoji-chat" data-setting="themes.emoji">
         <legend>Emoji in chat</legend>
         <div className="pf-seg" role="radiogroup" aria-label="Emoji in chat">
           {(
@@ -155,7 +196,7 @@ export function ThemesSection() {
         </p>
       </fieldset>
 
-      <fieldset className="pf-group" data-testid="chat-autoscroll">
+      <fieldset className="pf-group" data-testid="chat-autoscroll" data-setting="themes.autoscroll">
         <legend>Chat</legend>
         <label className="chk">
           <input
@@ -171,7 +212,9 @@ export function ThemesSection() {
         </p>
       </fieldset>
 
-      <fieldset className="pf-group">
+      <FontsGroup />
+
+      <fieldset className="pf-group" data-setting="themes.theme">
         <legend>Theme</legend>
         <ul className="tgrid" aria-label="Themes">
           {themes.map((t) => {
@@ -230,7 +273,7 @@ export function ThemesSection() {
           onCancel={() => setEditor(null)}
         />
       ) : (
-        <div className="pf-row">
+        <div className="pf-row" data-setting="themes.custom">
           <button
             type="button"
             className="btn sec"
@@ -247,7 +290,7 @@ export function ThemesSection() {
         </div>
       )}
 
-      <fieldset className="pf-group">
+      <fieldset className="pf-group" data-setting="themes.slack">
         <legend>Import a Slack theme</legend>
         <p className="pf-hint">
           In Slack, open Preferences, Themes, copy the custom theme string, and paste it here.

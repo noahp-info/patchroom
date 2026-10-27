@@ -1,5 +1,5 @@
 import type { ChatItem } from '../ipc';
-import type { PromptState } from '../state/chat';
+import type { PromptState, QueuedMessage } from '../state/chat';
 import { dayKey, formatDay, toMillis } from './time';
 
 export type Author = 'user' | 'claude' | 'none';
@@ -16,7 +16,20 @@ export type Row =
       /** Pending or resolved prompt that this question, plan or tool row answers. */
       prompt?: PromptState;
     }
-  | { key: string; type: 'prompt'; prompt: PromptState; head: boolean; ms: number };
+  | { key: string; type: 'prompt'; prompt: PromptState; head: boolean; ms: number }
+  /** A message Claude has queued and not read yet: always last, below the live turn. */
+  | { key: string; type: 'queued'; queued: QueuedMessage; head: boolean };
+
+/** Queued messages as rows, in send order, for the end of the log. */
+export function queuedRows(queued: readonly QueuedMessage[]): Row[] {
+  // One "You" header for the run, like consecutive sent messages.
+  return queued.map((q, i) => ({
+    key: `queued:${q.id}`,
+    type: 'queued',
+    queued: q,
+    head: i === 0,
+  }));
+}
 
 export function authorOf(item: ChatItem): Author {
   switch (item.kind) {

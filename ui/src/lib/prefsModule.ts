@@ -43,6 +43,8 @@ export interface PrefsPaneProps {
   sections?: { id: string; name: string; folder?: string | null }[];
   /** Section to open first. */
   initialTab?: PrefsTabId;
+  /** A row in it to scroll to and flash (a Settings registry id). */
+  initialSetting?: string;
   /** Open this DM's sound settings. */
   targetDm?: string;
 }
@@ -67,6 +69,7 @@ interface PrefsApi {
   catalogGet: Ipc['catalogGet'];
   catalogRefresh: Ipc['catalogRefresh'];
   updateCheck: Ipc['updateCheck'];
+  fontsList: Ipc['fontsList'];
 }
 
 interface PrefsExports {
@@ -127,6 +130,7 @@ export function installPrefsApi(ipc: Ipc): void {
     catalogGet: () => ipc.catalogGet(),
     catalogRefresh: () => ipc.catalogRefresh(),
     updateCheck: () => ipc.updateCheck(),
+    fontsList: () => ipc.fontsList(),
   });
 }
 

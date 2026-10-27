@@ -133,11 +133,15 @@ test.describe('session parity: the composer never swallows input', () => {
     const box = page.getByTestId('composer-input');
     await box.fill('after this');
     await page.keyboard.press('Enter');
-    await expect(page.getByTestId('composer-notice')).toContainText('Queued');
+    // The chat shows it at once as a queued message (chat-queued.spec.ts covers the rest).
+    await expect(page.getByTestId('queued-msg')).toContainText('after this');
+    await expect(page.getByTestId('queued-tag')).toHaveText('Queued');
     await expect(box).toHaveValue('');
     expect((await sends(page))[0]).toMatchObject({ outcome: 'queued' });
-    // The queued text still reaches the transcript.
+    // The queued text still reaches the transcript once Claude reads it.
+    await page.evaluate((sid) => window.__PR_MOCK__!.dequeue(sid), id);
     await expect(page.locator('.msg[data-kind="user"]')).toContainText('after this');
+    await expect(page.getByTestId('queued-msg')).toHaveCount(0);
   });
 
   test('a sent message with no user item within 3 s says why', async ({ page }) => {

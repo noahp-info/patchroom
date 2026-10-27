@@ -65,6 +65,11 @@
 //! matching Settings > Updates check on; both are a plain GET through the system curl. The model
 //! catalog's ed25519 signature is checked against the key in `patchroom-catalog`.
 //!
+//! # Fonts
+//! `fonts_list {} -> [{family, mono}]`: installed families from Core Text for Settings >
+//! Themes > Fonts, read only. `Prefs.fonts` holds the per-area choices and the per-section and
+//! per-session chat font.
+//!
 //! Per launch, claude gets `--settings <file>`: a Patchroom-owned file in the data dir
 //! (`bridge.sock.d/<id>.json`) that registers the hooks and the `patchroom-statusline`
 //! wrapper. User settings files are never written. The file keeps claude's own command
@@ -86,6 +91,7 @@ pub mod commands;
 #[cfg(debug_assertions)]
 pub mod e2e;
 pub mod events;
+pub mod fonts;
 pub mod hook_path;
 pub mod manager;
 pub mod notifier;
@@ -343,6 +349,7 @@ macro_rules! app_handler {
             steer::viewer_selection,
             steer::viewer_find,
             steer::viewer_sign_out,
+            commands::fonts_list,
             commands::theme_import_detect,
             commands::theme_import_file,
             commands::session_set_emoji,
@@ -448,6 +455,7 @@ macro_rules! app_handler {
             steer::viewer_selection,
             steer::viewer_find,
             steer::viewer_sign_out,
+            commands::fonts_list,
             commands::theme_import_detect,
             commands::theme_import_file,
             commands::session_set_emoji,

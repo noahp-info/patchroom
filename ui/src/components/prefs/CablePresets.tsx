@@ -55,7 +55,7 @@ export function CablePresets({
     ...CABLE_PRESETS,
   ];
   return (
-    <fieldset className="pf-group" data-testid="cable-presets">
+    <fieldset className="pf-group" data-testid="cable-presets" data-setting="themes.cable">
       <legend>Patch Bay cable</legend>
       <p className="pf-hint">
         Cable and plug colors for the Patch Bay style. A preset changes those two colors and nothing

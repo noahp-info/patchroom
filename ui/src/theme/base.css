@@ -29,6 +29,20 @@
   --f-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --f-mono: ui-monospace, 'SF Mono', Menlo, monospace;
   --f-label: var(--f-ui);
+  /* Fonts per area (Settings > Themes > Fonts, ui/src/theme/typeface.ts). The runtime sets an
+     area's variable only when the person chose a value, so these defaults are the inheritance:
+     chat and sidebar follow the UI, the status strip and code follow the mono. --fz-* scale the
+     type of an area (chosen size / base size); --fz and --fzm are the scales in effect here. */
+  --f-chat: var(--f-ui);
+  --f-side: var(--f-ui);
+  --f-strip: var(--f-mono);
+  --fz-ui: 1;
+  --fz-chat: var(--fz-ui);
+  --fz-side: var(--fz-ui);
+  --fz-strip: var(--fz-ui);
+  --fz-code: 1;
+  --fz: var(--fz-ui);
+  --fzm: var(--fz-code);
   --glyph: currentColor;
 
   width: var(--app-w, 100%);
@@ -150,6 +164,23 @@
 }
 :where(.pr-app) .screw {
   display: none;
+}
+/* Font areas: each container rebinds the UI face and the scale for everything inside it. */
+:where(.pr-app) .side {
+  --f-ui: var(--f-side);
+  --fz: var(--fz-side);
+  font-family: var(--f-ui);
+}
+:where(.pr-app) .logcol {
+  --f-ui: var(--f-chat);
+  --fz: var(--fz-chat);
+  font-family: var(--f-ui);
+}
+:where(.pr-app) .strip {
+  --f-ui: var(--f-strip);
+  --f-mono: var(--f-strip);
+  --fz: var(--fz-strip);
+  --fzm: var(--fz-strip);
 }
 /* sidebar */
 :where(.pr-app) .side {

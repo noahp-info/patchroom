@@ -103,7 +103,9 @@ export function App() {
         } else if (key === 'f' && e.shiftKey) {
           act(() => store.setPanel('search', 'all'));
         } else if (key === 'f' && !e.shiftKey) {
-          act(() => store.setPanel('search', snap.activeId ? 'dm' : 'all'));
+          // Settings has its own search field: Cmd+F focuses it there.
+          if (snap.panel !== 'prefs')
+            act(() => store.setPanel('search', snap.activeId ? 'dm' : 'all'));
         } else if (key === ',' && !e.shiftKey) {
           act(() => store.setPanel(snap.panel === 'prefs' ? null : 'prefs'));
         } else if (e.shiftKey && (e.code === 'Digit2' || key === '2' || key === '@')) {

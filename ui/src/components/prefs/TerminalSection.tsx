@@ -14,6 +14,7 @@ import { TermPreview } from './TermPreview.tsx';
 import { ImportFrom } from './ImportFrom.tsx';
 import { IMPORT_PREFIX } from '../../theme/themeImport.ts';
 import type { PrefsDm } from './types.ts';
+import { setArea } from '../../theme/typeface.ts';
 
 const INHERIT = '';
 
@@ -31,11 +32,31 @@ function TermRow({
   inherit: boolean;
 }) {
   const store = getPrefsStore();
-  const own: TermStyle = prefs.termPerDm[rowId] ?? {};
-  const def = prefs.termPerDm[TERM_DEFAULT_KEY] ?? {};
+  const isDefault = rowId === TERM_DEFAULT_KEY;
+  const code = prefs.fonts?.code ?? {};
+  // The default row's font and size are Settings > Themes > Fonts > Code and terminal.
+  const own: TermStyle = isDefault
+    ? { ...prefs.termPerDm[rowId], font: code.family, fontSize: code.size }
+    : (prefs.termPerDm[rowId] ?? {});
+  const def: TermStyle = {
+    ...prefs.termPerDm[TERM_DEFAULT_KEY],
+    font: code.family,
+    fontSize: code.size,
+  };
   const style = termStyleFor(prefs, dmId);
 
   function set(next: TermStyle) {
+    if (isDefault) {
+      const rest = { ...prefs.termPerDm };
+      if (next.themeId) rest[rowId] = { themeId: next.themeId };
+      else delete rest[rowId];
+      const fonts = setArea(prefs.fonts ?? {}, 'code', {
+        family: next.font,
+        size: next.fontSize,
+      });
+      void store.update({ termPerDm: rest, fonts });
+      return;
+    }
     const rest = { ...prefs.termPerDm };
     const clean: TermStyle = {};
     if (next.themeId) clean.themeId = next.themeId;
@@ -49,7 +70,11 @@ function TermRow({
   const themes = allThemes(prefs);
   const defaultPalette = def.themeId ?? DEFAULT_PALETTE;
   return (
-    <li className="trow" data-testid={`term-row-${rowId === TERM_DEFAULT_KEY ? 'default' : rowId}`}>
+    <li
+      className="trow"
+      data-testid={`term-row-${rowId === TERM_DEFAULT_KEY ? 'default' : rowId}`}
+      data-setting={rowId === TERM_DEFAULT_KEY ? 'terminal.default' : 'terminal.session'}
+    >
       <div className="trow__head">
         <span className="trow__name">{label}</span>
       </div>
@@ -137,7 +162,8 @@ export function TerminalSection({ dms }: { dms: PrefsDm[] }) {
       <h2>Terminal</h2>
       <p className="pf-hint">
         Open terminals restyle as you choose. Nothing restarts. Match app theme follows the theme
-        and light or dark choice.
+        and light or dark choice. The All sessions font is the Code and terminal font in Themes &gt;
+        Fonts.
       </p>
       <ul className="tlist">
         <TermRow

@@ -94,7 +94,7 @@ export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string
   return (
     <div className="pf-section sounds-pane" data-testid="prefs-sounds">
       <h2>Sounds</h2>
-      <div className="sounds-master">
+      <div className="sounds-master" data-setting="sounds.master">
         <label className="chk">
           <input
             type="checkbox"
@@ -119,7 +119,13 @@ export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string
         </label>
       </div>
 
-      <section ref={mixRef} className="mixsec" aria-labelledby="mix-h" data-testid="mix-board">
+      <section
+        ref={mixRef}
+        className="mixsec"
+        aria-labelledby="mix-h"
+        data-testid="mix-board"
+        data-setting="sounds.mix"
+      >
         <div className="mixsec__head">
           <h3 id="mix-h">Mix by event</h3>
           <div className="mixsec__btns">
@@ -149,17 +155,17 @@ export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string
         </p>
       </section>
 
-      <h3>Packs</h3>
+      <h3 data-setting="sounds.packs">Packs</h3>
       <p className="pf-hint">
         A pack is a set of sounds, one for each event. Play any of them, or use a pack for
         everything.
       </p>
       <PackCards packs={packs} mix={s.mix} onUseAll={useAll} />
 
-      <h3>Your Claude sounds</h3>
+      <h3 data-setting="sounds.claude">Your Claude sounds</h3>
       <ClaudeImport />
 
-      <h3>Sounds for one session</h3>
+      <h3 data-setting="sounds.session">Sounds for one session</h3>
       <p className="pf-hint">
         Mute a session, or open it to give it a pack or a sound of its own for any event.
       </p>
@@ -169,7 +175,7 @@ export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string
         cover.
       </p>
 
-      <h3>Credits</h3>
+      <h3 data-setting="sounds.credits">Credits</h3>
       <SoundCredits />
     </div>
   );

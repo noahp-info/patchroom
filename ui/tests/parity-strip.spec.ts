@@ -248,7 +248,7 @@ test.describe('session parity: customize the status bar', () => {
     await feed(page, id, '', CHIPS);
     await page.keyboard.press('Meta+,');
     const prefsDlg = page.getByRole('dialog', { name: 'Settings' });
-    await prefsDlg.getByRole('button', { name: 'Status bar' }).click();
+    await prefsDlg.getByRole('button', { name: 'Status bar', exact: true }).click();
     const sec = page.getByTestId('prefs-statusbar');
     await expect(sec).toBeVisible();
     await sec.getByRole('button', { name: 'Remove Cost' }).click();

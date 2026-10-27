@@ -46,7 +46,7 @@ export function UpdatesSection() {
       </p>
 
       <h3>App</h3>
-      <label className="chk">
+      <label className="chk" data-setting="updates.app">
         <input
           type="checkbox"
           data-testid="updates-app"
@@ -86,7 +86,7 @@ export function UpdatesSection() {
       )}
 
       <h3>Models</h3>
-      <label className="chk">
+      <label className="chk" data-setting="updates.models">
         <input
           type="checkbox"
           data-testid="updates-models"

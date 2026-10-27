@@ -1,6 +1,12 @@
 import { HINTS, hintText, type HintDef, type HintId } from '../lib/hints';
-import type { AppStore } from '../state/store';
 import { Icon } from './Icon';
+
+/** What a hint's buttons call: the app store, or a Settings section showing its own hint. */
+export interface HintHost {
+  hintAction(): void;
+  hintChoice(choice: string): void;
+  dismissHint(): void;
+}
 
 /**
  * The one shared first-time hint (DESIGN.md, First-time hints). It sits in flow (under the
@@ -13,7 +19,7 @@ export function Hint({
   id,
   vars,
 }: {
-  store: AppStore;
+  store: HintHost;
   id: HintId;
   vars?: Record<string, string> | null;
 }) {

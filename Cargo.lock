@@ -636,6 +636,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "core-text"
+version = "22.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "333dab512ce710ca2d08574c373d246dbeac8b22769e47da4c0e72730ce442b7"
+dependencies = [
+ "core-foundation",
+ "core-graphics",
+ "foreign-types",
+]
+
+[[package]]
 name = "core_detect"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2730,6 +2741,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "core-graphics",
+ "core-text",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
