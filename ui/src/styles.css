@@ -3861,14 +3861,15 @@ body.dragging .sbe__grip {
   font: 600 11px var(--f-ui);
 }
 .flist__opt {
-  padding: 6px 10px;
+  min-height: 32px;
+  padding: 7px 10px;
   border-radius: var(--r-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
   content-visibility: auto;
-  contain-intrinsic-size: auto 30px;
+  contain-intrinsic-size: auto 32px;
 }
 .flist__opt[aria-selected='true'] {
   background: var(--sel);
@@ -3915,27 +3916,48 @@ body.dragging .sbe__grip {
 }
 
 /* A message Claude has queued (sent while busy): muted until its transcript entry replaces it. */
-.chat .msg.queued .usertext {
+.chat .msg.qmsg .usertext {
   color: var(--muted);
 }
-.queued__bar {
+.qmsg__bar {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 10px;
   min-width: 0;
 }
-.queued__bar > * {
+.qmsg__bar > * {
   --fs: 11px;
 }
-.queued__tag {
+.qmsg__tag {
   font-weight: 700;
   color: var(--muted);
 }
-.msg.queued:not([data-state='queued']) .queued__tag {
+.msg.qmsg:not([data-state='queued']) .qmsg__tag {
   color: var(--err-text);
 }
-.queued__why {
+.qmsg__why {
   min-width: 0;
   color: var(--muted);
+}
+.qmsg__bar {
+  margin-top: 2px;
+}
+/* Small but real buttons: a 24px target, apart from each other. */
+.qmsg__act {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.qmsg__act:hover {
+  background: var(--hover);
+}
+.qmsg__act[data-testid='queued-remove'] {
+  color: var(--err-text);
 }

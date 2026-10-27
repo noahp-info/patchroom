@@ -482,24 +482,24 @@ const MARKABLE = new Set<ChatItem['kind']>(['user', 'assistant', 'plan', 'questi
  * message replaces this row when its transcript entry arrives. Not sent: the turn was
  * interrupted (the text went back to Claude's prompt) or the session ended.
  */
-function QueuedRow({ q, actions }: { q: QueuedMessage; actions: RowActions }) {
+function QueuedRow({ q, head, actions }: { q: QueuedMessage; head: boolean; actions: RowActions }) {
   const { store, sessionId } = actions;
   const waiting = q.state === 'queued';
   return (
     <div
-      className="msg user head queued"
+      className={`msg user qmsg${head ? ' head' : ' cont'}`}
       data-kind="queued"
       data-state={q.state}
       data-testid="queued-msg"
     >
-      <Who author="user" ms={q.at} />
+      {head && <Who author="user" ms={q.at} />}
       <div className="body">
         <p className="usertext">{q.text}</p>
-        <div className="queued__bar">
-          <span className="queued__tag" data-testid="queued-tag">
+        <div className="qmsg__bar">
+          <span className="qmsg__tag" data-testid="queued-tag">
             {waiting ? 'Queued' : 'Not sent'}
           </span>
-          <span className="queued__why">
+          <span className="qmsg__why">
             {waiting
               ? 'Claude reads it when this turn ends.'
               : q.state === 'ended'
@@ -509,7 +509,7 @@ function QueuedRow({ q, actions }: { q: QueuedMessage; actions: RowActions }) {
           {waiting ? (
             <button
               type="button"
-              className="lnk"
+              className="qmsg__act"
               data-testid="queued-send-now"
               onClick={() => store.sendQueuedNow(sessionId)}
             >
@@ -519,7 +519,7 @@ function QueuedRow({ q, actions }: { q: QueuedMessage; actions: RowActions }) {
             <>
               <button
                 type="button"
-                className="lnk"
+                className="qmsg__act"
                 data-testid="queued-retry"
                 onClick={() => store.retryQueued(sessionId, q.id)}
               >
@@ -527,7 +527,7 @@ function QueuedRow({ q, actions }: { q: QueuedMessage; actions: RowActions }) {
               </button>
               <button
                 type="button"
-                className="lnk"
+                className="qmsg__act"
                 data-testid="queued-remove"
                 onClick={() => store.removeQueued(sessionId, q.id)}
               >
@@ -542,7 +542,7 @@ function QueuedRow({ q, actions }: { q: QueuedMessage; actions: RowActions }) {
 }
 
 function RowViewInner({ row, expanded, actions, decor }: RowViewProps) {
-  if (row.type === 'queued') return <QueuedRow q={row.queued} actions={actions} />;
+  if (row.type === 'queued') return <QueuedRow q={row.queued} head={row.head} actions={actions} />;
   if (row.type === 'day') {
     return (
       <div className="day" role="separator" aria-label={row.label}>
@@ -600,6 +600,6 @@ export const RowView = memo(
         : a.row.type === 'day' && b.row.type === 'day'
           ? a.row.label === b.row.label
           : a.row.type === 'queued' && b.row.type === 'queued'
-            ? a.row.queued === b.row.queued
+            ? a.row.queued === b.row.queued && a.row.head === b.row.head
             : false),
 );

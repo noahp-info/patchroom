@@ -22,7 +22,13 @@ export type Row =
 
 /** Queued messages as rows, in send order, for the end of the log. */
 export function queuedRows(queued: readonly QueuedMessage[]): Row[] {
-  return queued.map((q) => ({ key: `queued:${q.id}`, type: 'queued', queued: q, head: true }));
+  // One "You" header for the run, like consecutive sent messages.
+  return queued.map((q, i) => ({
+    key: `queued:${q.id}`,
+    type: 'queued',
+    queued: q,
+    head: i === 0,
+  }));
 }
 
 export function authorOf(item: ChatItem): Author {

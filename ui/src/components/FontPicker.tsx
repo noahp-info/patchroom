@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { familyStack, listFonts, type FontOption } from '../theme/typeface';
 import { Floating } from './Floating';
+import { Icon } from './Icon';
 
 /**
  * A font family field. The button shows the choice in its own face; an unset field shows the
@@ -62,7 +63,7 @@ export function FontPicker({
           </span>
         )}
         <span className="fpick__chev" aria-hidden="true">
-          ▾
+          <Icon name="down" />
         </span>
       </button>
       {anchor && (
