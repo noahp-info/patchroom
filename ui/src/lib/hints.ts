@@ -8,16 +8,22 @@ import type { PrefsTabId } from './prefsModule';
 export interface HintDef {
   /** Short and plain: what the person might want, and where it lives. `{name}` style slots. */
   text: string;
-  /** The button that opens the setting the hint names. */
-  action: { label: string; tab: PrefsTabId };
+  /**
+   * The button that opens the setting the hint names: a Settings section, and optionally one
+   * row in it (a registry id from `components/prefs/registry.ts`) to scroll to and flash.
+   */
+  action: { label: string; tab: PrefsTabId; setting?: string };
   /** Extra answers before the settings button, handled by the store (`hintChoice`). */
   choices?: { label: string; choice: string }[];
   /**
    * Where it sits, always in flow: under the conversation header (default), above the status
-   * strip next to the model chip, or above the message log's bottom edge.
+   * strip next to the model chip, above the message log's bottom edge, or at the top of a
+   * Settings section (shown by that section, not the app store).
    */
-  place?: 'header' | 'strip' | 'log';
+  place?: HintPlace;
 }
+
+export type HintPlace = 'header' | 'strip' | 'log' | 'settings';
 
 export const HINTS = {
   'links.browser': {
@@ -52,6 +58,11 @@ export const HINTS = {
     text: 'Each emoji can be Apple or Noto. Pick how emoji look in chat in Settings > Themes.',
     action: { label: 'Open Themes settings', tab: 'themes' },
   },
+  'fonts.themes': {
+    text: 'New: choose the font and size for the UI, chat, code, sidebar and status bar.',
+    action: { label: 'Show fonts', tab: 'themes', setting: 'themes.fonts' },
+    place: 'settings',
+  },
   restart: {
     text: 'Patchroom restarted and reopened {count}. Turn on update checks in Settings > Updates.',
     action: { label: 'Open Updates settings', tab: 'updates' },
@@ -65,5 +76,4 @@ export function hintText(id: HintId, vars: Record<string, string> | null | undef
   return HINTS[id].text.replace(/\{(\w+)\}/g, (_, k: string) => vars?.[k] ?? '');
 }
 
-export const hintPlace = (id: HintId): 'header' | 'strip' | 'log' =>
-  (HINTS[id] as HintDef).place ?? 'header';
+export const hintPlace = (id: HintId): HintPlace => (HINTS[id] as HintDef).place ?? 'header';

@@ -13,6 +13,7 @@ import { TERM_DEFAULT_KEY, type Prefs } from './ipc.ts';
 import { uniqueThemeId } from './CustomEditor.tsx';
 import { getPrefsStore, usePrefs } from './store.ts';
 import { TermPreview } from './TermPreview.tsx';
+import { setArea, validFamily } from '../../theme/typeface.ts';
 import { ThemePreview } from './ThemePreview.tsx';
 
 type Target = 'theme' | 'terminal';
@@ -49,6 +50,8 @@ export function ImportFrom({ target }: { target: Target }) {
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<ImportEntry | null>(null);
   const [undo, setUndo] = useState<{ name: string; prev: Partial<Prefs> } | null>(null);
+  /** The person's own code font, kept over the imported one. */
+  const [keptFont, setKeptFont] = useState<string | null>(null);
 
   async function open() {
     setLoading(true);
@@ -96,7 +99,11 @@ export function ImportFrom({ target }: { target: Target }) {
       await store.update({ customThemes: [...prefs.customThemes, derived], themeId: derived.id });
       setUndo({ name: picked.name, prev });
     } else {
-      const prev = { termPerDm: prefs.termPerDm, termPalettes: prefs.termPalettes ?? [] };
+      const prev = {
+        termPerDm: prefs.termPerDm,
+        termPalettes: prefs.termPalettes ?? [],
+        fonts: prefs.fonts ?? {},
+      };
       const stored: StoredTermPalette = {
         id: paletteId(
           picked,
@@ -106,19 +113,31 @@ export function ImportFrom({ target }: { target: Target }) {
         source: picked.source,
         palette: picked.palette,
       };
-      const def = prefs.termPerDm[TERM_DEFAULT_KEY] ?? {};
+      // The font and size fill the Code and terminal area only where the person has not set
+      // one: an import never clobbers their own font choice.
+      const code = prefs.fonts?.code ?? {};
+      const family = !code.family && validFamily(picked.font) ? picked.font : undefined;
+      const size =
+        !code.size && picked.fontSize
+          ? Math.min(32, Math.max(8, Math.round(picked.fontSize)))
+          : undefined;
+      const kept = (code.family && picked.font) || (code.size && picked.fontSize);
       await store.update({
         termPalettes: [...(prefs.termPalettes ?? []), stored],
         termPerDm: {
           ...prefs.termPerDm,
-          [TERM_DEFAULT_KEY]: {
-            ...def,
-            themeId: IMPORT_PREFIX + stored.id,
-            ...(picked.font ? { font: picked.font } : {}),
-            ...(picked.fontSize ? { fontSize: Math.round(picked.fontSize) } : {}),
-          },
+          [TERM_DEFAULT_KEY]: { themeId: IMPORT_PREFIX + stored.id },
         },
+        ...(family || size
+          ? {
+              fonts: setArea(prefs.fonts ?? {}, 'code', {
+                family: family ?? code.family,
+                size: size ?? code.size,
+              }),
+            }
+          : {}),
       });
+      setKeptFont(kept ? (code.family ?? `${code.size} px`) : null);
       setUndo({ name: picked.name, prev });
     }
   }
@@ -141,7 +160,11 @@ export function ImportFrom({ target }: { target: Target }) {
   };
 
   return (
-    <fieldset className="pf-group imp" data-testid={`import-from-${target}`}>
+    <fieldset
+      className="pf-group imp"
+      data-testid={`import-from-${target}`}
+      data-setting={`${target === 'theme' ? 'themes' : 'terminal'}.import`}
+    >
       <legend>Import from another app</legend>
       {sources === null ? (
         <div className="pf-row">
@@ -243,7 +266,9 @@ export function ImportFrom({ target }: { target: Target }) {
       )}
       {undo && (
         <div className="pf-row" role="status" data-testid="import-done">
-          <span className="pf-ok">Applied {undo.name}.</span>
+          <span className="pf-ok">
+            Applied {undo.name}.{keptFont && ` Kept your code font (${keptFont}).`}
+          </span>
           <button
             type="button"
             className="btn sec"

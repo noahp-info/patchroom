@@ -32,6 +32,7 @@ import {
 } from './FolderRows';
 import { ClaudeGlyph, Icon } from './Icon';
 import { AddForm, RenameForm } from './SectionEdit';
+import { ChatFontPopover } from './ChatFontPopover';
 import { Emoji } from './Emoji';
 
 /** Presence class from the theme: busy filled, idle hollow, needs ringed. */
@@ -113,6 +114,12 @@ export function Sidebar({
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [tip, setTip] = useState<{ id: string; info: FolderSession; rect: DOMRect } | null>(null);
   const [daysEdit, setDaysEdit] = useState<{ id: string; anchor: Anchor } | null>(null);
+  /** "Chat font..." from a section's or a session's menu. */
+  const [fontEdit, setFontEdit] = useState<{
+    kind: 'perSection' | 'perSession';
+    id: string;
+    anchor: Anchor;
+  } | null>(null);
   const tipTimer = useRef(0);
   // Relative times re-read the clock twice a minute.
   const [now, setNow] = useState(() => Date.now());
@@ -391,6 +398,19 @@ export function Sidebar({
           separator: items.length > 0,
           onSelect: () => setRenaming(m.id),
         },
+        ...(divider
+          ? []
+          : [
+              {
+                label: 'Chat font...',
+                onSelect: () =>
+                  setFontEdit({
+                    kind: 'perSection',
+                    id: m.id,
+                    anchor: menu?.anchor ?? { x: 0, y: 0 },
+                  }),
+              },
+            ]),
         {
           label: 'New divider',
           onSelect: () => void store.createDivider('', m.id),
@@ -444,6 +464,11 @@ export function Sidebar({
     items.push({
       label: 'Sounds...',
       onSelect: () => store.openPrefs({ tab: 'sounds', dmId: s.id }),
+    });
+    items.push({
+      label: 'Chat font...',
+      onSelect: () =>
+        setFontEdit({ kind: 'perSession', id: s.id, anchor: menu?.anchor ?? { x: 0, y: 0 } }),
     });
     return items;
   }
@@ -981,6 +1006,26 @@ export function Sidebar({
             }}
           />
         </Floating>
+      )}
+      {fontEdit && (
+        <ChatFontPopover
+          anchor={fontEdit.anchor}
+          kind={fontEdit.kind}
+          id={fontEdit.id}
+          name={
+            (fontEdit.kind === 'perSection'
+              ? state.sections.find((x) => x.id === fontEdit.id)?.name
+              : state.sessions.find((x) => x.id === fontEdit.id)?.name) ?? ''
+          }
+          sectionId={
+            fontEdit.kind === 'perSession'
+              ? state.sessions.find((x) => x.id === fontEdit.id)?.sectionId
+              : null
+          }
+          prefs={state.prefs}
+          onSave={(fonts) => void store.setPrefs({ fonts })}
+          onClose={() => setFontEdit(null)}
+        />
       )}
       {tip && <FolderTip info={tip.info} rect={tip.rect} id={`fs-tip-${tip.id}`} />}
       {drag &&

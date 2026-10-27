@@ -95,8 +95,8 @@ const SOUND_COMMANDS = [
   'sound_import_file',
   'sound_packs',
 ];
-/** Theme import from other tools: read only. */
-const THEME_IMPORT_COMMANDS = ['theme_import_detect', 'theme_import_file'];
+/** Theme import from other tools, and the installed font families: read only. */
+const THEME_IMPORT_COMMANDS = ['fonts_list', 'theme_import_detect', 'theme_import_file'];
 /** Steering: screenshot-to-steer, the frozen viewer, the viewer selection, claude.ai sign-out. */
 const STEER_COMMANDS = [
   'shot_begin',
@@ -326,6 +326,7 @@ async function recordTauriCalls(): Promise<Call[]> {
   await ipc.soundImportClaudeProfile('retro');
   await ipc.themeImportDetect();
   await ipc.themeImportFile();
+  await ipc.fontsList();
   await ipc.sessionFocus('i');
   await ipc.sectionCreateFromFolder('/w', 'atlas');
   await ipc.sectionSetArchiveDays('s', 30);

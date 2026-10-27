@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { ChatItem, MarkInfo, PromptAnswer, SessionInfo, SubagentItem } from '../../ipc';
@@ -29,6 +30,7 @@ import { WorkingRow } from './WorkingRow';
 import { copyText } from '../../lib/clipboard';
 import { clearComments, paintComments } from '../../lib/commentHighlight';
 import { ThreadPane } from './ThreadPane';
+import { chatOverride, chatOverrideVars } from '../../theme/typeface';
 
 export interface ChatViewProps {
   store: AppStore;
@@ -374,6 +376,8 @@ export function ChatView({
       <div
         ref={root}
         className={`chat${visible ? '' : ' chat--hidden'}`}
+        // A section's or this session's own chat font (sidebar menu, Chat font...).
+        style={chatOverrideVars(chatOverride(prefs?.fonts, id, session.sectionId)) as CSSProperties}
         data-testid="chat"
         aria-hidden={!visible}
         inert={!visible}

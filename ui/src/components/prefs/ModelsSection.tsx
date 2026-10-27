@@ -110,6 +110,7 @@ export function ModelsSection({
           role="group"
           aria-label="Check for newer models"
           data-testid="model-ask"
+          data-setting="models.ask"
         >
           <p className="pf-ask__q">Want to check for newer models?</p>
           <p className="pf-hint">
@@ -155,11 +156,11 @@ export function ModelsSection({
 
       <h3>Bundles</h3>
       {models.bundles.length === 0 ? (
-        <p className="pf-empty" data-testid="bundles-empty">
+        <p className="pf-empty" data-testid="bundles-empty" data-setting="models.bundles">
           No bundles yet. Sessions start on Claude Code&#8217;s own default model until you add one.
         </p>
       ) : (
-        <div className="mb-list">
+        <div className="mb-list" data-setting="models.bundles">
           {models.bundles.map((b) => (
             <BundleCard
               key={b.id}
@@ -181,12 +182,12 @@ export function ModelsSection({
 
       {models.bundles.length > 0 && (
         <>
-          <h3>Where bundles apply</h3>
+          <h3 data-setting="models.scope">Where bundles apply</h3>
           <p className="pf-hint">
             A session uses its own bundle first, then its section&#8217;s or folder&#8217;s, then
             the default. Pick a session&#8217;s own bundle from its model chip.
           </p>
-          <div className="mb-scope">
+          <div className="mb-scope" data-setting="models.scope">
             {sections.map((s) => {
               const map = s.folder ? models.perFolder : models.perSection;
               const key = s.folder ?? s.id;
@@ -245,13 +246,13 @@ export function ModelsSection({
         </>
       )}
 
-      <h3>Labels</h3>
+      <h3 data-setting="models.labels">Labels</h3>
       <p className="pf-hint">
         What the model chip says. A model&#8217;s own label wins. Otherwise the Cloud or Local
         template applies, with {'{name}'} for the model&#8217;s name. Local means the session talks
         to an API on this Mac.
       </p>
-      <div className="pf-row">
+      <div className="pf-row" data-setting="models.labels">
         <label className="pf">
           <span>Cloud models</span>
           <input

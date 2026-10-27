@@ -50,13 +50,153 @@
   grid-template-columns: 180px minmax(0, 1fr);
   min-height: 0;
 }
-.prefs__nav {
+.prefs__side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+}
+.prefs__find {
+  padding: 12px 8px 4px;
+}
+.prefs .prefs__q {
+  width: 100%;
+}
+.prefs__nav,
+.prefs__results {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 12px 8px;
-  border-right: 1px solid var(--line);
+  padding: 8px 8px 12px;
   overflow-y: auto;
+}
+.prefs__results ul {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.prefs__none {
+  margin: 4px 10px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.pres {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pres:hover {
+  background: var(--hover);
+}
+.pres[aria-current='true'] {
+  background: var(--sel);
+}
+.pres__sec,
+.pres__set {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pres__sec {
+  --fs: 11px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.pres__set {
+  font-weight: 600;
+}
+/* A row found by search: a ring one --ring-pad outside it that fades. Drawn as its own box
+   (PrefsPane) so the row never shifts and nothing under it is covered. */
+.prefs__main {
+  position: relative;
+}
+.pf-flash {
+  position: absolute;
+  z-index: 1;
+  border: 2px solid var(--link);
+  border-radius: var(--r);
+  pointer-events: none;
+  animation: pf-flash 1.8s ease-out forwards;
+}
+@keyframes pf-flash {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pf-flash {
+    animation: none;
+  }
+}
+/* A first-time hint at the top of a section. */
+.pf-hintslot {
+  margin: 0 0 var(--group-gap);
+}
+.pf-hintslot .hint {
+  margin: 0;
+}
+
+/* Themes > Fonts: one row per area. */
+.frows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.frow {
+  display: grid;
+  gap: var(--group-gap);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.frow__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.frow__name {
+  font-weight: 700;
+}
+.frow__desc {
+  min-width: 0;
+  color: var(--muted);
+}
+.frow__ctl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.frow__sample {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
 }
 .prefs__nav button {
   height: 32px;

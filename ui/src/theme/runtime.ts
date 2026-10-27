@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { usePrefs } from '../components/prefs/store.ts';
 import { activeBase, activeTheme } from './active.ts';
 import { resolveMode, themeVars } from './apply.ts';
+import { fontVars } from './typeface.ts';
 import type { BaseId, Theme, ThemeMode } from './types.ts';
 
 function useSystemDark(): boolean {
@@ -19,7 +20,7 @@ export interface ThemeRuntime {
   base: BaseId;
   theme: Theme;
   mode: ThemeMode;
-  /** Inline style for the `.pr-app` root: every color token plus `color-scheme`. */
+  /** Inline style for the `.pr-app` root: every color token, the font variables, `color-scheme`. */
   style: CSSProperties;
 }
 
@@ -33,8 +34,14 @@ export function useThemeRuntime(): ThemeRuntime {
   const theme = useMemo(() => activeTheme(prefs), [prefs]);
   const mode = resolveMode(prefs.mode, dark);
   const style = useMemo(
-    () => ({ ...themeVars(theme, mode, prefs.cablePreset), colorScheme: mode }) as CSSProperties,
-    [theme, mode, prefs.cablePreset],
+    () =>
+      ({
+        ...themeVars(theme, mode, prefs.cablePreset),
+        // Settings > Themes > Fonts: per-area families and size scales, as variables.
+        ...fontVars(prefs.fonts),
+        colorScheme: mode,
+      }) as CSSProperties,
+    [theme, mode, prefs.cablePreset, prefs.fonts],
   );
   return { base: activeBase(prefs), theme, mode, style };
 }

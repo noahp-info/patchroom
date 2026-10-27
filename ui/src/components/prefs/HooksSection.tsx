@@ -27,11 +27,11 @@ export function HooksSection() {
       </p>
 
       {byEvent.size === 0 ? (
-        <p className="pf-empty" data-testid="hooks-empty">
+        <p className="pf-empty" data-testid="hooks-empty" data-setting="hooks.policy">
           No sound hooks found. Patchroom plays its own sounds.
         </p>
       ) : (
-        <table className="htable" data-testid="hooks-table">
+        <table className="htable" data-testid="hooks-table" data-setting="hooks.policy">
           <thead>
             <tr>
               <th scope="col">Hook event</th>

@@ -154,8 +154,10 @@ export function termStyleFor(prefs: Prefs, dmId: string | null): ResolvedTermSty
   const own = (dmId && prefs.termPerDm[dmId]) || {};
   const def = prefs.termPerDm[TERM_DEFAULT_KEY] ?? {};
   const paletteId = own.themeId ?? def.themeId ?? DEFAULT_PALETTE;
-  const font = own.font ?? def.font ?? DEFAULT_FONT;
-  const fontSize = own.fontSize ?? def.fontSize ?? DEFAULT_FONT_SIZE;
+  // A session's own font wins; else Settings > Themes > Fonts > Code and terminal.
+  const code = prefs.fonts?.code ?? {};
+  const font = own.font ?? code.family ?? def.font ?? DEFAULT_FONT;
+  const fontSize = own.fontSize ?? code.size ?? def.fontSize ?? DEFAULT_FONT_SIZE;
   const mode = currentMode(prefs);
   let theme: ITheme;
   if (paletteId === 'iterm') theme = ITERM;

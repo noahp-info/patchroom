@@ -268,6 +268,7 @@ export function createTauriIpc(): Ipc {
     soundImportClaudeProfile: (id) => invoke('sound_import_claude_profile', { id }),
     themeImportDetect: () => invoke('theme_import_detect', {}),
     themeImportFile: () => invoke('theme_import_file', {}),
+    fontsList: () => invoke('fonts_list', {}),
     sessionFocus: (id) => invoke('session_focus', { id }),
     sectionCreateFromFolder: (path, name) =>
       invoke<{ id: string }>('section_create_from_folder', { path, name }),

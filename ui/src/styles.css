@@ -358,7 +358,7 @@ body {
    The theme sets many in-between sizes; one rule routes every shell element through --fs. */
 .pr-app.shell {
   --fs: 13px;
-  font-size: 13px;
+  font-size: calc(13px * var(--fz-ui, 1));
 }
 .pr-app.shell .fid,
 .pr-app.shell .legend,
@@ -366,8 +366,25 @@ body {
 .pr-app.shell small {
   --fs: 11px;
 }
+/* Settings > Themes > Fonts scales each area through --fz (base.css). */
 .pr-app.shell *:not(.xterm, .xterm *) {
-  font-size: var(--fs);
+  font-size: calc(var(--fs) * var(--fz, 1));
+}
+/* Code inside any area follows the Code and terminal size. */
+.pr-app.shell
+  :is(
+    .md code,
+    .md pre.code,
+    .toolbox .tsum,
+    .toolbox .tdiff,
+    .tpre,
+    .diff-path,
+    .ask-pre,
+    .body code,
+    .diff,
+    .mbanner__text code
+  ) {
+  --fz: var(--fzm);
 }
 .pr-app.shell h2,
 .pr-app.shell h3,
@@ -3762,4 +3779,137 @@ body.dragging .sbe__grip {
 .pr-app .hbar--gutter button {
   width: 26px;
   height: 26px;
+}
+
+/* Font family field (Settings > Themes > Fonts, the sidebar's Chat font popover). The button
+   and every list entry draw in their own face. */
+.fpick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 260px;
+  max-width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fpick:hover {
+  border-color: var(--muted);
+}
+.fpick__face {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fpick:not([data-set]) .fpick__face {
+  color: var(--muted);
+}
+.fpick__from {
+  --fs: 11px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.fpick__chev {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+}
+.floating.flist {
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  /* A fixed height, so the list is placed right before the installed fonts arrive. */
+  height: min(60vh, 420px);
+  padding: 0;
+  overflow: hidden;
+}
+.flist__q {
+  flex: none;
+  height: 30px;
+  margin: var(--ring-pad);
+  padding: 0 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+}
+.flist__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 4px 4px;
+}
+.flist__h {
+  --fs: 11px;
+  padding: 8px 10px 4px;
+  color: var(--muted);
+  font: 600 11px var(--f-ui);
+}
+.flist__opt {
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 30px;
+}
+.flist__opt[aria-selected='true'] {
+  background: var(--sel);
+}
+.flist__opt[data-active] {
+  background: var(--hover);
+}
+.flist__empty {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--muted);
+}
+/* Chat font popover (sidebar menu, Chat font...): size and Reset above the family list. */
+.floating.cfont {
+  width: 320px;
+  height: min(70vh, 480px);
+}
+.cfont__head {
+  display: grid;
+  gap: 8px;
+  padding: var(--ring-pad) var(--ring-pad) 0;
+}
+.cfont__title {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cfont__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cfont__row select {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
 }

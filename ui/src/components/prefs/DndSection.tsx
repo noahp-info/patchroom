@@ -30,7 +30,7 @@ export function DndSection() {
         Silences Patchroom notifications and sounds. Needs-you badges still update.
       </p>
 
-      <label className="chk">
+      <label className="chk" data-setting="dnd.manual">
         <input
           type="checkbox"
           role="switch"
@@ -40,7 +40,7 @@ export function DndSection() {
         <span>Pause notifications and sounds now</span>
       </label>
 
-      <label className="chk">
+      <label className="chk" data-setting="dnd.schedule">
         <input
           type="checkbox"
           checked={schedule !== null}
@@ -50,7 +50,7 @@ export function DndSection() {
       </label>
 
       {schedule && (
-        <div className="dnd" data-testid="dnd-schedule">
+        <div className="dnd" data-testid="dnd-schedule" data-setting="dnd.schedule">
           <div className="dnd__days" role="group" aria-label="Days">
             {DAYS.map((d, i) => (
               <button

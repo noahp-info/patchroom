@@ -32,7 +32,7 @@ import { ChatModel } from './chat';
 import { overlayCount, subscribeOverlays } from './overlays';
 import { bindAccountActions, setClaudeAccount } from '../lib/accounts';
 import { cleanQuote, textFragmentLink } from '../lib/comments';
-import { HINTS, type HintId } from '../lib/hints';
+import { HINTS, type HintDef, type HintId } from '../lib/hints';
 import { adapterOf, modelTook } from '../lib/models/adapters';
 import { activeBundle, launchArgsFor, modelsOf, type BundleScope } from '../lib/models/bundles';
 import {
@@ -79,6 +79,8 @@ export interface OpenThread {
 export interface PrefsTarget {
   tab: PrefsTabId;
   dmId?: string;
+  /** A row to scroll to and flash (a Settings registry id). */
+  setting?: string;
 }
 
 export type Panel = null | 'activity' | 'saved' | 'search' | 'switcher' | 'prefs';
@@ -1274,7 +1276,8 @@ export class AppStore {
     const id = this.state.hint;
     if (!id) return;
     this.set({ hint: null, hintVars: null });
-    this.openPrefs({ tab: HINTS[id].action.tab });
+    const { tab, setting } = HINTS[id].action as HintDef['action'];
+    this.openPrefs({ tab, setting });
   }
 
   /** One of a hint's extra answers (Swap or Keep on "newer model available"). */
