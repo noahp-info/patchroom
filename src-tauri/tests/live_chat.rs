@@ -1161,3 +1161,41 @@ fn questions_never_time_out_reach_chat_on_the_permission_path_and_end_on_esc() {
     });
     println!("after resume: {a}");
 }
+
+#[test]
+#[ignore = "needs the claude CLI and a login"]
+fn a_prompt_cancelled_with_esc_before_any_reply_is_marked_cancelled() {
+    let l = start(BASE);
+    l.ready();
+    let mark = l.sink.len();
+    l.send("Write a 300 word essay about the color teal.");
+    // Esc before Claude replies: Claude Code puts the text back in its prompt.
+    let (i, first) = l.wait_item(mark, "the first prompt", |x| {
+        x["kind"] == "user" && x["text"].as_str().is_some_and(|t| t.contains("teal"))
+    });
+    // Wait until the turn runs (UserPromptSubmit sets busy), then press Esc.
+    l.sink.wait(mark, T, "busy", |e| match e {
+        UiEvent::Status { status, .. } if format!("{status:?}").to_lowercase().contains("busy") => {
+            Some(())
+        }
+        _ => None,
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    l.keys(b"\x1b");
+    std::thread::sleep(Duration::from_secs(2));
+    // Edit and send again.
+    l.keys(b" Keep it to one sentence.");
+    std::thread::sleep(Duration::from_millis(400));
+    l.keys(b"\r");
+    let (i, again) = l.wait_item(i, "the cancelled prompt, marked", |x| {
+        x["key"] == first["key"] && x["cancelled"] == true
+    });
+    println!("cancelled: {again}");
+    let (_, second) = l.wait_item(i.saturating_sub(1), "the re-sent prompt", |x| {
+        x["kind"] == "user"
+            && x["text"]
+                .as_str()
+                .is_some_and(|t| t.contains("one sentence"))
+    });
+    assert!(second.get("cancelled").is_none(), "{second}");
+}

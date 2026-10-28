@@ -3933,6 +3933,18 @@ body.dragging .sbe__grip {
   font-weight: 700;
   color: var(--muted);
 }
+/* A prompt cancelled (Esc) before Claude replied: muted and struck through, with a tag next to
+   the time like the queued row's "Not sent". Still selectable. */
+.chat .who .msg-tag {
+  --fs: 11px;
+  font-weight: 700;
+  color: var(--err-text);
+}
+.chat .body[data-cancelled='true'] .usertext {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
 .msg.qmsg:not([data-state='queued']) .qmsg__tag {
   color: var(--err-text);
 }

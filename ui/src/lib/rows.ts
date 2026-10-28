@@ -94,7 +94,13 @@ export function buildRows(items: ChatItem[], prompts: PromptState[]): Row[] {
   let prevAuthor: Author | 'break' = 'break';
   let prevMs = 0;
   let prevDay = '';
-  const push = (author: Author, ms: number, key: string, make: (head: boolean) => Row) => {
+  const push = (
+    author: Author,
+    ms: number,
+    key: string,
+    make: (head: boolean) => Row,
+    alone = false,
+  ) => {
     const d = ms ? dayKey(ms) : prevDay;
     // Out-of-order timestamps never open a new day: dividers only move forward.
     if (ms && d !== prevDay && ms >= prevMs) {
@@ -105,9 +111,10 @@ export function buildRows(items: ChatItem[], prompts: PromptState[]): Row[] {
     }
     const head =
       author !== 'none' &&
-      (prevAuthor !== author || (ms > 0 && prevMs > 0 && ms - prevMs > GAP_MS));
+      (alone || prevAuthor !== author || (ms > 0 && prevMs > 0 && ms - prevMs > GAP_MS));
     rows.push(make(head));
-    prevAuthor = author === 'none' ? 'break' : author;
+    // A row that stands alone (a cancelled prompt) also gives the next row its own head.
+    prevAuthor = author === 'none' || alone ? 'break' : author;
     if (ms) prevMs = ms;
   };
   const pushPrompt = (p: PromptState) =>
@@ -123,15 +130,21 @@ export function buildRows(items: ChatItem[], prompts: PromptState[]): Row[] {
     for (const p of before.get(i) ?? []) pushPrompt(p);
     const ms = toMillis(it.ts);
     const author = authorOf(it);
-    push(author, ms, it.key, (head) => ({
-      key: it.key,
-      type: 'item',
-      item: it,
-      head,
+    push(
       author,
       ms,
-      prompt: inline.get(i),
-    }));
+      it.key,
+      (head) => ({
+        key: it.key,
+        type: 'item',
+        item: it,
+        head,
+        author,
+        ms,
+        prompt: inline.get(i),
+      }),
+      it.kind === 'user' && it.cancelled === true,
+    );
     for (const p of after.get(i) ?? []) pushPrompt(p);
   });
   for (const p of tail) pushPrompt(p);

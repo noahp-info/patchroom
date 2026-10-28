@@ -97,6 +97,7 @@ pub const HIDDEN_LINE_TYPES: &[(&str, &str)] = &[
     ("continued-in", "bookkeeping: this session continues in another session file"),
     ("api-request", "bookkeeping: API request log (model, params, digests)"),
     ("api-request-blob", "bookkeeping: API request body log"),
+    ("api-request-shape", "bookkeeping: API request shape digest"),
 ];
 
 /// Attachment types that are context injections, not conversation. Each is hidden.
@@ -232,6 +233,8 @@ pub struct Mapper {
     cur_meta: bool,
     cur_error: bool,
     cur_hidden: Option<&'static str>,
+    /// Index of the last typed prompt while nothing but fallback rows has followed it.
+    open_prompt: Option<usize>,
 }
 
 impl Mapper {
@@ -253,6 +256,7 @@ impl Mapper {
             cur_meta: false,
             cur_error: false,
             cur_hidden: None,
+            open_prompt: None,
         }
     }
 
@@ -744,6 +748,7 @@ impl Mapper {
                 ItemBody::User {
                     text,
                     images: Vec::new(),
+                    cancelled: false,
                 },
             );
             return;
@@ -774,6 +779,7 @@ impl Mapper {
                 ItemBody::User {
                     text: format!("!{}", cmd.trim()),
                     images: Vec::new(),
+                    cancelled: false,
                 },
             );
             return;
@@ -805,11 +811,56 @@ impl Mapper {
             return;
         }
         if t.starts_with("[Request interrupted by user") {
+            // Nothing happened since the prompt: the prompt itself was cancelled.
+            if self.cancel_open_prompt() {
+                self.cur_hidden = Some("cancelled-prompt-marker");
+                return;
+            }
             self.push(key.to_owned(), ts, system("interrupted", t));
             return;
         }
         let text = unwrap_pasted(t).trim().to_owned();
-        self.push(key.to_owned(), ts, ItemBody::User { text, images });
+        // A prompt right after a prompt, with nothing in between: Esc cancelled the earlier
+        // one before Claude replied (Claude Code writes no marker then; the next prompt
+        // usually carries the same text, edited).
+        let plain = !key.starts_with("queued:");
+        if plain {
+            self.cancel_open_prompt();
+        }
+        self.push(
+            key.to_owned(),
+            ts,
+            ItemBody::User {
+                text,
+                images,
+                cancelled: false,
+            },
+        );
+        if plain {
+            self.open_prompt = self.index.get(key).copied();
+        }
+    }
+
+    /// Mark the open prompt (a typed prompt nothing but fallback rows has followed) cancelled.
+    /// Returns true when there was one.
+    fn cancel_open_prompt(&mut self) -> bool {
+        let Some(i) = self.open_prompt.take() else {
+            return false;
+        };
+        let only_fallbacks_after = self.items[i + 1..]
+            .iter()
+            .all(|x| matches!(x.body, ItemBody::Fallback { .. }));
+        if !only_fallbacks_after {
+            return false;
+        }
+        if let ItemBody::User { cancelled, .. } = &mut self.items[i].body {
+            *cancelled = true;
+            if !self.cur_changed.contains(&i) {
+                self.cur_changed.push(i);
+            }
+            return true;
+        }
+        false
     }
 
     fn on_task_notification(&mut self, key: &str, ts: i64, inner: &str) {
@@ -1139,6 +1190,7 @@ impl Mapper {
                             ItemBody::User {
                                 text,
                                 images: Vec::new(),
+                                cancelled: false,
                             },
                         );
                     }
@@ -1306,6 +1358,8 @@ impl Mapper {
                 i
             }
             None => {
+                // Anything new after a prompt (a reply, a tool, a notice) answers it.
+                self.open_prompt = None;
                 self.items.push(item);
                 let i = self.items.len() - 1;
                 self.index.insert(key, i);
@@ -1318,6 +1372,8 @@ impl Mapper {
     }
 
     fn fallback_item(&mut self, key: String, ts: i64, line_type: &str, summary: &str) {
+        // An unknown line is not Claude's reply: a prompt before it can still be cancelled.
+        let open = self.open_prompt;
         self.cur_fallback = true;
         *self.fallback_types.entry(line_type.to_owned()).or_insert(0) += 1;
         let (summary, _) = truncate_utf8(summary, 240);
@@ -1329,6 +1385,7 @@ impl Mapper {
                 summary,
             },
         );
+        self.open_prompt = open;
     }
 }
 
@@ -1573,6 +1630,124 @@ mod tests {
                "message":{"role":"user","content":content}})
     }
 
+    fn cancelled(m: &Mapper, i: usize) -> bool {
+        match &m.items()[i].body {
+            ItemBody::User { cancelled, .. } => *cancelled,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn attachment(uuid: &str) -> Value {
+        json!({"type":"attachment","uuid":uuid,"attachment":{"type":"date","date":"2026-01-01"}})
+    }
+
+    #[test]
+    fn a_prompt_followed_by_a_prompt_with_nothing_between_is_cancelled() {
+        // Live claude (2.1.310): Esc before any reply writes no marker; the edited prompt
+        // follows after only hidden attachment lines.
+        let mut m = Mapper::new("main", None);
+        let feeds = feed_all(
+            &mut m,
+            &[
+                user("u1", json!("Write an essay about teal.")),
+                attachment("x1"),
+                user("u2", json!("Write an essay about teal. Keep it short.")),
+                assistant("a1", json!([{"type":"text","text":"Teal is..."}])),
+            ],
+        );
+        assert_eq!(m.items().len(), 3);
+        assert!(cancelled(&m, 0));
+        assert!(!cancelled(&m, 1));
+        // An unknown bookkeeping line between them (a fallback row) changes nothing.
+        let mut m = Mapper::new("main", None);
+        feed_all(
+            &mut m,
+            &[
+                user("u1", json!("first try")),
+                json!({"type":"brand-new-bookkeeping","sessionId":"s"}),
+                json!({"type":"api-request-shape","sessionId":"s","shapeHash":"h"}),
+                user("u2", json!("first try, edited")),
+            ],
+        );
+        assert!(cancelled(&m, 0));
+        // The cancelled prompt is re-sent to the UI on the line that revealed it.
+        assert_eq!(feeds[2].changed, vec![0, 1]);
+        let v = serde_json::to_value(&m.items()[0]).unwrap();
+        assert_eq!(v["cancelled"], true);
+        let v = serde_json::to_value(&m.items()[1]).unwrap();
+        assert!(v.get("cancelled").is_none(), "false is omitted: {v}");
+    }
+
+    #[test]
+    fn an_interrupt_marker_right_after_a_prompt_cancels_it_instead_of_a_notice() {
+        let mut m = Mapper::new("main", None);
+        let feeds = feed_all(
+            &mut m,
+            &[
+                user("u1", json!("do the thing")),
+                user(
+                    "u2",
+                    json!([{"type":"text","text":"[Request interrupted by user]"}]),
+                ),
+            ],
+        );
+        assert_eq!(m.items().len(), 1);
+        assert!(cancelled(&m, 0));
+        assert_eq!(feeds[1].changed, vec![0]);
+    }
+
+    #[test]
+    fn work_before_the_interrupt_keeps_the_prompt_and_shows_interrupted() {
+        let mut m = Mapper::new("main", None);
+        feed_all(
+            &mut m,
+            &[
+                user("u1", json!("do the thing")),
+                assistant(
+                    "a1",
+                    json!([{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]),
+                ),
+                user(
+                    "u2",
+                    json!([{"type":"text","text":"[Request interrupted by user]"}]),
+                ),
+                user("u3", json!("try again")),
+            ],
+        );
+        assert!(!cancelled(&m, 0));
+        assert!(matches!(
+            &m.items()[2].body,
+            ItemBody::System { subtype, .. } if subtype == "interrupted"
+        ));
+        assert!(!cancelled(&m, 3));
+    }
+
+    #[test]
+    fn queued_messages_and_commands_are_never_cancelled() {
+        let mut m = Mapper::new("main", None);
+        let queued = |uuid: &str, src: &str, text: &str| {
+            json!({"type":"attachment","uuid":uuid,"attachment":{
+                "type":"queued_command","prompt":text,"source_uuid":src}})
+        };
+        feed_all(
+            &mut m,
+            &[
+                user("u1", json!("first")),
+                // Two messages queued while Claude works, read before any reply.
+                queued("q1", "s1", "second"),
+                queued("q2", "s2", "third"),
+                user(
+                    "c1",
+                    json!("<command-name>/model</command-name>\n<command-args></command-args>"),
+                ),
+                user("u2", json!("after the command")),
+            ],
+        );
+        for i in 0..m.items().len() {
+            assert!(!cancelled(&m, i), "item {i} {:?}", m.items()[i]);
+        }
+    }
+
     #[test]
     fn text_tool_and_result_pair_up() {
         let mut m = Mapper::new("main", None);
@@ -1697,7 +1872,7 @@ mod tests {
             40,
         );
         match &m.items()[0].body {
-            ItemBody::User { text, images } => {
+            ItemBody::User { text, images, .. } => {
                 assert_eq!(text, "[Image #1] look\n\nX");
                 assert_eq!(images.len(), 1);
                 assert_eq!(images[0].image_ref, "main@40#0");

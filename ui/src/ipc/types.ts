@@ -409,6 +409,8 @@ export interface UserItem extends ChatItemBase {
   kind: 'user';
   text: string;
   images: ChatImageRef[];
+  /** Cancelled (Esc) before Claude replied or used a tool. Omitted when false. */
+  cancelled?: boolean;
 }
 export interface AssistantItem extends ChatItemBase {
   kind: 'assistant';
