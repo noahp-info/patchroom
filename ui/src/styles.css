@@ -1160,6 +1160,12 @@ body {
   flex: 1 1 18ch;
   min-width: 0;
   --fs: 11px;
+  /* Plain footer text, not the first-time hint box that shares the class name. */
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
 }
 .ask-err {
   padding: 4px 14px;
