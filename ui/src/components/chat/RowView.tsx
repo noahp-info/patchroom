@@ -352,6 +352,7 @@ function ItemBody({
               questions={item.questions}
               onAnswer={(a) => actions.answer(prompt.promptId, a)}
               onTerminal={() => actions.handoff(prompt.promptId)}
+              onShowTerminal={actions.showTerminal}
             />
           ) : (
             <div
@@ -396,6 +397,7 @@ function ItemBody({
               plan={item.plan}
               onAnswer={(a) => actions.answer(prompt.promptId, a)}
               onTerminal={() => actions.handoff(prompt.promptId)}
+              onShowTerminal={actions.showTerminal}
             />
           ) : (
             <div
@@ -559,6 +561,7 @@ function RowViewInner({ row, expanded, actions, decor }: RowViewProps) {
             prompt={row.prompt}
             onAnswer={(a) => actions.answer(row.prompt.promptId, a)}
             onTerminal={() => actions.handoff(row.prompt.promptId)}
+            onShowTerminal={actions.showTerminal}
           />
         </div>
       </div>

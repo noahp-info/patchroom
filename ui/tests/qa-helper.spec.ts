@@ -19,6 +19,10 @@ test('the overlap helper finds overlap, silent clipping and sideways overflow', 
       '<span style="position:absolute;left:0;top:0">First label</span>' +
       '<span style="position:absolute;left:10px;top:2px">Second label</span>' +
       '<div style="position:absolute;top:40px;width:60px;overflow:hidden;white-space:nowrap">A long clipped sentence with no ellipsis</div>' +
+      // An ellipsized label next to a badge: its hidden text runs under the badge, unseen.
+      '<div style="position:absolute;top:80px;display:flex;gap:8px;width:200px">' +
+      '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Ellipsized label that runs on and on</span>' +
+      '<span style="flex:none">Badge</span></div>' +
       '';
     app.append(box);
     const wide = document.createElement('div');
@@ -30,6 +34,7 @@ test('the overlap helper finds overlap, silent clipping and sideways overflow', 
   expect(bad.some((f) => f.startsWith('overlap: "First label" x "Second label"'))).toBe(true);
   expect(bad.some((f) => f.startsWith('clipped without ellipsis'))).toBe(true);
   expect(bad.some((f) => f.startsWith('horizontal overflow'))).toBe(true);
+  expect(bad.some((f) => f.includes('Badge'))).toBe(false);
 });
 
 test('the ring helper finds tight frames and touching siblings', async ({ page }) => {

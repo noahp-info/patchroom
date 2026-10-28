@@ -157,6 +157,55 @@ for (const scheme of SCHEMES) {
       await check('hover popover', '.hbar-pop');
       await page.keyboard.press('Escape');
 
+      // Ask cards in their newer states: a permission that moved to the terminal after its
+      // wait (explanation plus button), and a question and a plan that reached the permission
+      // path as plain permission prompts (shown as their own cards, answered in the terminal).
+      await page.evaluate((x) => {
+        const m = window.__PR_MOCK__!;
+        m.emitPrompt(x, {
+          promptId: 'qa-moved',
+          kind: 'permission',
+          toolName: 'Bash',
+          toolInput: { command: 'pnpm -C ui build && pnpm -C ui lint && cargo test --workspace' },
+        });
+        m.resolvePrompt(x, 'qa-moved', 'timeout');
+        m.emitPrompt(x, {
+          promptId: 'qa-rawq',
+          kind: 'permission',
+          toolName: 'AskUserQuestion',
+          toolInput: {
+            questions: [
+              {
+                question: 'Which of the two migration strategies should the ledger reconcile use?',
+                header: 'Strategy',
+                multiSelect: false,
+                options: [{ label: 'Online' }, { label: 'Offline' }],
+              },
+            ],
+          },
+        });
+        m.emitPrompt(x, {
+          promptId: 'qa-rawp',
+          kind: 'permission',
+          toolName: 'ExitPlanMode',
+          toolInput: { plan: '## Plan\n\n1. Split the ledger job\n2. Reconcile per account\n' },
+        });
+      }, sid);
+      const moved = page.locator('[data-moved="terminal"]');
+      await expect(moved).toBeVisible();
+      await moved.scrollIntoViewIfNeeded();
+      await check('ask card moved to the terminal');
+      const rawPlan = page.locator('.ask[data-kind="plan"][data-state="pending"]');
+      await rawPlan.scrollIntoViewIfNeeded();
+      await expect(page.locator('.ask[data-kind="question"][data-state="pending"]')).toBeVisible();
+      await check('question and plan cards answered in the terminal');
+      expect(await ringFindings(page, '.chat .ask'), where('ask card rings')).toEqual([]);
+      await page.evaluate((x) => {
+        const m = window.__PR_MOCK__!;
+        m.resolvePrompt(x, 'qa-rawq', 'interrupt');
+        m.resolvePrompt(x, 'qa-rawp', 'interrupt');
+      }, sid);
+
       if (!size.pane) return;
 
       // Every overlay draws over the pane: the native viewer steps aside for each.

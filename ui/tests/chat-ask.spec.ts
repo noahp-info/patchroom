@@ -159,7 +159,7 @@ test.describe('ask widgets', () => {
     const id = await openChat(page, []);
     await prompt(page, id, 'permission');
     await page.evaluate((sid) => window.__PR_MOCK__!.resolvePrompt(sid, 'p-perm', 'timeout'), id);
-    await expect(page.locator('.ask-done')).toHaveText('Timed out');
+    await expect(page.locator('.ask-done')).toHaveText('Moved to terminal');
     await page.evaluate((sid) => {
       window.__PR_MOCK__!.emitPrompt(sid, {
         promptId: 'p2',
@@ -170,6 +170,133 @@ test.describe('ask widgets', () => {
       window.__PR_MOCK__!.resolvePrompt(sid, 'p2', 'interrupt');
     }, id);
     await expect(page.locator('.ask-done').last()).toHaveText('Interrupted');
+  });
+
+  test('permission: a timed-out card says where the prompt went and opens the terminal', async ({
+    page,
+  }) => {
+    const errs = watchErrors(page);
+    const id = await openChat(page, []);
+    await prompt(page, id, 'permission');
+    await page.evaluate((sid) => window.__PR_MOCK__!.resolvePrompt(sid, 'p-perm', 'timeout'), id);
+    const ask = page.locator('.ask[data-kind="permission"]');
+    await expect(ask).toHaveAttribute('data-state', 'resolved');
+    const moved = ask.locator('[data-moved="terminal"]');
+    await expect(moved).toContainText('Moved to the terminal after 5 min.');
+    // Not a dead label: one button, and it only shows the terminal (the hook is long gone).
+    await moved.getByRole('button', { name: 'Answer in terminal' }).click();
+    await expect(page.getByTestId('view-label')).toHaveText('Terminal');
+    expect(await answers(page)).toEqual([]);
+    // An interrupted card has no such row.
+    await page.keyboard.press('Meta+j');
+    await page.evaluate((sid) => {
+      window.__PR_MOCK__!.emitPrompt(sid, {
+        promptId: 'p-int',
+        kind: 'permission',
+        toolName: 'Bash',
+        toolInput: { command: 'ls' },
+      });
+      window.__PR_MOCK__!.resolvePrompt(sid, 'p-int', 'interrupt');
+    }, id);
+    await expect(page.locator('[data-moved="terminal"]')).toHaveCount(1);
+    expect(errs).toEqual([]);
+  });
+
+  test('question: stays answerable long past the old two-minute limit', async ({ page }) => {
+    await page.clock.install();
+    const id = await openChat(page, []);
+    await prompt(page, id, 'question');
+    const ask = page.locator('.ask[data-kind="question"]');
+    await expect(ask).toHaveAttribute('data-state', 'pending');
+    // Fake time: well past the old 120 s bridge hold, and past the 5 min permission wait.
+    await page.clock.runFor('30:00');
+    await expect(ask).toHaveAttribute('data-state', 'pending');
+    await expect(ask.locator('.needs-pill')).toHaveText('Needs you');
+    await expect(ask.locator('[data-moved]')).toHaveCount(0);
+    await ask.getByRole('radio', { name: /Fall through/ }).check();
+    await ask.getByRole('checkbox', { name: 'Unit' }).check();
+    await ask.getByRole('button', { name: 'Send answer' }).click();
+    expect((await answers(page)).map((a) => a.answer)).toEqual([
+      {
+        kind: 'questions',
+        answers: {
+          'When the bridge times out, what should the hook do?': 'Fall through to the TUI',
+          'Which checks should run?': 'Unit',
+        },
+      },
+    ]);
+  });
+
+  test('question and plan on the permission path render as their own cards, never raw JSON', async ({
+    page,
+  }) => {
+    const errs = watchErrors(page);
+    const id = await openChat(page, []);
+    const questions = [
+      {
+        question: 'Which database?',
+        header: 'DB',
+        multiSelect: false,
+        options: [{ label: 'SQLite' }, { label: 'Postgres' }],
+      },
+    ];
+    // The backend's shape: a `question` prompt with no toolUseId (PermissionRequest has none).
+    await page.evaluate(
+      ({ sid, qs }) =>
+        window.__PR_MOCK__!.emitPrompt(sid, {
+          promptId: 'p-pq',
+          kind: 'question',
+          toolName: 'AskUserQuestion',
+          toolInput: { questions: qs },
+          questions: qs,
+        }),
+      { sid: id, qs: questions },
+    );
+    const q = page.locator('.ask[data-kind="question"]');
+    await expect(q).toContainText('Which database?');
+    await q.getByRole('radio', { name: 'Postgres' }).check();
+    await q.getByRole('button', { name: 'Send answer' }).click();
+    expect((await answers(page)).map((a) => a.answer)).toEqual([
+      { kind: 'questions', answers: { 'Which database?': 'Postgres' } },
+    ]);
+    // A plain permission prompt for either tool (an older backend) still shows the card.
+    await page.evaluate(
+      ({ sid, qs }) => {
+        const m = window.__PR_MOCK__!;
+        m.emitPrompt(sid, {
+          promptId: 'p-rawq',
+          kind: 'permission',
+          toolName: 'AskUserQuestion',
+          toolInput: { questions: qs },
+        });
+        m.emitPrompt(sid, {
+          promptId: 'p-rawp',
+          kind: 'permission',
+          toolName: 'ExitPlanMode',
+          toolInput: { plan: '## Plan\n\n1. Ship it\n' },
+        });
+      },
+      { sid: id, qs: questions },
+    );
+    const rawq = page.locator('.ask[data-kind="question"][data-state="pending"]');
+    await expect(rawq).toContainText('Claude is asking');
+    await expect(rawq).toContainText('Which database?');
+    const rawp = page.locator('.ask[data-kind="plan"][data-state="pending"]');
+    await expect(rawp).toContainText('Claude has a plan');
+    await expect(rawp.locator('.ask-plan')).toContainText('Ship it');
+    await expect(page.locator('.ask-pre')).toHaveCount(0);
+    await expect(page.getByText('"questions"')).toHaveCount(0);
+    await expect(page.getByText('Claude wants to use AskUserQuestion')).toHaveCount(0);
+    // Chat cannot answer those: the terminal picker does.
+    await expect(rawq.getByRole('button', { name: 'Send answer' })).toHaveCount(0);
+    await rawq.getByRole('button', { name: 'Answer in terminal' }).click();
+    expect((await answers(page)).at(-1)).toEqual({
+      id,
+      promptId: 'p-rawq',
+      answer: { kind: 'terminal' },
+    });
+    await expect(page.getByTestId('view-label')).toHaveText('Terminal');
+    expect(errs).toEqual([]);
   });
 
   test('question: single select, with a Recommended tag, sends the label', async ({ page }) => {
