@@ -842,3 +842,233 @@ fn statusline_frames_are_acked_and_published() {
     assert_eq!(rec.payload["model"]["display_name"], "Haiku");
     assert_eq!(rec.output, "\u{1b}[1mhi\u{1b}[0m");
 }
+
+/// `ask_payload` arriving on the permission path (the TUI picker is up), with no tool use id.
+fn ask_permission_payload(session: &str) -> Value {
+    let mut p = ask_payload(session);
+    p["hook_event_name"] = json!("PermissionRequest");
+    p.as_object_mut().unwrap().remove("tool_use_id");
+    p["permission_suggestions"] = json!([]);
+    p
+}
+
+fn plan_payload(event: &str, session: &str) -> Value {
+    let mut p = json!({
+        "hook_event_name": event, "session_id": session, "tool_name": "ExitPlanMode",
+        "tool_input": {"plan": "1. Do the thing"}
+    });
+    if event == "PreToolUse" {
+        p["tool_use_id"] = json!("toolu_p");
+    }
+    p
+}
+
+#[test]
+fn questions_and_plans_have_no_practical_timeout_by_default() {
+    let cfg = BridgeConfig::default();
+    assert_eq!(cfg.ask_wait, patchroom_bridge::ASK_HOLD);
+    assert!(cfg.ask_wait >= Duration::from_secs(7 * 24 * 3600));
+    // Plain permissions keep their five minutes.
+    assert_eq!(cfg.permission_wait, Duration::from_secs(300));
+}
+
+#[test]
+fn a_question_outlives_the_permission_timeout_and_stays_answerable() {
+    let env = Env::new();
+    // Default ask_wait; a short permission wait stands in for the five minutes.
+    let b = env.bridge(|c| c.permission_wait = Duration::from_millis(300));
+    let rx = b.subscribe();
+    let perm = HookConn::send(&env.sock, perm_payload("s1", None));
+    let ask = HookConn::send_with(
+        &env.sock,
+        ask_payload("s1"),
+        Some("dm-1"),
+        patchroom_bridge::ASK_HOLD.as_millis() as u64,
+    );
+    let q = next_matching(&rx, |e| match e {
+        BridgeEvent::Question(q) => Some(q.clone()),
+        _ => None,
+    });
+    // Bounded only by the hook's own deadline, days away.
+    assert!(q.wait >= Duration::from_secs(7 * 24 * 3600), "{:?}", q.wait);
+    assert_eq!(
+        perm.reply(Duration::from_secs(3)),
+        ServerMessage::Decision {
+            output: None,
+            resolution: Resolution::Timeout
+        }
+    );
+    std::thread::sleep(Duration::from_millis(900));
+    let left = b.pending();
+    assert_eq!(left.len(), 1, "the question must still be held: {left:?}");
+    assert_eq!(left[0].kind, PendingKind::Question);
+    b.answer_question(
+        q.id,
+        QuestionAnswers::new().with("Which color do you prefer?", "Red"),
+    )
+    .unwrap();
+    assert!(matches!(
+        ask.reply(Duration::from_secs(3)),
+        ServerMessage::Decision {
+            output: Some(_),
+            resolution: Resolution::Chat
+        }
+    ));
+}
+
+#[test]
+fn a_held_question_ends_when_its_hook_goes_away() {
+    let env = Env::new();
+    let b = env.bridge(|_| {});
+    let rx = b.subscribe();
+    let c = HookConn::send(&env.sock, ask_payload("s1"));
+    next_matching(&rx, |e| matches!(e, BridgeEvent::Question(_)).then_some(()));
+    // The session ended: claude and its hook are gone.
+    drop(c);
+    let res = next_matching(&rx, |e| match e {
+        BridgeEvent::Resolved(r) => Some(r.resolution),
+        _ => None,
+    });
+    assert_eq!(res, Resolution::HookGone);
+    assert!(b.pending().is_empty());
+    // Nothing keeps the bridge from stopping promptly.
+    let start = Instant::now();
+    b.shutdown();
+    assert!(start.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn permission_request_for_a_question_is_a_question_prompt_answered_by_allow() {
+    let env = Env::new();
+    let b = env.bridge(|_| {});
+    let rx = b.subscribe();
+    let c = HookConn::send(&env.sock, ask_permission_payload("s1"));
+    let q = next_matching(&rx, |e| match e {
+        BridgeEvent::Question(q) => Some(q.clone()),
+        BridgeEvent::Permission(_) => panic!("a question must never be a raw permission prompt"),
+        _ => None,
+    });
+    assert!(q.tui_shown);
+    assert_eq!(q.questions[0].options[1].label, "Blue");
+    assert_eq!(b.pending()[0].kind, PendingKind::Question);
+    b.answer_question(
+        q.id,
+        QuestionAnswers::new().with("Which color do you prefer?", "Blue"),
+    )
+    .unwrap();
+    match c.reply(Duration::from_secs(3)) {
+        ServerMessage::Decision {
+            output: Some(out),
+            resolution: Resolution::Chat,
+        } => {
+            let h = &out["hookSpecificOutput"];
+            assert_eq!(h["hookEventName"], "PermissionRequest");
+            assert_eq!(h["decision"]["behavior"], "allow");
+            assert_eq!(
+                h["decision"]["updatedInput"]["answers"],
+                json!({"Which color do you prefer?": "Blue"})
+            );
+            assert_eq!(
+                h["decision"]["updatedInput"]["questions"],
+                ask_payload("s1")["tool_input"]["questions"]
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn permission_request_for_a_plan_is_a_plan_prompt() {
+    let env = Env::new();
+    let b = env.bridge(|_| {});
+    let rx = b.subscribe();
+    let c = HookConn::send(&env.sock, plan_payload("PermissionRequest", "s1"));
+    let p = next_matching(&rx, |e| match e {
+        BridgeEvent::Plan(p) => Some(p.clone()),
+        BridgeEvent::Permission(_) => panic!("a plan must never be a raw permission prompt"),
+        _ => None,
+    });
+    assert!(p.tui_shown);
+    assert_eq!(p.plan, "1. Do the thing");
+    // The chat answers a plan with the dialog's keys after releasing the hook.
+    assert!(b.release(p.id, Resolution::Chat));
+    assert_eq!(
+        c.reply(Duration::from_secs(3)),
+        ServerMessage::Decision {
+            output: None,
+            resolution: Resolution::Chat
+        }
+    );
+}
+
+#[test]
+fn the_permission_request_after_a_hand_off_returns_at_once() {
+    let env = Env::new();
+    let b = env.bridge(|_| {});
+    let rx = b.subscribe();
+    for (pre, perm, resolution) in [
+        (
+            ask_payload("s1"),
+            ask_permission_payload("s1"),
+            Resolution::Terminal,
+        ),
+        (
+            ask_payload("s1"),
+            ask_permission_payload("s1"),
+            Resolution::TurnEnded,
+        ),
+        (
+            plan_payload("PreToolUse", "s1"),
+            plan_payload("PermissionRequest", "s1"),
+            Resolution::Chat,
+        ),
+    ] {
+        let c = HookConn::send(&env.sock, pre);
+        let id = next_matching(&rx, |e| match e {
+            BridgeEvent::Question(q) => Some(q.id),
+            BridgeEvent::Plan(p) => Some(p.id),
+            _ => None,
+        });
+        assert!(b.release(id, resolution));
+        c.reply(Duration::from_secs(3));
+        // The TUI took the call over; its PermissionRequest is the user's, not a new card.
+        let start = Instant::now();
+        assert_eq!(
+            HookConn::send(&env.sock, perm).reply(Duration::from_secs(3)),
+            ServerMessage::Decision {
+                output: None,
+                resolution: Resolution::Terminal
+            }
+        );
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(b.pending().is_empty());
+    }
+    // A different session's or a different question's PermissionRequest is still held.
+    let other = HookConn::send(&env.sock, ask_permission_payload("s2"));
+    wait_pending(&b, 1);
+    drop(other);
+}
+
+#[test]
+fn a_tui_answer_cancels_a_question_held_on_the_permission_path() {
+    let env = Env::new();
+    let b = env.bridge(|_| {});
+    let c = HookConn::send(&env.sock, ask_permission_payload("s1"));
+    wait_pending(&b, 1);
+    // PostToolUse carries the input with the answers added and a tool use id the prompt
+    // never had.
+    let mut input = ask_payload("s1")["tool_input"].clone();
+    input["answers"] = json!({"Which color do you prefer?": "Red"});
+    HookConn::send(
+        &env.sock,
+        json!({"hook_event_name":"PostToolUse","session_id":"s1","tool_name":"AskUserQuestion",
+               "tool_use_id":"toolu_z","tool_input":input}),
+    )
+    .reply(Duration::from_secs(3));
+    assert_eq!(
+        c.reply(Duration::from_secs(3)),
+        ServerMessage::Cancel {
+            reason: Resolution::Terminal
+        }
+    );
+}

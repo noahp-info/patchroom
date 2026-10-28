@@ -10,8 +10,10 @@
 //! Three kinds reach the UI: `permission` (a live TUI dialog that a hook decision can
 //! close), `question` (AskUserQuestion) and `plan` (ExitPlanMode). The last two are held
 //! behind a `PreToolUse` hook, so the TUI shows nothing until the bridge releases them:
-//! the chat answer, a typed key in the terminal, a switch to the terminal view or the
-//! bounded wait ends the hold.
+//! the chat answer, a typed key in the terminal, a switch to the terminal view, an
+//! interrupt (Stop or Esc) or the end of the session ends the hold. They never time out.
+//! A question or plan that reaches the permission path instead (the TUI picker is already
+//! up) arrives as the same kind of prompt, linked to its transcript item here.
 //!
 //! A permission prompt from the bridge has no tool use id. The manager waits for the
 //! matching `tool` item in the transcript (up to [`LINK_WAIT`]) so `prompt:pending` can
@@ -950,6 +952,10 @@ impl Manager {
             return;
         };
         let key = key.as_str();
+        let tool_use_id = q
+            .tool_use_id
+            .clone()
+            .or_else(|| self.link_open_call(&chat, "AskUserQuestion", &q.tool_input));
         let questions = serde_json::to_value(&q.questions).unwrap_or(Value::Null);
         let mut input = q.tool_input.clone();
         patchroom_claude::cap_strings(&mut input, PROMPT_INPUT_STRING_LIMIT);
@@ -964,7 +970,7 @@ impl Manager {
                         kind: PromptKind::Question,
                         tool_name: "AskUserQuestion".to_owned(),
                         tool_input: input,
-                        tool_use_id: q.tool_use_id.clone(),
+                        tool_use_id,
                         questions: Some(questions),
                         can_always: false,
                         emitted: true,
@@ -995,6 +1001,10 @@ impl Manager {
             return;
         };
         let key = key.as_str();
+        let tool_use_id = p
+            .tool_use_id
+            .clone()
+            .or_else(|| self.link_open_call(&chat, "ExitPlanMode", &p.tool_input));
         let mut input = p.tool_input.clone();
         patchroom_claude::cap_strings(&mut input, PLAN_STRING_LIMIT);
         let release_now = {
@@ -1008,7 +1018,7 @@ impl Manager {
                         kind: PromptKind::Plan,
                         tool_name: "ExitPlanMode".to_owned(),
                         tool_input: input,
-                        tool_use_id: p.tool_use_id.clone(),
+                        tool_use_id,
                         questions: None,
                         // "Yes, and use auto mode" is the plan dialog's own always.
                         can_always: true,
@@ -1032,6 +1042,20 @@ impl Manager {
         } else {
             self.reconcile_needs_you(key, "prompt-open", "plan held", false);
         }
+    }
+
+    /// The tool use id of the open `tool` call in the transcript, for a question or plan that
+    /// arrived through `PermissionRequest` (which carries none). Its `tool_use` line is
+    /// already written: the call went through `PreToolUse` first.
+    fn link_open_call(&self, chat: &Chat, tool: &str, input: &Value) -> Option<String> {
+        chat.watcher.sync();
+        let claimed: Vec<String> = lock(&chat.state)
+            .prompts
+            .values()
+            .filter_map(|p| p.tool_use_id.clone())
+            .collect();
+        chat.watcher
+            .with(|a| a.find_open_tool(tool, input, &claimed))
     }
 
     /// Announce permission prompts whose `tool_use` is now in the transcript (or
@@ -1163,6 +1187,12 @@ impl Manager {
 
     /// Release every held prompt (question or plan) of `id` to the TUI. Returns true if any.
     pub(super) fn release_questions_to_terminal(&self, id: &str) -> bool {
+        self.release_questions(id, Resolution::Terminal)
+    }
+
+    /// Release every held question or plan of `id` to the TUI, reported as `resolution`
+    /// (`TurnEnded` for an interrupt). Returns true if any.
+    pub(super) fn release_questions(&self, id: &str, resolution: Resolution) -> bool {
         let Some(chat) = self.chat_of(id) else {
             return false;
         };
@@ -1174,7 +1204,7 @@ impl Manager {
             .collect();
         let mut any = false;
         for pid in ids {
-            any |= self.bridge.release_to_terminal(pid);
+            any |= self.bridge.release(pid, resolution);
         }
         any
     }

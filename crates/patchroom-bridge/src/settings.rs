@@ -23,7 +23,8 @@ pub struct HookSettings {
     pub session_key: Option<String>,
     /// Bridge-side bound for PermissionRequest. Must match `BridgeConfig::permission_wait`.
     pub permission_wait: Duration,
-    /// Bridge-side bound for AskUserQuestion. Must match `BridgeConfig::ask_wait`.
+    /// Bridge-side bound for AskUserQuestion and ExitPlanMode. Must match
+    /// `BridgeConfig::ask_wait` ([`crate::ASK_HOLD`] by default: no timeout in practice).
     pub ask_wait: Duration,
     /// The statusLine wrapper, when the launch should tee the status line to the bridge.
     pub statusline: Option<StatuslineWrap>,
@@ -132,11 +133,16 @@ impl HookSettings {
     pub fn to_value(&self) -> Value {
         let quick = Duration::from_secs(2);
         let quick_timeout = Duration::from_secs(10);
-        let perm_timeout = self.permission_wait + HOOK_SLACK + Duration::from_secs(5);
+        // PermissionRequest also carries AskUserQuestion and ExitPlanMode (a question that
+        // reached the permission path), which never time out. Matchers cannot exclude a tool,
+        // and two entries would both fire for those tools, so the one entry gets the longer
+        // bound. The bridge still releases a plain permission after `permission_wait`.
+        let perm_wait = self.permission_wait.max(self.ask_wait);
+        let perm_timeout = perm_wait + HOOK_SLACK + Duration::from_secs(5);
         let ask_timeout = self.ask_wait + HOOK_SLACK + Duration::from_secs(5);
         let mut settings = json!({
             "hooks": {
-                "PermissionRequest": [self.entry(None, self.permission_wait + HOOK_SLACK, perm_timeout)],
+                "PermissionRequest": [self.entry(None, perm_wait + HOOK_SLACK, perm_timeout)],
                 "PreToolUse": [self.entry(Some("AskUserQuestion|ExitPlanMode"), self.ask_wait + HOOK_SLACK, ask_timeout)],
                 "PostToolUse": [self.entry(None, quick, quick_timeout)],
                 "Notification": [self.entry(None, quick, quick_timeout)],
@@ -196,6 +202,30 @@ mod tests {
             .unwrap();
         assert!(cmd.starts_with("/opt/pr/patchroom-hook --socket /tmp/b.sock --wait-ms "));
         assert!(cmd.ends_with("--session-key dm-1"));
+        // Questions and plans never time out in practice: the hook timeout is days long,
+        // but stays under Node's timer ceiling (2^31 - 1 ms), past which it fires at once.
+        let node_max_secs = (i32::MAX as u64) / 1000;
+        for ev in ["PreToolUse", "PermissionRequest"] {
+            let t = hooks[ev][0]["hooks"][0]["timeout"].as_u64().unwrap();
+            assert!(t >= 7 * 24 * 3600, "{ev} timeout {t}s is too short");
+            assert!(t < node_max_secs, "{ev} timeout {t}s overflows Node timers");
+            let cmd = hooks[ev][0]["hooks"][0]["command"].as_str().unwrap();
+            let wait: u64 = cmd
+                .split("--wait-ms ")
+                .nth(1)
+                .unwrap()
+                .split(' ')
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap();
+            assert!(
+                wait / 1000 < t,
+                "{ev}: the hook must give up before claude kills it"
+            );
+        }
+        // Plain hooks stay quick.
+        assert_eq!(hooks["Stop"][0]["hooks"][0]["timeout"], 10);
         // Only hooks: no permissions, no statusLine, nothing that overrides user config.
         assert_eq!(v.as_object().unwrap().len(), 1);
     }
