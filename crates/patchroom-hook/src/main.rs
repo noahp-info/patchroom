@@ -31,6 +31,9 @@ use serde_json::Value;
 
 /// Default wait when `--wait-ms` is absent.
 const DEFAULT_WAIT_MS: u64 = 2_000;
+/// Longest accepted `--wait-ms`: 30 days. Questions are held for days (the bridge's
+/// `ASK_HOLD`); anything longer is a typo, and clamping keeps the deadline math finite.
+const MAX_WAIT_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 /// Longest the hook waits for the CLI to close stdin.
 const STDIN_TIMEOUT: Duration = Duration::from_secs(3);
 /// The watchdog fires this long after the wait deadline.
@@ -57,8 +60,8 @@ fn parse_args<I: Iterator<Item = String>>(
         match a.as_str() {
             "--socket" => args.socket = it.next().map(PathBuf::from),
             "--wait-ms" => {
-                if let Some(n) = it.next().and_then(|v| v.parse().ok()) {
-                    args.wait_ms = n;
+                if let Some(n) = it.next().and_then(|v| v.parse::<u64>().ok()) {
+                    args.wait_ms = n.min(MAX_WAIT_MS);
                 }
             }
             "--session-key" => args.session_key = it.next().filter(|s| !s.is_empty()),
@@ -231,6 +234,15 @@ mod tests {
         let p = parse_args(a(&["--wait-ms", "abc", "--nope", "--socket"]), None, None);
         assert_eq!(p.wait_ms, DEFAULT_WAIT_MS);
         assert_eq!(p.socket, None);
+    }
+
+    #[test]
+    fn overlong_waits_are_clamped() {
+        let p = parse_args(a(&["--wait-ms", &u64::MAX.to_string()]), None, None);
+        assert_eq!(p.wait_ms, MAX_WAIT_MS);
+        // The bridge's question hold fits under the clamp.
+        let hold = patchroom_bridge::ASK_HOLD.as_millis() as u64;
+        assert!(hold < MAX_WAIT_MS);
     }
 
     #[test]

@@ -61,6 +61,13 @@ export const SETTINGS: readonly SettingEntry[] = [
     keywords: ['chat', 'scroll', 'follow', 'paused'],
   },
   {
+    id: 'themes.carrydraft',
+    section: 'themes',
+    label: 'Carry chat draft to the terminal',
+    description: 'Switching to the terminal types your unsent chat text into Claude, unsent.',
+    keywords: ['draft', 'composer', 'terminal', 'view', 'switch', 'move', 'unsent'],
+  },
+  {
     id: 'themes.fonts',
     section: 'themes',
     label: 'Fonts',

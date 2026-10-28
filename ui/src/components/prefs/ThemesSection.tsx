@@ -202,13 +202,42 @@ export function ThemesSection() {
           <input
             type="checkbox"
             checked={prefs.chat?.autoScroll ?? true}
-            onChange={(e) => void store.update({ chat: { autoScroll: e.target.checked } })}
+            onChange={(e) =>
+              void store.update({
+                chat: { carryDraft: false, ...prefs.chat, autoScroll: e.target.checked },
+              })
+            }
           />
           <span>Auto-scroll to new messages</span>
         </label>
         <p className="pf-hint">
           Scrolling up pauses it in that window. Jump to latest, or scrolling back to the bottom,
           turns it back on. Off: every log opens paused.
+        </p>
+      </fieldset>
+
+      <fieldset
+        className="pf-group"
+        data-testid="chat-carry-draft"
+        data-setting="themes.carrydraft"
+      >
+        <legend>Chat and terminal</legend>
+        <label className="chk">
+          <input
+            type="checkbox"
+            checked={prefs.chat?.carryDraft ?? false}
+            onChange={(e) =>
+              void store.update({
+                chat: { autoScroll: true, ...prefs.chat, carryDraft: e.target.checked },
+              })
+            }
+          />
+          <span>Carry chat draft to the terminal</span>
+        </label>
+        <p className="pf-hint">
+          Switching to the terminal types your unsent chat text into Claude&apos;s input, without
+          sending it. Images and comments stay in chat. Nothing moves while a dialog is up in the
+          terminal.
         </p>
       </fieldset>
 

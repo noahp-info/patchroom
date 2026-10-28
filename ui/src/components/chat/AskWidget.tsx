@@ -11,8 +11,14 @@ export interface AskProps {
   /** Questions when the matching question item has them but the event did not. */
   questions?: QuestionDef[];
   onAnswer(answer: PromptAnswer): void;
+  /** Hand a pending prompt to the terminal (the hook lets go) and show it. */
   onTerminal(): void;
+  /** Show the terminal view only, for a prompt that already moved there. */
+  onShowTerminal(): void;
 }
+
+/** Plain permissions wait this long in chat before the terminal dialog takes over. */
+const PERMISSION_WAIT_LABEL = '5 min';
 
 /** How a prompt ended, in words. */
 export function resolutionText(p: PromptState): string | null {
@@ -21,7 +27,7 @@ export function resolutionText(p: PromptState): string | null {
     case 'terminal':
       return 'Answered in terminal';
     case 'timeout':
-      return 'Timed out';
+      return 'Moved to terminal';
     case 'interrupt':
       return 'Interrupted';
     case 'chat':
@@ -76,6 +82,32 @@ function Footer({
   );
 }
 
+/**
+ * A prompt that timed out in chat is not dead: the terminal dialog still waits. Say so, and
+ * offer the way there.
+ */
+function MovedToTerminal({
+  prompt,
+  onShowTerminal,
+}: {
+  prompt: PromptState;
+  onShowTerminal(): void;
+}) {
+  if (prompt.resolved?.by !== 'timeout') return null;
+  const why =
+    prompt.kind === 'permission'
+      ? `Moved to the terminal after ${PERMISSION_WAIT_LABEL}. Claude is waiting for you there.`
+      : 'Moved to the terminal. Claude is waiting for you there.';
+  return (
+    <div className="ask-f" data-moved="terminal">
+      <span className="hint">{why}</span>
+      <button type="button" className="btn sec" onClick={onShowTerminal}>
+        Answer in terminal
+      </button>
+    </div>
+  );
+}
+
 function Header({ prompt, title }: { prompt: PromptState; title: string }) {
   const done = resolutionText(prompt);
   return (
@@ -92,7 +124,7 @@ function Header({ prompt, title }: { prompt: PromptState; title: string }) {
   );
 }
 
-function PermissionAsk({ prompt, onAnswer, onTerminal }: AskProps) {
+function PermissionAsk({ prompt, onAnswer, onTerminal, onShowTerminal }: AskProps) {
   const pending = !prompt.resolved;
   const busy = prompt.sending === true;
   const summary = toolSummary(prompt.toolName, prompt.toolInput);
@@ -146,6 +178,7 @@ function PermissionAsk({ prompt, onAnswer, onTerminal }: AskProps) {
           </button>
         </Footer>
       )}
+      <MovedToTerminal prompt={prompt} onShowTerminal={onShowTerminal} />
     </div>
   );
 }
@@ -259,8 +292,47 @@ export function answerFor(q: QuestionDef, pick: Pick): string | null {
   return labels.length ? labels.join(', ') : null;
 }
 
-function QuestionAsk({ prompt, questions, onAnswer, onTerminal }: AskProps) {
-  const qs = prompt.questions ?? questions ?? [];
+/** The questions of an AskUserQuestion tool input, when the event carried none. */
+function questionsOf(input: unknown): QuestionDef[] | undefined {
+  if (typeof input !== 'object' || input === null) return undefined;
+  const qs = (input as { questions?: unknown }).questions;
+  return Array.isArray(qs) ? (qs as QuestionDef[]) : undefined;
+}
+
+/** The plan text of an ExitPlanMode tool input. */
+function planOf(input: unknown): string {
+  return typeof input === 'object' &&
+    input !== null &&
+    typeof (input as { plan?: unknown }).plan === 'string'
+    ? (input as { plan: string }).plan
+    : '';
+}
+
+/**
+ * Read-only footer for a question or plan that arrived as a plain permission prompt: chat
+ * cannot answer it, the terminal picker can.
+ */
+function TerminalOnly({ prompt, onTerminal }: { prompt: PromptState; onTerminal(): void }) {
+  return (
+    <Footer
+      prompt={prompt}
+      hint="This one is answered in the terminal picker."
+      onTerminal={onTerminal}
+    >
+      {null}
+    </Footer>
+  );
+}
+
+function QuestionAsk({
+  prompt,
+  questions,
+  onAnswer,
+  onTerminal,
+  onShowTerminal,
+  terminalOnly,
+}: AskProps & { terminalOnly?: boolean }) {
+  const qs = prompt.questions ?? questions ?? questionsOf(prompt.toolInput) ?? [];
   const [picks, setPicks] = useState<Pick[]>(() =>
     qs.map(() => ({ sel: [], other: false, text: '' })),
   );
@@ -284,7 +356,18 @@ function QuestionAsk({ prompt, questions, onAnswer, onTerminal }: AskProps) {
       aria-label="Claude is asking"
     >
       <Header prompt={prompt} title="Claude is asking" />
-      {pending ? (
+      {pending && terminalOnly ? (
+        <>
+          <ul className="qdone">
+            {qs.map((q, i) => (
+              <li key={i}>
+                <span className="qdone-q">{q.question}</span>
+              </li>
+            ))}
+          </ul>
+          <TerminalOnly prompt={prompt} onTerminal={onTerminal} />
+        </>
+      ) : pending ? (
         <>
           {qs.map((q, i) => (
             <QuestionBlock
@@ -317,22 +400,24 @@ function QuestionAsk({ prompt, questions, onAnswer, onTerminal }: AskProps) {
           ))}
         </ul>
       )}
+      <MovedToTerminal prompt={prompt} onShowTerminal={onShowTerminal} />
     </div>
   );
 }
 
-function PlanAsk({ prompt, plan, onAnswer, onTerminal }: AskProps) {
+function PlanAsk({
+  prompt,
+  plan,
+  onAnswer,
+  onTerminal,
+  onShowTerminal,
+  terminalOnly,
+}: AskProps & { terminalOnly?: boolean }) {
   const pending = !prompt.resolved;
   const busy = prompt.sending === true;
   const [revising, setRevising] = useState(false);
   const [note, setNote] = useState('');
-  const text =
-    plan ??
-    (typeof prompt.toolInput === 'object' &&
-    prompt.toolInput !== null &&
-    typeof (prompt.toolInput as { plan?: unknown }).plan === 'string'
-      ? (prompt.toolInput as { plan: string }).plan
-      : '');
+  const text = plan ?? planOf(prompt.toolInput);
   return (
     <div
       className="ask"
@@ -369,7 +454,8 @@ function PlanAsk({ prompt, plan, onAnswer, onTerminal }: AskProps) {
           </button>
         </div>
       )}
-      {pending && (
+      {pending && terminalOnly && <TerminalOnly prompt={prompt} onTerminal={onTerminal} />}
+      {pending && !terminalOnly && (
         <Footer
           prompt={prompt}
           hint="Approving lets Claude start the work."
@@ -394,6 +480,7 @@ function PlanAsk({ prompt, plan, onAnswer, onTerminal }: AskProps) {
           </button>
         </Footer>
       )}
+      <MovedToTerminal prompt={prompt} onShowTerminal={onShowTerminal} />
     </div>
   );
 }
@@ -402,6 +489,12 @@ function PlanAsk({ prompt, plan, onAnswer, onTerminal }: AskProps) {
 export function AskWidget(props: AskProps) {
   switch (props.prompt.kind) {
     case 'permission':
+      // A question or plan never shows as raw tool JSON. The backend sends these as
+      // `question` and `plan` prompts; a permission prompt for one (an older backend) is
+      // still shown as what it is, answered in the terminal.
+      if (props.prompt.toolName === 'AskUserQuestion')
+        return <QuestionAsk {...props} terminalOnly />;
+      if (props.prompt.toolName === 'ExitPlanMode') return <PlanAsk {...props} terminalOnly />;
       return <PermissionAsk {...props} />;
     case 'question':
       return <QuestionAsk {...props} />;

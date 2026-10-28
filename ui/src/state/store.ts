@@ -182,6 +182,8 @@ export interface AppState {
    * Esc or Cmd+J on such a terminal returns to chat.
    */
   termNotes: Record<string, string>;
+  /** A short note above the terminal of session `id` (the draft moved there). */
+  termToast: { id: string; text: string } | null;
 }
 
 /** What `sendText` resolved to. `error` means the call itself failed. */
@@ -304,6 +306,7 @@ export class AppStore {
     folders: {},
     termBg: {},
     termNotes: {},
+    termToast: null,
   };
   private readonly listeners = new Set<() => void>();
   private readonly terminals = new Map<string, SessionTerminal>();
@@ -414,7 +417,69 @@ export class AppStore {
   }
 
   toggleView(id: string): void {
-    this.setView(id, this.viewOf(id) === 'chat' ? 'terminal' : 'chat');
+    this.switchView(id, this.viewOf(id) === 'chat' ? 'terminal' : 'chat');
+  }
+
+  /**
+   * The person switches the view (Cmd+J, the header toggle). Going to the terminal may carry
+   * the chat draft there first. Automatic switches (a fallback, a hand-off) use `setView`.
+   */
+  switchView(id: string, view: ViewMode): void {
+    if (view === 'terminal' && this.viewOf(id) === 'chat') this.carryDraft(id);
+    this.setView(id, view);
+  }
+
+  /**
+   * Chat to terminal with a draft: with "Carry chat draft to the terminal" on, type the text
+   * into claude's input as one bracketed paste (no Enter: multi-line stays one input), clear it
+   * in chat and say so. Pasted images and comments stay in chat. Nothing moves while a dialog
+   * only the terminal answers is up (the same check that blocks a send), or while a chat prompt
+   * waits (the terminal draws its picker as the view switches). Off: a one-time hint.
+   */
+  private carryDraft(id: string): void {
+    const s = this.state.sessions.find((x) => x.id === id);
+    const chat = this.chats.get(id);
+    if (!s || !chat || s.mirror || s.status === 'exited') return;
+    const kept: string[] = [];
+    let text = chat.draft;
+    for (const token of chat.pastedImages) {
+      if (!text.includes(token)) continue;
+      kept.push(token);
+      text = text.split(token).join('');
+    }
+    text = text.replace(/[ \t]+\n/g, '\n').trim();
+    if (!text) return;
+    if (this.state.prefs?.chat?.carryDraft !== true) {
+      this.showHint('draft.carry');
+      return;
+    }
+    const snap = chat.getSnapshot();
+    if (inTerminalDialog(s) || snap.prompts.some((p) => !p.resolved)) {
+      this.showTermToast(id, 'Your draft stayed in chat: a dialog is open in the terminal.');
+      return;
+    }
+    // Bracketed paste never carries its own end marker inside.
+    const body = text.split('\x1b[201~').join('');
+    void this.ipc
+      .sessionWrite(id, utf8ToBase64(`\x1b[200~${body}\x1b[201~`))
+      .catch(() => undefined);
+    chat.replaceDraft(kept.length ? kept.join(' ') + ' ' : '');
+    const stayed = kept.length > 0 || snap.comments.length > 0;
+    this.showTermToast(
+      id,
+      stayed
+        ? 'Draft moved to the terminal. Images and comments stayed in chat.'
+        : 'Draft moved to the terminal.',
+    );
+  }
+
+  private termToastTimer = 0;
+
+  /** A short note above the terminal, gone after a few seconds. */
+  private showTermToast(id: string, text: string): void {
+    window.clearTimeout(this.termToastTimer);
+    this.set({ termToast: { id, text } });
+    this.termToastTimer = window.setTimeout(() => this.set({ termToast: null }), 5000);
   }
 
   openThread(thread: OpenThread | null): void {
@@ -540,7 +605,9 @@ export class AppStore {
     try {
       const data = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
       const { path } = await this.ipc.pasteImage(id, data, file.type || 'image/png');
-      this.chat(id).insertIntoDraft(shellQuotePath(path) + ' ');
+      const token = shellQuotePath(path);
+      this.chat(id).pastedImages.add(token);
+      this.chat(id).insertIntoDraft(token + ' ');
     } catch (err) {
       this.set({ error: `Could not paste the image: ${String(err)}` });
     }
@@ -1352,6 +1419,11 @@ export class AppStore {
     const id = this.state.hint;
     const vars = this.state.hintVars ?? {};
     this.set({ hint: null, hintVars: null });
+    if (id === 'draft.carry' && choice === 'carry-on') {
+      const chat = { autoScroll: true, ...this.state.prefs?.chat, carryDraft: true };
+      if (this.state.prefs) this.set({ prefs: { ...this.state.prefs, chat } });
+      void this.setPrefs({ chat });
+    }
     if (id === 'models.newer' && choice === 'swap' && vars.bundle && vars.entry && vars.newerId) {
       void this.swapEntryModel(vars.bundle, vars.entry, vars.newerId);
     }

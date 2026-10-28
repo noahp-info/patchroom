@@ -199,7 +199,7 @@ function Marks({ item, decor, actions }: { item: ChatItem; decor?: Decor; action
   );
 }
 
-function Who({ author, ms }: { author: 'user' | 'claude'; ms: number }) {
+function Who({ author, ms, tag }: { author: 'user' | 'claude'; ms: number; tag?: string }) {
   return (
     <>
       <div className={`av ${author === 'claude' ? 'bot' : 'user'}`} aria-hidden="true">
@@ -208,6 +208,11 @@ function Who({ author, ms }: { author: 'user' | 'claude'; ms: number }) {
       <div className="who">
         <b>{author === 'claude' ? 'Claude' : 'You'}</b>
         <time>{formatClock(ms)}</time>
+        {tag && (
+          <span className="msg-tag" data-testid="msg-tag">
+            {tag}
+          </span>
+        )}
       </div>
     </>
   );
@@ -308,7 +313,8 @@ function ItemBody({
   switch (item.kind) {
     case 'user':
       return (
-        <div className="body">
+        <div className="body" data-cancelled={item.cancelled ? 'true' : undefined}>
+          {item.cancelled && <span className="sr-only">Cancelled before Claude replied: </span>}
           {item.text && <UserText text={item.text} />}
           {item.images.length > 0 && (
             <div className="chatimgs">
@@ -352,6 +358,7 @@ function ItemBody({
               questions={item.questions}
               onAnswer={(a) => actions.answer(prompt.promptId, a)}
               onTerminal={() => actions.handoff(prompt.promptId)}
+              onShowTerminal={actions.showTerminal}
             />
           ) : (
             <div
@@ -396,6 +403,7 @@ function ItemBody({
               plan={item.plan}
               onAnswer={(a) => actions.answer(prompt.promptId, a)}
               onTerminal={() => actions.handoff(prompt.promptId)}
+              onShowTerminal={actions.showTerminal}
             />
           ) : (
             <div
@@ -559,6 +567,7 @@ function RowViewInner({ row, expanded, actions, decor }: RowViewProps) {
             prompt={row.prompt}
             onAnswer={(a) => actions.answer(row.prompt.promptId, a)}
             onTerminal={() => actions.handoff(row.prompt.promptId)}
+            onShowTerminal={actions.showTerminal}
           />
         </div>
       </div>
@@ -575,7 +584,13 @@ function RowViewInner({ row, expanded, actions, decor }: RowViewProps) {
       data-hit={decor?.hit ? 'true' : undefined}
       data-commented={decor?.commented ? 'true' : undefined}
     >
-      {named && <Who author={author} ms={row.ms} />}
+      {named && (
+        <Who
+          author={author}
+          ms={row.ms}
+          tag={item.kind === 'user' && item.cancelled ? 'Cancelled' : undefined}
+        />
+      )}
       <ItemBody item={item} expanded={expanded} prompt={row.prompt} actions={actions} />
       <Marks item={item} decor={decor} actions={actions} />
       {MARKABLE.has(item.kind) && (

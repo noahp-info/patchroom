@@ -144,6 +144,9 @@ pub struct QuestionPrompt {
     pub tool_input: Value,
     /// How long the bridge holds the TUI picker back before releasing it.
     pub wait: std::time::Duration,
+    /// Held through `PermissionRequest`: the TUI picker is already on screen, and a chat
+    /// answer allows that permission with the answers.
+    pub tui_shown: bool,
 }
 
 /// An ExitPlanMode plan approval waiting for a chat answer.
@@ -165,6 +168,8 @@ pub struct PlanPrompt {
     pub tool_input: Value,
     /// How long the bridge holds the TUI dialog back before releasing it.
     pub wait: std::time::Duration,
+    /// Held through `PermissionRequest`: the TUI dialog is already on screen.
+    pub tui_shown: bool,
 }
 
 /// A prompt left the pending table.

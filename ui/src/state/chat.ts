@@ -241,6 +241,15 @@ export class ChatModel {
     for (const fn of this.draftListeners) fn();
   }
 
+  /** Replace the composer text from outside (the draft moved to the terminal). */
+  replaceDraft(text: string): void {
+    this.setDraft(text);
+    for (const fn of this.draftListeners) fn();
+  }
+
+  /** Paths of images pasted into the draft, as inserted (quoted). They stay in chat on a carry. */
+  readonly pastedImages = new Set<string>();
+
   constructor(
     readonly id: string,
     private readonly ipc: Ipc,

@@ -75,11 +75,17 @@ pub struct EmojiPrefs {
 pub struct ChatPrefs {
     /// Logs follow new messages until the user scrolls up. Off: every log starts paused.
     pub auto_scroll: bool,
+    /// Switching a session from chat to terminal types the chat draft into claude's input
+    /// (without Enter) and clears it in chat. Off by default.
+    pub carry_draft: bool,
 }
 
 impl Default for ChatPrefs {
     fn default() -> Self {
-        Self { auto_scroll: true }
+        Self {
+            auto_scroll: true,
+            carry_draft: false,
+        }
     }
 }
 

@@ -1060,3 +1060,142 @@ fn no_user_statusline_shows_chips_only() {
         "{screen}"
     );
 }
+
+#[test]
+#[ignore = "needs the claude CLI and a login"]
+fn questions_never_time_out_reach_chat_on_the_permission_path_and_end_on_esc() {
+    let l = start(BASE);
+    l.ready();
+
+    // 1. A held question stays open: no timeout resolves it.
+    let mark = l.sink.len();
+    l.send(&ask_prompt("Apple, Pear", false));
+    let (i, q) = l.wait_prompt(mark, "question");
+    let pid = q["promptId"].as_str().unwrap().to_owned();
+    let tu = q["toolUseId"].as_str().unwrap().to_owned();
+    let early = l.sink.try_wait(i, Duration::from_secs(6), |e| match e {
+        UiEvent::PromptResolved { prompt_id, .. } if *prompt_id == pid => Some(()),
+        _ => None,
+    });
+    assert!(
+        early.is_none(),
+        "a held question must not resolve on its own"
+    );
+
+    // 2. Its hook dies (any reason the PreToolUse hold ends without the TUI taking over):
+    //    claude asks through PermissionRequest, and chat shows the same question again,
+    //    linked to the same item, never a raw permission card.
+    let killed = Proc::new("pkill")
+        .args(["-f", &l.hook_pattern()])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    let (i, by) = l.wait_resolved(i, &pid);
+    assert_eq!(by, "interrupt");
+    let (i, q2) = l.wait_prompt(i, "question");
+    assert_eq!(
+        q2["toolUseId"],
+        tu.as_str(),
+        "linked to the same item: {q2}"
+    );
+    assert_eq!(q2["questions"], q["questions"]);
+    assert!(l
+        .sink
+        .all_named("prompt:pending")
+        .iter()
+        .all(|p| p["kind"] != "permission"));
+    let text = q2["questions"][0]["question"].as_str().unwrap().to_owned();
+    let label = q2["questions"][0]["options"][1]["label"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let pid2 = q2["promptId"].as_str().unwrap().to_owned();
+    let mut answers = BTreeMap::new();
+    answers.insert(text.clone(), label.clone());
+    l.m.prompt_answer(&l.id, &pid2, PromptAnswer::Questions { answers })
+        .unwrap();
+    let (i, by) = l.wait_resolved(i, &pid2);
+    assert_eq!(by, "chat");
+    let (i, item) = l.wait_item(i, "answered question", |x| {
+        x["kind"] == "question" && x["state"] == "answered" && x["toolUseId"] == tu.as_str()
+    });
+    assert_eq!(item["answers"][&text], label.as_str());
+    let i = settle_models_turn(&l, i);
+    l.no_hook_processes();
+
+    // 3. Esc (the Stop button) interrupts a held question: no second card follows.
+    l.send(&ask_prompt("Apple, Pear", false));
+    let (i, q3) = l.wait_prompt(i, "question");
+    let pid3 = q3["promptId"].as_str().unwrap().to_owned();
+    std::thread::sleep(Duration::from_millis(500));
+    l.keys(b"\x1b");
+    let (i, by) = l.wait_resolved(i, &pid3);
+    assert_eq!(by, "interrupt");
+    let again = l.sink.try_wait(i, Duration::from_secs(5), |e| match e {
+        UiEvent::PromptPending { payload, .. } => Some(payload.clone()),
+        _ => None,
+    });
+    assert!(again.is_none(), "no card after an interrupt: {again:?}");
+    l.no_hook_processes();
+
+    // 4. Quit with a question held: the quit is prompt and leaves no hook behind; the
+    //    session resumes after the restart.
+    let i = l.sink.len();
+    l.send(&ask_prompt("Apple, Pear", false));
+    let (_, _q4) = l.wait_prompt(i, "question");
+    let start = Instant::now();
+    l.m.shutdown();
+    assert!(
+        start.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        start.elapsed()
+    );
+    assert!(pgrep(&l.hook_pattern()).is_empty());
+    let l2 = l.reopen();
+    l2.m.resume(&l2.id, None, None).unwrap();
+    l2.ready();
+    let mark = l2.sink.len();
+    l2.send("Reply with exactly the single word: back");
+    let (_, a) = l2.wait_item(mark, "assistant reply after resume", |x| {
+        x["kind"] == "assistant"
+    });
+    println!("after resume: {a}");
+}
+
+#[test]
+#[ignore = "needs the claude CLI and a login"]
+fn a_prompt_cancelled_with_esc_before_any_reply_is_marked_cancelled() {
+    let l = start(BASE);
+    l.ready();
+    let mark = l.sink.len();
+    l.send("Write a 300 word essay about the color teal.");
+    // Esc before Claude replies: Claude Code puts the text back in its prompt.
+    let (i, first) = l.wait_item(mark, "the first prompt", |x| {
+        x["kind"] == "user" && x["text"].as_str().is_some_and(|t| t.contains("teal"))
+    });
+    // Wait until the turn runs (UserPromptSubmit sets busy), then press Esc.
+    l.sink.wait(mark, T, "busy", |e| match e {
+        UiEvent::Status { status, .. } if format!("{status:?}").to_lowercase().contains("busy") => {
+            Some(())
+        }
+        _ => None,
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    l.keys(b"\x1b");
+    std::thread::sleep(Duration::from_secs(2));
+    // Edit and send again.
+    l.keys(b" Keep it to one sentence.");
+    std::thread::sleep(Duration::from_millis(400));
+    l.keys(b"\r");
+    let (i, again) = l.wait_item(i, "the cancelled prompt, marked", |x| {
+        x["key"] == first["key"] && x["cancelled"] == true
+    });
+    println!("cancelled: {again}");
+    let (_, second) = l.wait_item(i.saturating_sub(1), "the re-sent prompt", |x| {
+        x["kind"] == "user"
+            && x["text"]
+                .as_str()
+                .is_some_and(|t| t.contains("one sentence"))
+    });
+    assert!(second.get("cancelled").is_none(), "{second}");
+}

@@ -353,6 +353,17 @@ impl Adapter {
                 } if name == "ExitPlanMode" && !exclude.contains(tool_use_id) => {
                     Some(tool_use_id.clone())
                 }
+                ItemBody::Question {
+                    tool_use_id,
+                    questions,
+                    state: crate::item::QuestionState::Pending,
+                    ..
+                } if name == "AskUserQuestion"
+                    && !exclude.contains(tool_use_id)
+                    && same_questions(questions, input) =>
+                {
+                    Some(tool_use_id.clone())
+                }
                 _ => None,
             })
     }
@@ -635,6 +646,18 @@ impl Drop for Watcher {
     }
 }
 
+/// Do `questions` match the `questions` of an AskUserQuestion tool input (by question text)?
+fn same_questions(questions: &[crate::item::QuestionSpec], input: &Value) -> bool {
+    let Some(asked) = input.get("questions").and_then(Value::as_array) else {
+        return false;
+    };
+    asked.len() == questions.len()
+        && asked
+            .iter()
+            .zip(questions)
+            .all(|(a, q)| a.get("question").and_then(Value::as_str) == Some(q.question.as_str()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -854,5 +877,38 @@ mod tests {
             }
         ));
         assert!(a.set_tool_pending("t1", true).is_none());
+    }
+
+    #[test]
+    fn find_open_tool_links_a_question_by_its_questions() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("s.jsonl");
+        let input = json!({"questions":[{"question":"Pick?","header":"H","multiSelect":false,
+            "options":[{"label":"A","description":""},{"label":"B","description":""}]}]});
+        append(
+            &p,
+            &json!({"type":"assistant","uuid":"x","message":{"content":[
+                {"type":"tool_use","id":"tq","name":"AskUserQuestion","input":input}]}}),
+        );
+        let mut a = Adapter::for_file(&p);
+        a.poll();
+        // The permission path may add fields; the questions identify the call.
+        let mut with_more = input.clone();
+        with_more["answers"] = json!({});
+        assert_eq!(
+            a.find_open_tool("AskUserQuestion", &with_more, &[])
+                .as_deref(),
+            Some("tq")
+        );
+        assert!(a
+            .find_open_tool(
+                "AskUserQuestion",
+                &json!({"questions":[{"question":"Other?"}]}),
+                &[]
+            )
+            .is_none());
+        assert!(a
+            .find_open_tool("AskUserQuestion", &input, &["tq".into()])
+            .is_none());
     }
 }

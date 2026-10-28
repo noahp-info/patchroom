@@ -257,7 +257,7 @@ export function App() {
                   aria-label="Chat"
                   title="Chat (\u2318J)"
                   aria-pressed={view === 'chat'}
-                  onClick={() => store.setView(active.id, 'chat')}
+                  onClick={() => store.switchView(active.id, 'chat')}
                 >
                   <Icon name="chat" />
                 </button>
@@ -267,7 +267,7 @@ export function App() {
                   title={active.mirror ? 'Runs in another terminal' : 'Terminal (\u2318J)'}
                   aria-pressed={view === 'terminal'}
                   disabled={!!active.mirror}
-                  onClick={() => store.setView(active.id, 'terminal')}
+                  onClick={() => store.switchView(active.id, 'terminal')}
                 >
                   <Icon name="term" />
                 </button>
@@ -390,6 +390,12 @@ export function App() {
               <button type="button" onClick={() => store.setView(active.id, 'chat')}>
                 Back to chat
               </button>
+            </div>
+          )}
+
+          {active && view === 'terminal' && state.termToast?.id === active.id && (
+            <div className="tnote" role="status" data-testid="term-toast">
+              <span>{state.termToast.text}</span>
             </div>
           )}
 

@@ -155,7 +155,7 @@ export interface Prefs {
   /** How emoji in chat are drawn. */
   emoji?: { chat: EmojiFlavor };
   /** Chat view: logs follow new messages. */
-  chat?: { autoScroll: boolean };
+  chat?: { autoScroll: boolean; carryDraft?: boolean };
   /** Fonts per area, and the chat font per section or session (Settings > Themes > Fonts). */
   fonts?: FontPrefs;
 }

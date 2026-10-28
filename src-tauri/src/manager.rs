@@ -609,8 +609,14 @@ impl Manager {
         let interrupt = is_interrupt(&bytes);
         let mode_key = bytes.windows(3).any(|w| w == b"\x1b[Z");
         // Typing in the terminal while an AskUserQuestion picker is hidden behind the hook:
-        // hand it to the TUI first and give it a moment to draw before the keys land.
-        if chat::looks_like_keystroke(&bytes) && self.release_questions_to_terminal(id) {
+        // hand it to the TUI first and give it a moment to draw before the keys land. Esc or
+        // Ctrl+C (the Stop button sends Esc) then cancels it there: the prompt is interrupted.
+        let resolution = if interrupt {
+            patchroom_bridge::Resolution::TurnEnded
+        } else {
+            patchroom_bridge::Resolution::Terminal
+        };
+        if chat::looks_like_keystroke(&bytes) && self.release_questions(id, resolution) {
             self.enqueue(id, WriteJob::Sleep(chat::PICKER_DRAW_DELAY))?;
         }
         self.enqueue(id, WriteJob::Bytes(bytes))?;

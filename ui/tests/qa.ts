@@ -40,10 +40,11 @@ export async function overlapFindings(page: Page, opts: OverlapOptions = {}): Pr
       const skip = ignore.length ? ignore.join(', ') : null;
       const CTL = 'button, input, select, textarea, [role="button"], [role="switch"], a[href]';
 
-      // The visible part of a box: clipped by every ancestor that clips overflow.
-      const clipOf = (el: Element, r: DOMRect) => {
+      // The visible part of a box: clipped by every ancestor that clips overflow. A text box
+      // is also clipped by its own element (an ellipsized label's text runs past its box).
+      const clipOf = (el: Element, r: DOMRect, self = false) => {
         let { left, top, right, bottom } = r;
-        for (let p = el.parentElement; p; p = p.parentElement) {
+        for (let p = self ? el : el.parentElement; p; p = p.parentElement) {
           const cs = getComputedStyle(p);
           if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible' || cs.contain === 'paint') {
             const pr = p.getBoundingClientRect();
@@ -120,7 +121,7 @@ export async function overlapFindings(page: Page, opts: OverlapOptions = {}): Pr
         range.selectNodeContents(n);
         for (const r of range.getClientRects()) {
           if (r.width < 1 || r.height < 1) continue;
-          const box = clipOf(el, r);
+          const box = clipOf(el, r, true);
           if (!box) continue;
           ink.push({
             el,

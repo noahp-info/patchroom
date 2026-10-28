@@ -172,6 +172,10 @@ pub enum ItemBody {
         text: String,
         /// Attached images.
         images: Vec<ImageRef>,
+        /// The prompt was cancelled (Esc) before Claude replied or used a tool: the next
+        /// prompt or an interrupt marker followed it with nothing in between.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        cancelled: bool,
     },
     /// Assistant text (markdown).
     Assistant {
@@ -398,6 +402,7 @@ mod tests {
             ItemBody::User {
                 text: "  fix the\nlogin bug ".into(),
                 images: vec![],
+                cancelled: false,
             },
         );
         assert_eq!(user.search_text().as_deref(), Some("fix the\nlogin bug"));
@@ -471,6 +476,7 @@ mod tests {
                     image_ref: "main@0#0".into(),
                     media_type: "image/png".into(),
                 }],
+                cancelled: true,
             },
             ItemBody::Thinking { text: "t".into() },
             ItemBody::Question {

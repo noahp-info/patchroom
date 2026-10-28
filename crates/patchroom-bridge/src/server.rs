@@ -27,6 +27,19 @@ use crate::transcript;
 /// `sun_path` limit on macOS is 104 bytes including the NUL; Linux is 108.
 const MAX_SOCKET_PATH: usize = 100;
 
+/// How long a question or plan is held for a chat answer: in practice, forever.
+///
+/// A question or plan stays answerable in chat until it is answered (chat or terminal), the
+/// person interrupts, or the session or hook goes away. Claude Code still needs a number for
+/// the hook's `timeout`, and the bridge always speaks before that deadline, so this is the
+/// bound both sides use. It stays well under Node's timer ceiling (2^31 - 1 ms, about 24.8
+/// days): a larger hook timeout overflows there and fires at once.
+pub const ASK_HOLD: Duration = Duration::from_secs(14 * 24 * 60 * 60);
+
+/// How long a question or plan handed to the TUI is remembered, so the `PermissionRequest`
+/// that follows for the same call is not shown in chat a second time.
+const HANDED_TTL: Duration = Duration::from_secs(10 * 60);
+
 /// Bridge settings.
 #[derive(Debug, Clone)]
 pub struct BridgeConfig {
@@ -34,7 +47,8 @@ pub struct BridgeConfig {
     pub socket_path: PathBuf,
     /// How long a PermissionRequest hook is held for a chat answer before it releases to the TUI.
     pub permission_wait: Duration,
-    /// How long an AskUserQuestion hook hides the TUI picker while waiting for a chat answer.
+    /// How long an AskUserQuestion or ExitPlanMode hook is held for a chat answer. Defaults
+    /// to [`ASK_HOLD`], which means no timeout in practice.
     pub ask_wait: Duration,
     /// How often pending permission prompts are checked against their transcript.
     pub transcript_poll: Duration,
@@ -45,7 +59,7 @@ impl Default for BridgeConfig {
         Self {
             socket_path: PathBuf::new(),
             permission_wait: Duration::from_secs(300),
-            ask_wait: Duration::from_secs(120),
+            ask_wait: ASK_HOLD,
             transcript_poll: Duration::from_millis(200),
         }
     }
@@ -185,9 +199,19 @@ struct Pending {
     transcript_path: Option<PathBuf>,
     questions: Vec<Question>,
     suggestions: Value,
+    /// Held through `PermissionRequest`: the TUI picker or dialog is already on screen.
+    tui_shown: bool,
     /// The event announcing this prompt, kept so a consumer that missed it can be given it again.
     event: BridgeEvent,
     tx: Sender<(Outcome, Resolution)>,
+}
+
+/// A question or plan whose PreToolUse hold ended with the TUI taking over.
+struct Handed {
+    session_id: Option<String>,
+    tool_name: String,
+    call: Value,
+    at: Instant,
 }
 
 #[derive(Default)]
@@ -209,6 +233,7 @@ struct Inner {
     next_id: AtomicU64,
     subscribers: Mutex<Vec<Sender<BridgeEvent>>>,
     pending: Mutex<HashMap<PromptId, Pending>>,
+    handed: Mutex<Vec<Handed>>,
     sessions: Mutex<Sessions>,
 }
 
@@ -249,6 +274,7 @@ impl Bridge {
             next_id: AtomicU64::new(1),
             subscribers: Mutex::new(Vec::new()),
             pending: Mutex::new(HashMap::new()),
+            handed: Mutex::new(Vec::new()),
             sessions: Mutex::new(Sessions::default()),
         });
         let mut threads = Vec::new();
@@ -352,7 +378,9 @@ impl Bridge {
 
     /// Answer a pending AskUserQuestion prompt. First answer wins.
     ///
-    /// Every question needs an answer, keyed by the question text.
+    /// Every question needs an answer, keyed by the question text. A question held through
+    /// `PreToolUse` gets `updatedInput` with `answers`. One held through `PermissionRequest`
+    /// (the TUI picker is already up) gets an allow decision with the same `updatedInput`.
     pub fn answer_question(
         &self,
         id: PromptId,
@@ -374,6 +402,13 @@ impl Bridge {
                 input = json!({});
             }
             input["answers"] = json!(answers.0);
+            if p.tui_shown {
+                // The picker is the TUI's permission dialog: allow it with the answers.
+                return Ok(json!({"hookSpecificOutput": {
+                    "hookEventName": "PermissionRequest",
+                    "decision": {"behavior": "allow", "updatedInput": input},
+                }}));
+            }
             Ok(json!({"hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "allow",
@@ -711,18 +746,27 @@ impl Inner {
         if let Some(status) = status_for(&info) {
             self.set_status(&session, status, StatusSource::Hook);
         }
-        let kind = match info.event.as_str() {
-            // The plan dialog cannot be answered by a PermissionRequest decision. If this
-            // fires, the PreToolUse hold already ended and the dialog is the user's.
-            "PermissionRequest" if info.is_exit_plan_mode() => {
-                return ServerMessage::Decision {
-                    output: None,
-                    resolution: Resolution::NoChat,
-                };
+        let (kind, tui_shown) = match info.event.as_str() {
+            // A question or plan that reaches the permission path (its PreToolUse hold ended,
+            // or never ran) is still a question or plan card. The TUI shows the picker or
+            // dialog meanwhile. When the TUI just took the call over from a PreToolUse hold,
+            // it is the user's already: no second card.
+            "PermissionRequest" if info.is_ask_user_question() || info.is_exit_plan_mode() => {
+                if self.take_handed(&info) {
+                    return ServerMessage::Decision {
+                        output: None,
+                        resolution: Resolution::Terminal,
+                    };
+                }
+                if info.is_ask_user_question() {
+                    (PendingKind::Question, true)
+                } else {
+                    (PendingKind::Plan, true)
+                }
             }
-            "PermissionRequest" => PendingKind::Permission,
-            "PreToolUse" if info.is_ask_user_question() => PendingKind::Question,
-            "PreToolUse" if info.is_exit_plan_mode() => PendingKind::Plan,
+            "PermissionRequest" => (PendingKind::Permission, false),
+            "PreToolUse" if info.is_ask_user_question() => (PendingKind::Question, false),
+            "PreToolUse" if info.is_exit_plan_mode() => (PendingKind::Plan, false),
             _ => return ServerMessage::Ack,
         };
         if !self.chat_attached.load(Ordering::SeqCst) {
@@ -731,7 +775,7 @@ impl Inner {
                 resolution: Resolution::NoChat,
             };
         }
-        self.hold_for_answer(stream, session, info, kind, wait_ms)
+        self.hold_for_answer(stream, session, info, kind, tui_shown, wait_ms)
     }
 
     fn hold_for_answer(
@@ -740,6 +784,7 @@ impl Inner {
         session: SessionRef,
         info: HookInfo,
         kind: PendingKind,
+        tui_shown: bool,
         wait_ms: u64,
     ) -> ServerMessage {
         let configured = match kind {
@@ -786,6 +831,7 @@ impl Inner {
                     .to_owned(),
                 tool_input: info.tool_input.clone(),
                 wait,
+                tui_shown,
             }),
             PendingKind::Question => BridgeEvent::Question(QuestionPrompt {
                 id,
@@ -794,6 +840,7 @@ impl Inner {
                 questions: questions.clone(),
                 tool_input: info.tool_input.clone(),
                 wait,
+                tui_shown,
             }),
         };
         lock(&self.pending).insert(
@@ -807,13 +854,15 @@ impl Inner {
                 transcript_path: info.transcript_path.clone(),
                 questions,
                 suggestions: info.permission_suggestions.clone(),
+                tui_shown,
                 event: event.clone(),
                 tx,
             },
         );
         self.emit(event);
 
-        let deadline = Instant::now() + wait;
+        // `None`: the wait outlasts any clock this process will see.
+        let deadline = Instant::now().checked_add(wait);
         let (outcome, resolution) = loop {
             match rx.recv_timeout(Duration::from_millis(40)) {
                 Ok(done) => break done,
@@ -826,7 +875,7 @@ impl Inner {
                 Some(Resolution::HookGone)
             } else if self.shutdown.load(Ordering::SeqCst) {
                 Some(Resolution::Shutdown)
-            } else if Instant::now() >= deadline {
+            } else if deadline.is_some_and(|d| Instant::now() >= d) {
                 Some(Resolution::Timeout)
             } else {
                 None
@@ -860,6 +909,22 @@ impl Inner {
         let Some(p) = lock(&self.pending).remove(&id) else {
             return false;
         };
+        let to_tui = matches!(outcome, Outcome::Release)
+            && matches!(
+                resolution,
+                Resolution::Chat | Resolution::Terminal | Resolution::TurnEnded
+            );
+        if to_tui && p.kind != PendingKind::Permission && !p.tui_shown {
+            // The TUI takes this call over now. Its PermissionRequest is the user's.
+            let mut handed = lock(&self.handed);
+            handed.retain(|h| h.at.elapsed() < HANDED_TTL);
+            handed.push(Handed {
+                session_id: p.session.session_id.clone(),
+                tool_name: p.tool_name.clone(),
+                call: call_key(&p.tool_name, &p.tool_input),
+                at: Instant::now(),
+            });
+        }
         let _ = p.tx.send((outcome, resolution));
         self.emit(BridgeEvent::Resolved(PromptResolved {
             id,
@@ -867,6 +932,18 @@ impl Inner {
             resolution,
         }));
         true
+    }
+
+    /// Was this question or plan handed to the TUI from a PreToolUse hold? Forgets it.
+    fn take_handed(&self, info: &HookInfo) -> bool {
+        let tool = info.tool_name.as_deref().unwrap_or_default();
+        let call = call_key(tool, &info.tool_input);
+        let mut handed = lock(&self.handed);
+        handed.retain(|h| h.at.elapsed() < HANDED_TTL);
+        let hit = handed
+            .iter()
+            .position(|h| h.tool_name == tool && h.session_id == info.session_id && h.call == call);
+        hit.map(|i| handed.remove(i)).is_some()
     }
 
     fn answer(
@@ -910,7 +987,11 @@ impl Inner {
                             (Some(a), Some(b)) => {
                                 a == b || (same_tool && p.tool_input == info.tool_input)
                             }
-                            _ => same_tool && p.tool_input == info.tool_input,
+                            _ => {
+                                same_tool
+                                    && call_key(&p.tool_name, &p.tool_input)
+                                        == call_key(&p.tool_name, &info.tool_input)
+                            }
                         };
                         if matched {
                             hits.push((*id, Resolution::Terminal));
@@ -967,6 +1048,17 @@ impl Inner {
     }
 }
 
+/// What identifies one call of `tool`: the questions of an AskUserQuestion and the plan of an
+/// ExitPlanMode (their input gains `answers` and other fields on the way), else the whole input.
+fn call_key(tool: &str, input: &Value) -> Value {
+    let field = match tool {
+        "AskUserQuestion" => "questions",
+        "ExitPlanMode" => "plan",
+        _ => return input.clone(),
+    };
+    input.get(field).cloned().unwrap_or(Value::Null)
+}
+
 /// True when the hook closed its end (it sends nothing after the request line).
 fn peer_gone(stream: &UnixStream) -> bool {
     if stream.set_nonblocking(true).is_err() {
@@ -1015,7 +1107,7 @@ fn transcript_watcher(inner: Arc<Inner>) {
             let claimed = map.values().filter_map(|p| p.tool_use_id.clone()).collect();
             let rows = map
                 .iter()
-                .filter(|(_, p)| p.kind == PendingKind::Permission)
+                .filter(|(_, p)| p.kind == PendingKind::Permission || p.tui_shown)
                 .filter_map(|(id, p)| {
                     p.transcript_path.clone().map(|path| {
                         (

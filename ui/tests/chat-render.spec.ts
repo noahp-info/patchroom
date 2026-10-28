@@ -35,6 +35,68 @@ test.describe('chat view', () => {
     expect(errs).toEqual([]);
   });
 
+  test('a prompt cancelled before Claude replied is struck through and tagged Cancelled', async ({
+    page,
+  }) => {
+    const errs = watchErrors(page);
+    const t = Date.UTC(2026, 9, 28, 12, 0, 0);
+    await openChat(page, [
+      {
+        key: 'u1',
+        ts: t,
+        kind: 'user',
+        text: 'Write an essay about teal.',
+        images: [],
+        cancelled: true,
+      },
+      {
+        key: 'u2',
+        ts: t + 3000,
+        kind: 'user',
+        text: 'Write an essay about teal. Keep it short.',
+        images: [],
+      },
+      { key: 'a1', ts: t + 5000, kind: 'assistant', text: 'Teal sits between blue and green.' },
+      // Work happened before this interrupt: the prompt stays normal, the turn says Interrupted.
+      { key: 'u3', ts: t + 9000, kind: 'user', text: 'Now refactor the parser.', images: [] },
+      {
+        key: 't1',
+        ts: t + 9500,
+        kind: 'tool',
+        toolUseId: 'tu1',
+        name: 'Bash',
+        input: { command: 'ls' },
+        state: 'interrupted',
+      },
+      {
+        key: 's1',
+        ts: t + 9600,
+        kind: 'system',
+        subtype: 'interrupted',
+        text: '[Request interrupted by user]',
+      },
+    ]);
+    const cancelled = page.locator('.msg[data-key="u1"]');
+    await expect(cancelled.getByTestId('msg-tag')).toHaveText('Cancelled');
+    // Next to the time, in the name line.
+    await expect(cancelled.locator('.who time')).toBeVisible();
+    const text = cancelled.locator('.usertext');
+    await expect(text).toHaveText('Write an essay about teal.');
+    await expect(text).toHaveCSS('text-decoration-line', 'line-through');
+    expect(await text.evaluate((e) => getComputedStyle(e).userSelect)).not.toBe('none');
+    // Screen readers hear the state, not only see a line through the text.
+    await expect(cancelled.locator('.body .sr-only')).toHaveText(/Cancelled/);
+    // The re-sent prompt is a normal message with its own name line and time.
+    const resent = page.locator('.msg[data-key="u2"]');
+    await expect(resent).toHaveClass(/head/);
+    await expect(resent.getByTestId('msg-tag')).toHaveCount(0);
+    await expect(resent.locator('.usertext')).toHaveCSS('text-decoration-line', 'none');
+    // A prompt Claude already worked on stays normal.
+    await expect(page.locator('.msg[data-key="u3"] [data-testid="msg-tag"]')).toHaveCount(0);
+    await expect(page.locator('.msg[data-key="s1"]')).toContainText('Interrupted');
+    expect(errs).toEqual([]);
+  });
+
   test('every ChatItem kind and tool state renders', async ({ page }) => {
     const errs = watchErrors(page);
     await openChat(page);
