@@ -666,8 +666,11 @@ export interface Prefs {
   updates?: UpdatePrefs;
   /** How emoji in chat are drawn. Absent: apple. */
   emoji?: { chat: EmojiFlavor };
-  /** Chat view. Absent: logs follow new messages. */
-  chat?: { autoScroll: boolean };
+  /**
+   * Chat view. Absent: logs follow new messages, and the draft stays in chat on a switch to the
+   * terminal (`carryDraft` on: it is typed into claude's input, unsent).
+   */
+  chat?: { autoScroll: boolean; carryDraft?: boolean };
   /** Fonts per area, and the chat font per section or session. Absent: base defaults. */
   fonts?: FontPrefs;
 }

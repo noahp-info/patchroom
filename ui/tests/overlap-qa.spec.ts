@@ -206,6 +206,21 @@ for (const scheme of SCHEMES) {
         m.resolvePrompt(x, 'qa-rawp', 'interrupt');
       }, sid);
 
+      // A chat draft and the switch to the terminal: first the one-time hint (carry off), then
+      // the "Draft moved" note (carry on), each over the terminal view.
+      const box = page.getByTestId('composer-input');
+      await box.fill('refactor the ledger reconcile job and keep the public API stable');
+      await page.keyboard.press('Meta+j');
+      await expect(page.getByTestId('hint')).toContainText('Your draft stayed in chat');
+      await check('draft hint over the terminal');
+      await page.getByTestId('hint').getByRole('button', { name: 'Turn on' }).click();
+      await page.keyboard.press('Meta+j');
+      await page.keyboard.press('Meta+j');
+      await expect(page.getByTestId('term-toast')).toBeVisible();
+      await check('draft moved note over the terminal');
+      await page.keyboard.press('Meta+j');
+      await expect(page.getByTestId('view-label')).toHaveText('Chat');
+
       if (!size.pane) return;
 
       // Every overlay draws over the pane: the native viewer steps aside for each.

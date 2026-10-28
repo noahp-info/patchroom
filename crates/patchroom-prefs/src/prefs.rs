@@ -1096,6 +1096,10 @@ mod tests {
         assert!(!p.updates.check_app && !p.updates.check_models && !p.updates.asked_models);
         assert!(p.models.bundles.is_empty());
         assert!(p.chat.auto_scroll, "logs follow new messages by default");
+        assert!(
+            !p.chat.carry_draft,
+            "the chat draft stays in chat by default"
+        );
         assert_eq!(p.emoji.chat, crate::models::Flavor::Apple);
         let p = Prefs::default()
             .patched(&json!({

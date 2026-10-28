@@ -63,6 +63,11 @@ export const HINTS = {
     action: { label: 'Show fonts', tab: 'themes', setting: 'themes.fonts' },
     place: 'settings',
   },
+  'draft.carry': {
+    text: 'Your draft stayed in chat. Patchroom can type it into the terminal when you switch.',
+    action: { label: 'Chat settings', tab: 'themes', setting: 'themes.carrydraft' },
+    choices: [{ label: 'Turn on', choice: 'carry-on' }],
+  },
   restart: {
     text: 'Patchroom restarted and reopened {count}. Turn on update checks in Settings > Updates.',
     action: { label: 'Open Updates settings', tab: 'updates' },

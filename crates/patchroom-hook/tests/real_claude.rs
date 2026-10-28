@@ -708,3 +708,38 @@ fn plan_on_the_permission_path_is_a_plan_card() {
     assert!(line.to_lowercase().contains("approved"), "{line}");
     assert_no_hooks_left(&live.token);
 }
+
+#[test]
+#[ignore = "drives the real claude CLI (haiku); run with --ignored"]
+fn a_bracketed_paste_lands_as_one_unsent_input() {
+    // Patchroom carries a multi-line chat draft to the terminal as one bracketed paste.
+    let live = start_live(patchroom_bridge::ASK_HOLD);
+    assert!(
+        String::from_utf8_lossy(&live.session.screen.lock().unwrap()).contains("\x1b[?2004h"),
+        "claude turns bracketed paste on"
+    );
+    live.session
+        .send(b"\x1b[200~Reply with only the word ok.\nThis second line is part of it.\x1b[201~");
+    // Nothing is submitted by the paste itself, newline included.
+    std::thread::sleep(Duration::from_secs(3));
+    while let Ok(ev) = live.rx.try_recv() {
+        if let BridgeEvent::Hook(h) = ev {
+            assert_ne!(
+                h.event, "UserPromptSubmit",
+                "the paste submitted the prompt"
+            );
+        }
+    }
+    live.session.send(b"\r");
+    wait_for(&live.rx, &live.session, "UserPromptSubmit", |e| match e {
+        BridgeEvent::Hook(h) if h.event == "UserPromptSubmit" => Some(()),
+        _ => None,
+    });
+    // One prompt, both lines.
+    wait_file_contains(
+        &live.transcript,
+        r"Reply with only the word ok.\nThis second line is part of it.",
+        "the pasted prompt as one message",
+    );
+    assert_no_hooks_left(&live.token);
+}
