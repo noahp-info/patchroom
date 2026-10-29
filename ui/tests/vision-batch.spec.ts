@@ -46,7 +46,7 @@ async function setup(page: Page, width: number, height: number, offered = true) 
           perSection: {},
           perSession: {},
           labels: { 'claude-fable-5-1': { text: 'Deep', emoji: '\u{1F9E0}' } },
-          groupLabels: { cloud: '☁️ {name}', local: '\u{1F3E0} {name}' },
+          groupLabels: { cloud: '☁️ {name}', local: '\u{1F4BB} {name}' },
           seen: ['claude-opus-5-5'],
           offered: offered ? ['claude-sonnet-5-5', 'claude-opus-5-5'] : [],
         },

@@ -14,6 +14,7 @@ export const SECTIONS = [
   { id: 'dnd', label: 'Do Not Disturb' },
   { id: 'hooks', label: 'Sound hooks' },
   { id: 'links', label: 'Links' },
+  { id: 'history', label: 'History' },
   { id: 'models', label: 'Models' },
   { id: 'updates', label: 'Updates' },
   { id: 'accounts', label: 'Accounts' },
@@ -184,6 +185,22 @@ export const SETTINGS: readonly SettingEntry[] = [
     description: 'Text and an emoji in front of a module value.',
     keywords: ['label', 'emoji', 'module'],
   },
+  {
+    id: 'statusbar.options',
+    section: 'statusbar',
+    label: 'Status bar module options',
+    description:
+      'Folder name or path, context meter, cost rounding. Open with the gear on a module.',
+    keywords: ['options', 'configure', 'folder', 'path', 'context', 'meter', 'cost', 'decimals'],
+    conditional: true,
+  },
+  {
+    id: 'statusbar.suggest',
+    section: 'statusbar',
+    label: 'Suggest a module',
+    description: 'Opens a GitHub issue form to propose a module or submit a script for review.',
+    keywords: ['suggest', 'new module', 'script', 'submit', 'request', 'github', 'issue'],
+  },
 
   // Notifications
   {
@@ -300,6 +317,15 @@ export const SETTINGS: readonly SettingEntry[] = [
     keywords: ['pin', 'artifact'],
   },
 
+  // History
+  {
+    id: 'history.group',
+    section: 'history',
+    label: 'Group History by',
+    description: 'Folder, date, model or branch. The History header changes it too.',
+    keywords: ['history', 'sessions', 'group', 'folder', 'date', 'model', 'branch', 'resume'],
+  },
+
   // Models
   {
     id: 'models.ask',
@@ -330,6 +356,20 @@ export const SETTINGS: readonly SettingEntry[] = [
     label: 'Model labels',
     description: 'How the model chip names models, cloud or local.',
     keywords: ['label', 'cloud', 'local', 'name'],
+  },
+  {
+    id: 'models.labels.cloud',
+    section: 'models',
+    label: 'Cloud model label',
+    description: 'Icon and name, name only, or your own template.',
+    keywords: ['label', 'cloud', 'icon', 'emoji', 'name only', 'template', 'chip'],
+  },
+  {
+    id: 'models.labels.local',
+    section: 'models',
+    label: 'Local model label',
+    description: 'Icon and name, name only, or your own template.',
+    keywords: ['label', 'local', 'laptop', 'icon', 'emoji', 'name only', 'template', 'chip'],
   },
 
   // Updates

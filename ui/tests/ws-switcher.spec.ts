@@ -8,8 +8,13 @@ const DMS = [
   { id: 'd', name: 'delta-infra', cwd: '/work/infra/delta-infra' },
 ];
 
+/** Session rows; the closing "Search messages for" row is its own locator. */
 const options = (page: Page) =>
-  page.getByRole('dialog', { name: 'Quick switcher' }).getByRole('option');
+  page
+    .getByRole('dialog', { name: 'Quick switcher' })
+    .locator('[role="option"]:not([data-search-row])');
+const searchRow = (page: Page) =>
+  page.getByRole('dialog', { name: 'Quick switcher' }).locator('[data-search-row]');
 const active = (page: Page) => page.evaluate(() => window.__PR_STORE__!.getSnapshot().activeId);
 
 test.describe('workspace: Cmd+K switcher (checklist 3)', () => {
@@ -204,5 +209,86 @@ test.describe('workspace: Activity view (checklist 5)', () => {
     await expect(page.getByTestId('activity')).toContainText('Nothing is waiting on you.');
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('activity')).toHaveCount(0);
+  });
+});
+
+test.describe('workspace: Cmd+K first messages and message search', () => {
+  /** History rows that tie open DMs to their first message. */
+  async function seedFirstMessages(page: Page) {
+    await page.evaluate(() => {
+      const m = window.__PR_MOCK__!;
+      const base = m.historyRows[0];
+      m.historyRows = [
+        {
+          ...base,
+          sessionId: 'h-a',
+          dmId: 'a',
+          firstPrompt: 'Fix the login race in the auth flow',
+        },
+        { ...base, sessionId: 'h-b', dmId: 'b', firstPrompt: 'Make the header sticky on scroll' },
+        { ...base, sessionId: 'h-c', dmId: 'c', firstPrompt: 'Document the infra deploy steps' },
+      ];
+    });
+    await page.evaluate(() => window.__PR_STORE__!.loadHistory());
+  }
+
+  test('an open session matches whole words of its first message', async ({ page }) => {
+    await openSeeded(page, DMS);
+    await seedFirstMessages(page);
+    await page.keyboard.press('Meta+k');
+    await page.keyboard.type('login race');
+    await expect(options(page)).toHaveCount(1);
+    await expect(options(page).first()).toContainText('alpha-api');
+    await expect(options(page).first().getByTestId('qs-prompt')).toContainText(
+      'Fix the login race',
+    );
+    await expect(options(page).first().locator('[data-testid="qs-prompt"] mark')).toHaveText([
+      'login',
+      'race',
+    ]);
+    // Letters scattered across words are not a first-message match.
+    await page.getByRole('combobox', { name: 'Jump to a session' }).fill('lgnrc');
+    await expect(options(page)).toHaveCount(0);
+    // A word inside a longer word is not a whole word; the last word may be a prefix.
+    await page.getByRole('combobox', { name: 'Jump to a session' }).fill('ticky header');
+    await expect(options(page)).toHaveCount(0);
+    await page.getByRole('combobox', { name: 'Jump to a session' }).fill('header stick');
+    await expect(options(page)).toHaveCount(1);
+    await expect(options(page).first()).toContainText('beta-web');
+  });
+
+  test('a name match ranks above a first-message match', async ({ page }) => {
+    await openSeeded(page, DMS);
+    await seedFirstMessages(page);
+    // "infra" names delta-infra and sits in gamma-docs' first message.
+    await page.keyboard.press('Meta+k');
+    await page.keyboard.type('infra');
+    const names = await options(page).locator('.palette__name').allTextContents();
+    expect(names).toEqual(['delta-infra', 'gamma-docs']);
+    await expect(options(page).nth(1).getByTestId('qs-prompt')).toBeVisible();
+  });
+
+  test('the last row searches messages for the query', async ({ page }) => {
+    await openSeeded(page, DMS);
+    await page.keyboard.press('Meta+k');
+    await expect(searchRow(page)).toHaveCount(0);
+    await page.keyboard.type('zebrafish');
+    await expect(options(page)).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Quick switcher' })).toContainText(
+      'No session matches.',
+    );
+    await expect(searchRow(page)).toContainText('Search messages for “zebrafish”');
+    await expect(searchRow(page)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Quick switcher' })).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: 'Search messages' })).toHaveValue('zebrafish');
+    // With matches, it is still the last row, reachable by arrows.
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Meta+k');
+    await page.keyboard.type('beta');
+    await page.keyboard.press('ArrowDown');
+    await expect(searchRow(page)).toHaveAttribute('aria-selected', 'true');
+    await searchRow(page).click();
+    await expect(page.getByRole('textbox', { name: 'Search messages' })).toHaveValue('beta');
   });
 });

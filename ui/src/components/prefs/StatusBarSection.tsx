@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { StatusModuleId } from '../../ipc';
-import { MODULE_IDS, MODULES } from '../../lib/statusBar.ts';
+import { MODULE_IDS, MODULES, SUGGEST_MODULE_URL, moduleOption } from '../../lib/statusBar.ts';
 import { StatusBarEditor } from '../chat/StatusBarEditor.tsx';
 import { getPrefsStore, usePrefs } from './store.ts';
 import type { PrefsDm } from './types.ts';
@@ -39,7 +39,8 @@ export function StatusBarSection({ dms }: { dms: PrefsDm[] }) {
       <h2>Status bar</h2>
       <p className="pf-hint">
         Drag modules to reorder them, remove the ones you do not want, and add them back from the
-        tray. Until you save a layout, chips your own statusLine already prints stay hidden.
+        tray. The gear on a module sets its options. Until you save a layout, chips your own
+        statusLine already prints stay hidden.
       </p>
       <label className="pf pf--inline" data-setting="statusbar.scope">
         <span>Applies to</span>
@@ -57,7 +58,21 @@ export function StatusBarSection({ dms }: { dms: PrefsDm[] }) {
           ))}
         </select>
       </label>
-      <StatusBarEditor active={saved} tray={tray} onChange={(next) => save(next)} />
+      <StatusBarEditor
+        active={saved}
+        tray={tray}
+        onChange={(next) => save(next)}
+        optionValue={(id, key) => moduleOption(prefs, id, key)}
+        onOption={(id, key, value) =>
+          void store.update({
+            statusBar: {
+              ...sb,
+              options: { ...sb.options, [id]: { ...sb.options?.[id], [key]: value } },
+            },
+          })
+        }
+        onSuggest={() => void store.openExternal(SUGGEST_MODULE_URL)}
+      />
       <div className="pf-row">
         <button
           type="button"

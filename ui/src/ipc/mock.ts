@@ -1,12 +1,14 @@
 import { base64ToBytes, utf8ToBase64 } from '../lib/base64';
 import { toMillis } from '../lib/time';
 import { FIXTURE_HOME, makeFolderFixture, makeSmallFixture } from './folderFixture';
+import { historyFixture } from './historyFixture';
 import { syntheticChat, syntheticThread, bigChat } from './synthetic';
 import type {
   ActivityRow,
   ChatItem,
   DetectedHook,
   FolderSession,
+  HistorySession,
   Ipc,
   MarkInfo,
   NotifyFireEvent,
@@ -211,6 +213,16 @@ export interface MockControl {
   failNextCheck: string | null;
   /** Every open or resume that passed `openAnyway`. */
   openAnyways: string[];
+
+  // ---- History panel ------------------------------------------------------------------------
+  /** What `history_sessions` returns, newest first. Assign to replace the listing. */
+  historyRows: HistorySession[];
+  /** Replace the listing with `n` synthetic sessions. */
+  setHistoryFixture(n: number): void;
+  /** Number of `history_sessions` calls. */
+  historyLists: number;
+  /** Every `history_session_open`, with the folder it would resume in. */
+  historyOpens: { sessionId: string; cwd: string; anyway: boolean }[];
 
   // ---- models, catalog, updates, restart, emoji ---------------------------------------------
   /** Every `session_create` call, as sent. */
@@ -595,6 +607,12 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     failNextFolderRead: false,
     failNextCheck: null,
     openAnyways: [],
+    historyRows: historyFixture(48),
+    setHistoryFixture(n) {
+      control.historyRows = historyFixture(n);
+    },
+    historyLists: 0,
+    historyOpens: [],
     modelSets: [],
     creates: [],
     modelSwitchWorks: true,
@@ -1370,6 +1388,50 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       if (opts.banner && !live) control.emitText(s.id, `\x1b[1mResumed ${row.name}\x1b[0m\r\n`);
       save();
       emit('folder:changed', { sectionId });
+      return { ...s, folderChip: chipOf(s) };
+    },
+    async historySessions() {
+      control.historyLists += 1;
+      const rows = control.historyRows.map((r) => ({
+        ...r,
+        dmId: r.dmId && sessions.has(r.dmId) ? r.dmId : null,
+      }));
+      return { sessions: structuredClone(rows), skipped: 3 };
+    },
+    async historySessionOpen(sessionId, openOpts) {
+      const row = control.historyRows.find((r) => r.sessionId === sessionId);
+      if (!row) throw new Error(`no such session: ${sessionId}`);
+      if (!openOpts?.openAnyway && control.failNextCheck !== null) {
+        const reason = control.failNextCheck;
+        control.failNextCheck = null;
+        return { outcome: 'check_failed', reason };
+      }
+      control.historyOpens.push({
+        sessionId,
+        cwd: row.launchCwd,
+        anyway: !!openOpts?.openAnyway,
+      });
+      const have = row.dmId ? sessions.get(row.dmId) : undefined;
+      if (have) return { ...have, folderChip: chipOf(have) };
+      const live = row.liveState === 'live';
+      const s = control.addSession({
+        cwd: row.launchCwd,
+        name: row.title,
+        status: live ? 'idle' : 'busy',
+        mirror: live ? { where: 'iTerm', pid: 4242, takeoverWhenClosed: false } : null,
+      });
+      if (!live) control.spawns.push(s.id);
+      row.dmId = s.id;
+      chats.set(s.id, [
+        {
+          key: `${s.id}-u1`,
+          ts: Date.now() - 60_000,
+          kind: 'user',
+          text: row.firstPrompt,
+          images: [],
+        },
+      ]);
+      save();
       return { ...s, folderChip: chipOf(s) };
     },
     async folderSessionHide(sectionId, sessionId, hidden) {

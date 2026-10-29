@@ -784,6 +784,30 @@ pub async fn folder_session_open(
     blocking(move || m.folder_session_open_with(&section_id, &session_id, anyway)).await
 }
 
+/// `history_sessions {} -> {sessions, skipped}`: every resumable Claude Code session across
+/// all folders, for the History panel. Read only; nothing starts.
+#[tauri::command]
+pub async fn history_sessions(
+    state: State<'_, SessionManager>,
+) -> CmdResult<patchroom_folders::HistoryListing> {
+    let m = state.inner().clone();
+    blocking(move || m.history_sessions()).await
+}
+
+/// `history_session_open {sessionId, openAnyway?} -> SessionInfo`: open a History row. An open
+/// DM comes back as it is; otherwise its DM is created and resumed in the launch folder, or
+/// mirrored when another process runs the session.
+#[tauri::command]
+pub async fn history_session_open(
+    state: State<'_, SessionManager>,
+    session_id: String,
+    open_anyway: Option<bool>,
+) -> CmdResult<SessionInfo> {
+    let m = state.inner().clone();
+    let anyway = open_anyway == Some(true);
+    blocking(move || m.history_session_open(&session_id, anyway)).await
+}
+
 /// `folder_session_hide {sectionId, sessionId, hidden}`: hide a row from the list; the
 /// transcript is untouched.
 #[tauri::command]

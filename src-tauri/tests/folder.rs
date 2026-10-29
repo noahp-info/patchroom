@@ -764,3 +764,93 @@ fn dividers_and_emoji_survive_a_restart_and_serialize_for_the_ui() {
     assert!(again.iter().all(|s| s.id != bare));
     m2.shutdown();
 }
+
+#[test]
+fn history_lists_every_folder_read_only_and_opens_with_resume_in_the_launch_folder() {
+    let e = env();
+    let other = e.home.parent().unwrap().join("other");
+    let wt = other.join(".claude").join("worktrees").join("feat");
+    std::fs::create_dir_all(&wt).unwrap();
+    e.transcript(
+        &e.home,
+        "dddddddd-0000-4000-8000-000000000001",
+        &[
+            user("fix the login bug", &e.home, "2026-03-01T10:00:00Z"),
+            json!({"type":"assistant","message":{"model":"claude-opus-5-5"}}),
+            json!({"type":"ai-title","aiTitle":"Login bug fix"}),
+        ],
+    );
+    e.transcript(
+        &wt,
+        "dddddddd-0000-4000-8000-000000000002",
+        &[user("polish the header", &wt, "2026-03-02T10:00:00Z")],
+    );
+    let sec = e.section();
+    let before = tree_hashes(&e.config);
+    let l = e.m.history_sessions().unwrap();
+    assert_eq!(l.sessions.len(), 2);
+    let feat = &l.sessions[0];
+    assert_eq!(feat.title, "polish the header");
+    assert_eq!(feat.folder, other.to_string_lossy());
+    let bug = &l.sessions[1];
+    assert_eq!(bug.title, "Login bug fix");
+    assert_eq!(bug.first_prompt, "fix the login bug");
+    assert_eq!(bug.model.as_deref(), Some("claude-opus-5-5"));
+    assert!(l.sessions.iter().all(|s| s.dm_id.is_none()));
+    // Only the fields the panel shows go out: no last prompt, no other transcript text.
+    let row = serde_json::to_value(bug).unwrap();
+    let mut keys: Vec<&str> = row
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "branch",
+            "firstPrompt",
+            "folder",
+            "lastActivity",
+            "launchCwd",
+            "liveState",
+            "model",
+            "sessionId",
+            "title",
+            "titleSource",
+            "userTurns"
+        ]
+    );
+    assert!(!e.pid_file().exists(), "listing started nothing");
+
+    // Opening a row under a folder section files the DM there and resumes in its folder.
+    let info =
+        e.m.history_session_open("dddddddd-0000-4000-8000-000000000001", false)
+            .unwrap();
+    assert_eq!(info.section_id.as_deref(), Some(sec.as_str()));
+    assert_eq!(info.name, "Login bug fix");
+    let args = e.wait_file("args.txt");
+    assert!(args.contains("--resume\ndddddddd-0000-4000-8000-000000000001"));
+    assert_eq!(e.wait_file("cwd.txt").trim(), e.home.to_string_lossy());
+    // A second open returns the same DM.
+    let again =
+        e.m.history_session_open("dddddddd-0000-4000-8000-000000000001", false)
+            .unwrap();
+    assert_eq!(again.id, info.id);
+    let l = e.m.history_sessions().unwrap();
+    assert_eq!(l.sessions[1].dm_id.as_deref(), Some(info.id.as_str()));
+    // A row outside every folder section is ungrouped.
+    let wt_dm =
+        e.m.history_session_open("dddddddd-0000-4000-8000-000000000002", false)
+            .unwrap();
+    assert_eq!(wt_dm.section_id, None);
+    assert!(e.m.history_session_open("no-such-session", false).is_err());
+    assert!(e.m.history_session_open("../etc/passwd", false).is_err());
+    assert_eq!(
+        before,
+        tree_hashes(&e.config),
+        "nothing written under the config dir"
+    );
+    e.m.shutdown();
+}

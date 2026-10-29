@@ -49,7 +49,8 @@ Every feature lists its acceptance check.
 - **DM = one session.** New DM: pick folder, provider (dropdown of CLIs onboarding found installed and signed in, with fidelity badge), optional worktree, optional name. *Check: Claude and Cursor DMs coexist.*
 - **Presence dot:** busy, idle, needs you, errored, stopped. *Check: matches `claude agents --json` within 2s of a hook event.*
 - **Unread badge** on new assistant output since last view; **needs-you badge** (red) persists until answered, not merely viewed.
-- **Cmd+K quick switcher**, Cmd+Shift+A jump to next needs-you, Option+Shift+Down next unread.
+- **Cmd+K quick switcher**, Cmd+Shift+A jump to next needs-you, Option+Shift+Down next unread. Cmd+K matches names fuzzily and first messages by whole words (open sessions included). Name matches rank above first-message matches. Its last row, "Search messages for <query>", opens message search with the query.
+- **History:** every Claude Code session on this Mac, across all folders, from a read-only scan of Claude's transcript folders. Each row shows only Claude's own title (else the first message) and the first message. Grouped by folder (default), date, model or branch from a header toggle remembered in prefs; search filters within the grouping; groups collapse and page. Opening a row resumes it with `--resume <id>` in its folder, or mirrors it when another process runs it. Sessions open in Patchroom are marked. *Check: 300 sessions list cold under 300 ms; nothing under the transcript folders changes.*
 - **Activity view:** a single inbox of everything waiting on you, oldest first.
 
 ### 3.2 Messages and steering
@@ -65,6 +66,7 @@ Every feature lists its acceptance check.
 - Renders the user's existing statusLine output verbatim under the composer.
 - Structured chips from statusLine JSON: model, context %, cost, permission mode (click cycles, same as Shift+Tab), worktree, PR link.
 - Plugins can add chips (CI budget, rate limits).
+- **Built-in modules only.** No user script runs. Each module can be reordered (drag), hidden or shown, and set up from its gear (folder name or path, context meter, cost rounding). "Suggest a module…" opens a prefilled GitHub issue form in the browser, on a click only, with no identifiers. A workflow reviews submissions with an agent and opens a PR or explains a refusal; a maintainer merges. See `docs/modules.md`.
 
 ### 3.3a Model bundles
 - **Bundle:** a named set of model entries (tool plus a catalog id, a free-text model string, or `latest:<family>`), one default, a label and an emoji. A global default bundle, with optional per folder, per section and per session overrides (session wins, then section, then folder, then the default).
@@ -72,7 +74,7 @@ Every feature lists its acceptance check.
 - **Switch:** the status-bar model chip opens a picker limited to the active bundle. A switch types the tool's switch command (`/model <id>`) only while the session is idle, then waits for the CLI to report the model in its statusLine JSON and shows an error if it did not take. A confirmed switch is stored as the DM's `--model`, so a resume comes back on it. *Check: no keystroke while busy; a refused switch says so.*
 - **Adapters:** one tool-neutral interface (launch flag, switch command, read current model). Claude Code is implemented; Codex, Cursor CLI, Gemini CLI and opencode are declared stubs until P6. Cross-tool routing between members waits for P5.
 - **Never auto-swap a pinned model.** When the catalog has a newer model in the same family as a fixed entry, the chip shows a one-time hint with Swap and Keep, once per new model. `latest:<family>` entries follow the catalog by themselves.
-- **Labels:** each status-bar module takes a label (text plus emoji). The model chip reads the model's own label, then the Cloud (`☁️ {name}`) or Local (`🏠 {name}`) template, then the plain name. Local means the session's `ANTHROPIC_BASE_URL` is on this machine, or the user set the model to Local.
+- **Labels:** each status-bar module takes a label (text plus emoji). The model chip reads the model's own label, then the Cloud (`☁️ {name}`) or Local (`💻 {name}`) template, then the plain name. Settings > Models > Labels sets each group in one click (Icon and name, or Name only) and keeps a text field for a custom template. A stored Local template still equal to the old `🏠 {name}` default moves to `💻 {name}` on load. Local means the session's `ANTHROPIC_BASE_URL` is on this machine, or the user set the model to Local.
 - **Catalog:** shipped in the app (`ui/src/lib/models/catalog.json`), refreshed by a weekly scheduled CI job that opens a PR, and fetched between builds only when the user opted in (D3).
 
 ### 3.4 Notifications and sounds

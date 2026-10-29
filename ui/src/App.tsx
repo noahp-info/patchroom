@@ -5,6 +5,7 @@ import type { CSSProperties } from 'react';
 import { ClaudeGlyph, Icon } from './components/Icon';
 import { NewDmDialog } from './components/NewDmDialog';
 import { ActivityView, PrefsView, SavedView } from './components/PanelViews';
+import { HistoryPanel } from './components/HistoryPanel';
 import { QuickSwitcher } from './components/QuickSwitcher';
 import { SearchPanel } from './components/SearchPanel';
 import { SelectionMenu } from './components/SelectionMenu';
@@ -156,7 +157,8 @@ export function App() {
   const needsYou = (s: { id: string; status: SessionStatus }) =>
     s.status === 'waiting' || (state.badges[s.id]?.needsYou ?? 0) > 0;
   const needsCount = state.sessions.filter((s) => !s.archived && needsYou(s)).length;
-  const panelOpen = state.panel === 'activity' || state.panel === 'saved';
+  const panelOpen =
+    state.panel === 'activity' || state.panel === 'saved' || state.panel === 'history';
   const view = active ? (state.views[active.id] ?? 'chat') : 'chat';
 
   return (
@@ -447,6 +449,7 @@ export function App() {
         </div>
         {state.panel === 'activity' && <ActivityView state={state} store={store} />}
         {state.panel === 'saved' && <SavedView state={state} store={store} />}
+        {state.panel === 'history' && <HistoryPanel state={state} store={store} />}
       </main>
 
       {state.viewer && (

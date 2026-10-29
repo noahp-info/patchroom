@@ -8,6 +8,10 @@ Patchroom is pre-alpha. Read [docs/SPEC.md](docs/SPEC.md) first; it holds the pr
 4. Keep PRs small and single-purpose. Say what changed and how you verified it.
 5. Never commit secrets. Never add network listeners, telemetry, or code that edits a user's CLI config files (spec sections 1 and 4).
 
+## Status bar modules
+
+To propose a status bar module, or submit a statusLine script to become a built-in one, use **Suggest a module…** in the app or the [status bar module issue form](.github/ISSUE_TEMPLATE/status-bar-module.yml). Patchroom never runs user scripts. [docs/modules.md](docs/modules.md) explains the review: an agent checks the script for security and either opens a PR for a maintainer or explains why not.
+
 ## License and contributor agreement
 
 Patchroom is licensed under [Apache-2.0](LICENSE). The future sync server will live in its own repository under the AGPL, with a commercial license available (spec section 10).

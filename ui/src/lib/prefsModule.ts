@@ -32,6 +32,7 @@ export type PrefsTabId =
   | 'dnd'
   | 'hooks'
   | 'links'
+  | 'history'
   | 'accounts'
   | 'models'
   | 'updates';
@@ -70,6 +71,7 @@ interface PrefsApi {
   catalogRefresh: Ipc['catalogRefresh'];
   updateCheck: Ipc['updateCheck'];
   fontsList: Ipc['fontsList'];
+  linkOpenExternal: Ipc['linkOpenExternal'];
 }
 
 interface PrefsExports {
@@ -131,6 +133,7 @@ export function installPrefsApi(ipc: Ipc): void {
     catalogRefresh: () => ipc.catalogRefresh(),
     updateCheck: () => ipc.updateCheck(),
     fontsList: () => ipc.fontsList(),
+    linkOpenExternal: (url) => ipc.linkOpenExternal(url),
   });
 }
 
