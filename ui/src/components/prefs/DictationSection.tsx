@@ -71,6 +71,28 @@ export function DictationSection() {
         window.
       </p>
 
+      <h3 data-setting="dictation.permissions">Access</h3>
+      <dl className="pf-perms" data-testid="dictation-perms">
+        <dt>Microphone</dt>
+        <dd>
+          <span>{PERMISSION_TEXT[info?.mic ?? 'unknown']}</span>
+          {(info?.mic === 'denied' || info?.mic === 'restricted') && (
+            <button type="button" className="btn sec" onClick={() => open('microphone')}>
+              Open Microphone settings
+            </button>
+          )}
+        </dd>
+        <dt>Speech Recognition</dt>
+        <dd>
+          <span>{PERMISSION_TEXT[info?.speech ?? 'unknown']}</span>
+          {(info?.speech === 'denied' || info?.speech === 'restricted') && (
+            <button type="button" className="btn sec" onClick={() => open('speech')}>
+              Open Privacy settings
+            </button>
+          )}
+        </dd>
+      </dl>
+
       <h3>Language</h3>
       <label className="pf pf--inline" data-setting="dictation.language">
         <select
@@ -152,28 +174,6 @@ export function DictationSection() {
         ))}
       </div>
       <p className="pf-hint">Dictation ends by itself after this long with no new words.</p>
-
-      <h3 data-setting="dictation.permissions">Access</h3>
-      <dl className="pf-perms" data-testid="dictation-perms">
-        <dt>Microphone</dt>
-        <dd>
-          <span>{PERMISSION_TEXT[info?.mic ?? 'unknown']}</span>
-          {(info?.mic === 'denied' || info?.mic === 'restricted') && (
-            <button type="button" className="btn sec" onClick={() => open('microphone')}>
-              Open Microphone settings
-            </button>
-          )}
-        </dd>
-        <dt>Speech Recognition</dt>
-        <dd>
-          <span>{PERMISSION_TEXT[info?.speech ?? 'unknown']}</span>
-          {(info?.speech === 'denied' || info?.speech === 'restricted') && (
-            <button type="button" className="btn sec" onClick={() => open('speech')}>
-              Open Privacy settings
-            </button>
-          )}
-        </dd>
-      </dl>
     </div>
   );
 }

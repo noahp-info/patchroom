@@ -4022,3 +4022,31 @@ body.dragging .sbe__grip {
 .chat .cnotice[data-kind='dict-error']::before {
   background: var(--err);
 }
+/* A dictation problem is the person's to fix: readable text, a real button, the group gap. */
+.chat .cnotice--dict {
+  --fs: 12.5px;
+  flex-wrap: wrap;
+  gap: var(--group-gap);
+  margin-bottom: var(--group-gap);
+}
+/* A narrow conversation puts the buttons on their own row under the text. */
+.chat .cnotice--dict span {
+  flex: 1 1 14em;
+}
+.chat .cnotice--dict .btn {
+  flex: none;
+  white-space: nowrap;
+}
+.chat .cnotice--dict .ib {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+}
+.chat .cnotice--dict .ib:hover {
+  background: var(--hover);
+  color: var(--fg);
+}

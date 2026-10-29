@@ -326,7 +326,7 @@ export function Composer({
           {errView?.action && (
             <button
               type="button"
-              className="cnotice__btn"
+              className="btn sec"
               data-testid="dictation-settings"
               onClick={() => ctl?.openSettings(errView.action!.pane)}
             >
@@ -335,11 +335,13 @@ export function Composer({
           )}
           <button
             type="button"
-            className="cnotice__btn"
+            className="ib"
+            aria-label="Dismiss"
+            title="Dismiss"
             data-testid="dictation-dismiss"
             onClick={() => ctl?.dismiss(owner)}
           >
-            Dismiss
+            <Icon name="x" />
           </button>
         </div>
       )}
