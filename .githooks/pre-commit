@@ -16,6 +16,9 @@ bash scripts/check-repo-hygiene.sh --staged
 if has '^scripts/(check|test)-repo-hygiene\.sh$'; then
   bash scripts/test-repo-hygiene.sh >/dev/null
 fi
+if has '^scripts/(check|test)-author-emails\.sh$'; then
+  bash scripts/test-author-emails.sh >/dev/null
+fi
 
 if has '\.(rs|toml)$' && command -v cargo >/dev/null 2>&1; then
   echo "pre-commit: cargo fmt --check"

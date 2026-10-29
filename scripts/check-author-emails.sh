@@ -10,17 +10,24 @@ set -euo pipefail
 [ "$#" -gt 0 ] || { echo "usage: $0 <revision range...>" >&2; exit 2; }
 ok='@users\.noreply\.github\.com$'
 bad=0
+github=0
 while IFS=' ' read -r sha author committer; do
   [ -n "$sha" ] || continue
+  # GitHub made this commit (a squash merge or web edit on github.com). Its author email comes
+  # from the owner's GitHub email settings, not from this repo, so skip the commit entirely.
+  if [ "$committer" = "noreply@github.com" ]; then
+    github=$((github + 1))
+    continue
+  fi
   for e in "$author" "$committer"; do
-    # GitHub's own web-flow commits (merges made on github.com) are allowed.
-    if ! printf '%s\n' "$e" | grep -qE "$ok" && [ "$e" != "noreply@github.com" ]; then
+    if ! printf '%s\n' "$e" | grep -qE "$ok"; then
       echo "author-email: ${sha:0:9} uses $e, not a users.noreply.github.com address"
       bad=1
       break
     fi
   done
 done < <(git log --format='%H %ae %ce' "$@")
+[ "$github" -eq 0 ] || echo "author-email: skipped $github GitHub-made commit(s) (committer noreply@github.com)"
 if [ "$bad" -ne 0 ]; then
   echo "author-email: set git config user.email to your GitHub noreply address, then" >&2
   echo "  git rebase <base> --exec 'git commit --amend --no-edit --reset-author'" >&2
