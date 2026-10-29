@@ -397,6 +397,31 @@ pub struct Prefs {
     pub chat: ChatPrefs,
     /// Fonts per area, and the chat font per section or session.
     pub fonts: Fonts,
+    /// The History panel.
+    pub history: HistoryPrefs,
+}
+
+/// How the History panel groups sessions. Its search filters within the same grouping.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HistoryGroup {
+    /// By project folder (default).
+    #[default]
+    Folder,
+    /// Today, this week, week number, month.
+    Date,
+    /// By the newest model the session used.
+    Model,
+    /// By the git branch the transcript records.
+    Branch,
+}
+
+/// History panel preferences.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct HistoryPrefs {
+    /// The last grouping chosen in the panel header.
+    pub group_by: HistoryGroup,
 }
 
 /// First-time hints (DESIGN.md, First-time hints). Each id shows once, ever.
@@ -434,6 +459,29 @@ pub struct StatusBar {
     pub per_dm: BTreeMap<String, Vec<String>>,
     /// The user's label per module id (text plus emoji).
     pub labels: BTreeMap<String, ModuleLabel>,
+    /// Per-module options of the built-in modules: module id to option to value. Only the
+    /// pairs in [`MODULE_OPTIONS`] are accepted.
+    pub options: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+/// Every option a built-in status bar module takes: `(module, option, allowed values)`. The
+/// first value is the default. Built-ins only: no module runs a user script.
+pub const MODULE_OPTIONS: &[(&str, &str, &[&str])] = &[
+    ("folder", "show", &["name", "path"]),
+    ("context", "show", &["meter", "percent"]),
+    ("cost", "decimals", &["2", "0"]),
+];
+
+impl StatusBar {
+    fn options_valid(&self) -> bool {
+        self.options.iter().all(|(m, opts)| {
+            opts.iter().all(|(k, v)| {
+                MODULE_OPTIONS
+                    .iter()
+                    .any(|(mm, kk, vs)| mm == m && kk == k && vs.contains(&v.as_str()))
+            })
+        })
+    }
 }
 
 /// Where a clicked link opens. Cmd-click opens it in the other place.
@@ -486,6 +534,7 @@ impl Default for Prefs {
             emoji: EmojiPrefs::default(),
             chat: ChatPrefs::default(),
             fonts: Fonts::default(),
+            history: HistoryPrefs::default(),
         }
     }
 }
@@ -535,6 +584,7 @@ impl Prefs {
             p.apply_session_default(session_hook);
         }
         p.migrate_terminal_font();
+        p.models.group_labels.migrate_local_default();
         p
     }
 
@@ -715,6 +765,9 @@ impl Prefs {
         if self.status_bar.labels.len() > 32 || self.status_bar.labels.values().any(|l| !l.valid())
         {
             return Err(PrefsError("bad status bar label".into()));
+        }
+        if !self.status_bar.options_valid() {
+            return Err(PrefsError("unknown status bar module option".into()));
         }
         Ok(self)
     }
@@ -982,6 +1035,44 @@ mod tests {
     }
 
     #[test]
+    fn module_options_take_only_known_pairs() {
+        let p = Prefs::default()
+            .patched(&json!({"statusBar": {"options": {
+                "folder": {"show": "path"}, "cost": {"decimals": "0"}
+            }}}))
+            .unwrap();
+        assert_eq!(p.status_bar.options["folder"]["show"], "path");
+        let back = Prefs::from_stored(&serde_json::to_string(&p).unwrap());
+        assert_eq!(back.status_bar.options, p.status_bar.options);
+        for bad in [
+            json!({"folder": {"show": "everything"}}),
+            json!({"folder": {"run": "name"}}),
+            json!({"script": {"cmd": "curl"}}),
+        ] {
+            assert!(
+                Prefs::default()
+                    .patched(&json!({"statusBar": {"options": bad}}))
+                    .is_err(),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_history_grouping_defaults_to_folder_and_refuses_unknown_ones() {
+        assert_eq!(Prefs::default().history.group_by, HistoryGroup::Folder);
+        let p = Prefs::default()
+            .patched(&json!({"history": {"groupBy": "branch"}}))
+            .unwrap();
+        assert_eq!(p.history.group_by, HistoryGroup::Branch);
+        let back = Prefs::from_stored(&serde_json::to_string(&p).unwrap());
+        assert_eq!(back.history.group_by, HistoryGroup::Branch);
+        assert!(Prefs::default()
+            .patched(&json!({"history": {"groupBy": "size"}}))
+            .is_err());
+    }
+
+    #[test]
     fn the_status_bar_layout_is_a_known_preference_and_persists() {
         // Stored before the setting existed: the built-in layout.
         assert_eq!(
@@ -1153,6 +1244,22 @@ mod tests {
         assert_eq!(p.term_per_dm["*"].theme_id.as_deref(), Some("iterm"));
         assert!(p.term_per_dm["*"].font.is_none());
         assert_eq!(p.term_per_dm["d1"].font.as_deref(), Some("Monaco"));
+    }
+
+    #[test]
+    fn a_stored_old_local_template_loads_as_the_laptop_default() {
+        let raw = json!({"models": {"groupLabels": {
+            "cloud": "Cloud {name}", "local": crate::models::OLD_LOCAL_DEFAULT
+        }}})
+        .to_string();
+        let p = Prefs::from_stored(&raw);
+        assert_eq!(p.models.group_labels.local, "\u{1f4bb} {name}");
+        assert_eq!(p.models.group_labels.cloud, "Cloud {name}");
+        let raw = json!({"models": {"groupLabels": {"local": "{name} (here)"}}}).to_string();
+        assert_eq!(
+            Prefs::from_stored(&raw).models.group_labels.local,
+            "{name} (here)"
+        );
     }
 
     #[test]

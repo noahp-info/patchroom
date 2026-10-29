@@ -73,7 +73,7 @@ async function setup(page: Page, width: number, height: number): Promise<string>
         perSection: {},
         perSession: {},
         labels: {},
-        groupLabels: { cloud: '\u2601\uFE0F {name}', local: '\u{1F3E0} {name}' },
+        groupLabels: { cloud: '\u2601\uFE0F {name}', local: '\u{1F4BB} {name}' },
         seen: ['claude-opus-5-5'],
         offered: ['claude-sonnet-5-5', 'claude-opus-5-5'],
       },

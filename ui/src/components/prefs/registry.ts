@@ -331,6 +331,20 @@ export const SETTINGS: readonly SettingEntry[] = [
     description: 'How the model chip names models, cloud or local.',
     keywords: ['label', 'cloud', 'local', 'name'],
   },
+  {
+    id: 'models.labels.cloud',
+    section: 'models',
+    label: 'Cloud model label',
+    description: 'Icon and name, name only, or your own template.',
+    keywords: ['label', 'cloud', 'icon', 'emoji', 'name only', 'template', 'chip'],
+  },
+  {
+    id: 'models.labels.local',
+    section: 'models',
+    label: 'Local model label',
+    description: 'Icon and name, name only, or your own template.',
+    keywords: ['label', 'local', 'laptop', 'icon', 'emoji', 'name only', 'template', 'chip'],
+  },
 
   // Updates
   {

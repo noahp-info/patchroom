@@ -17,10 +17,36 @@ export const EMPTY_MODELS: ModelPrefs = {
   perSection: {},
   perSession: {},
   labels: {},
-  groupLabels: { cloud: '☁️ {name}', local: '\u{1F3E0} {name}' },
+  groupLabels: { cloud: '\u2601\uFE0F {name}', local: '\u{1F4BB} {name}' },
   seen: [],
   offered: [],
 };
+
+/** The icon each group's default label puts before the name. */
+export const GROUP_ICONS: Record<ModelPlace, string> = {
+  cloud: '\u2601\uFE0F',
+  local: '\u{1F4BB}',
+};
+
+/** The one-click label styles in Settings > Models > Labels. */
+export type LabelStyle = 'icon' | 'name' | 'custom';
+export const LABEL_STYLES: readonly { id: Exclude<LabelStyle, 'custom'>; label: string }[] = [
+  { id: 'icon', label: 'Icon and name' },
+  { id: 'name', label: 'Name only' },
+];
+
+/** The template a one-click style writes. */
+export function labelTemplate(place: ModelPlace, style: Exclude<LabelStyle, 'custom'>): string {
+  return style === 'icon' ? `${GROUP_ICONS[place]} {name}` : '{name}';
+}
+
+/** Which one-click style a stored template is, or `custom` for anything typed by hand. */
+export function labelStyleOf(place: ModelPlace, tpl: string): LabelStyle {
+  const t = tpl.trim();
+  if (t === labelTemplate(place, 'icon')) return 'icon';
+  if (t === '{name}' || t === '') return 'name';
+  return 'custom';
+}
 
 export function modelsOf(prefs: Pick<Prefs, 'models'> | null | undefined): ModelPrefs {
   const m = prefs?.models;
