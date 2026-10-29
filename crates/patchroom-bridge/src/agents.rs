@@ -161,14 +161,30 @@ mod tests {
         assert_eq!(a[0].session_id.as_deref(), Some("s-1"));
     }
 
+    /// Write an executable stub without this process ever holding a write handle to it.
+    /// Tests run on many threads: one that forks while another holds the stub open for writing
+    /// passes that handle to its child until the child execs, and running the stub in that window
+    /// fails with ETXTBSY ("Text file busy"). `install` creates it in its own process instead.
+    fn write_exe(path: &std::path::Path, body: &str) {
+        let src = path.with_extension("src");
+        std::fs::write(&src, body).unwrap();
+        let ok = std::process::Command::new("install")
+            .args(["-m", "755"])
+            .arg(&src)
+            .arg(path)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "install {}", path.display());
+        let _ = std::fs::remove_file(&src);
+    }
+
     #[test]
     fn command_source_times_out_and_kills() {
         let dir = std::env::temp_dir().join(format!("pr-agents-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let script = dir.join("slow.sh");
-        std::fs::write(&script, "#!/bin/sh\nexec sleep 30\n").unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        write_exe(&script, "#!/bin/sh\nexec sleep 30\n");
         let src = CommandAgentsSource {
             program: script.to_string_lossy().into_owned(),
             timeout: Duration::from_millis(200),
@@ -183,13 +199,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("pr-agents-ok-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let script = dir.join("fake.sh");
-        std::fs::write(
+        write_exe(
             &script,
             "#!/bin/sh\necho '[{\"pid\":1,\"sessionId\":\"x\",\"status\":\"idle\"}]'\n",
-        )
-        .unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        );
         let src = CommandAgentsSource {
             program: script.to_string_lossy().into_owned(),
             timeout: Duration::from_secs(5),

@@ -382,21 +382,21 @@ pub fn query(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
     use std::sync::mpsc;
 
-    /// A fake helper: a shell script standing in for the Swift binary.
+    /// A fake helper: a shell script standing in for the Swift binary. It runs as
+    /// `/bin/sh <script>`, never exec'd itself: a sibling test thread that forks while the file is
+    /// open for writing would make exec fail with ETXTBSY ("Text file busy").
     fn fake(dir: &tempfile::TempDir, name: &str, body: &str) -> PathBuf {
         let p = dir.path().join(name);
-        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(&p, format!("{body}\n")).unwrap();
         p
     }
 
-    fn opts(program: PathBuf, silence: Option<u64>) -> Options {
+    fn opts(script: PathBuf, silence: Option<u64>) -> Options {
         Options {
-            program,
-            args: vec!["--dictate".into()],
+            program: PathBuf::from("/bin/sh"),
+            args: vec![script.to_string_lossy().into_owned(), "--dictate".into()],
             silence: silence.map(Duration::from_millis),
             grace: Duration::from_millis(400),
         }
@@ -654,7 +654,10 @@ echo '{{"type":"partial","text":"after"}}'
     #[test]
     fn a_missing_helper_fails_to_spawn() {
         let r = Session::spawn(
-            opts(PathBuf::from("/nonexistent/patchroom-dictation"), None),
+            Options {
+                program: PathBuf::from("/nonexistent/patchroom-dictation"),
+                ..opts(PathBuf::new(), None)
+            },
             |_| {},
         );
         assert!(r.is_err());
@@ -669,11 +672,13 @@ echo '{{"type":"partial","text":"after"}}'
             r#"echo '{"type":"locales","current":"en-US","locales":[{"id":"en-US","onDevice":true}]}'
 exec sleep 30"#,
         );
-        let e = query(p, vec!["--list-locales".into()], Duration::from_secs(5)).unwrap();
+        let sh = PathBuf::from("/bin/sh");
+        let arg = |p: &PathBuf| vec![p.to_string_lossy().into_owned(), "--list-locales".into()];
+        let e = query(sh.clone(), arg(&p), Duration::from_secs(5)).unwrap();
         assert!(matches!(e, HelperEvent::Locales { .. }));
         let p = fake(&dir, "quiet", "exec sleep 30");
         let t = Instant::now();
-        assert!(query(p, vec![], Duration::from_millis(200)).is_err());
+        assert!(query(sh, arg(&p), Duration::from_millis(200)).is_err());
         assert!(t.elapsed() < Duration::from_secs(3));
     }
 }

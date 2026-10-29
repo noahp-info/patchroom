@@ -603,9 +603,7 @@ mod tests {
             .tempdir_in("/tmp")
             .unwrap();
         let stub = root.join("claude-stub");
-        std::fs::write(&stub, "#!/bin/sh\nsleep 60\n").unwrap();
-        std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-            .unwrap();
+        crate::test_exe::write_exe(&stub, "#!/bin/sh\nsleep 60\n");
         let hook = root.join("patchroom-hook");
         std::fs::write(&hook, "").unwrap();
         let config = root.join("claude");

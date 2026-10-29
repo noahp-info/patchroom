@@ -3,6 +3,8 @@
 //! SQLite file; nothing here touches `~/.claude` or the user's data dir. Claude's config dir is
 //! always a temp dir holding synthetic transcripts and settings.
 
+mod common;
+
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -159,8 +161,7 @@ fn claude_stub() -> PathBuf {
     STUB.get_or_init(|| {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("claude-stub");
-        std::fs::write(&p, "#!/bin/sh\nsleep 60\n").unwrap();
-        std::fs::set_permissions(&p, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        common::write_exe(&p, "#!/bin/sh\nsleep 60\n");
         (dir, p)
     })
     .1

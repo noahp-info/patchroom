@@ -11,6 +11,8 @@
 //! fresh temp dir, and kills everything it started on exit. User settings files are only
 //! read by claude, never written here.
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command as Proc;
@@ -1021,19 +1023,14 @@ fn no_user_statusline_shows_chips_only() {
         .tempdir_in("/tmp")
         .unwrap();
     let script = script_dir.path().join("patchroom-statusline");
-    std::fs::write(
+    common::write_exe(
         &script,
-        format!(
+        &format!(
             "#!/bin/sh\nexec env HOME={} {} \"$@\"\n",
             empty_home.path().display(),
             staged("patchroom-statusline").display()
         ),
-    )
-    .unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    );
     let l = start_with(BASE, script);
     l.ready();
     // Chips arrive from the statusLine JSON, with an empty text.

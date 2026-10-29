@@ -102,6 +102,8 @@ pub mod hook_path;
 pub mod manager;
 pub mod notifier;
 pub mod steer;
+#[cfg(test)]
+mod test_exe;
 pub mod viewer;
 
 use std::path::PathBuf;
