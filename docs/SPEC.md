@@ -49,7 +49,8 @@ Every feature lists its acceptance check.
 - **DM = one session.** New DM: pick folder, provider (dropdown of CLIs onboarding found installed and signed in, with fidelity badge), optional worktree, optional name. *Check: Claude and Cursor DMs coexist.*
 - **Presence dot:** busy, idle, needs you, errored, stopped. *Check: matches `claude agents --json` within 2s of a hook event.*
 - **Unread badge** on new assistant output since last view; **needs-you badge** (red) persists until answered, not merely viewed.
-- **Cmd+K quick switcher**, Cmd+Shift+A jump to next needs-you, Option+Shift+Down next unread.
+- **Cmd+K quick switcher**, Cmd+Shift+A jump to next needs-you, Option+Shift+Down next unread. Cmd+K matches names fuzzily and first messages by whole words (open sessions included). Name matches rank above first-message matches. Its last row, "Search messages for <query>", opens message search with the query.
+- **History:** every Claude Code session on this Mac, across all folders, from a read-only scan of Claude's transcript folders. Each row shows only Claude's own title (else the first message) and the first message. Grouped by folder (default), date, model or branch from a header toggle remembered in prefs; search filters within the grouping; groups collapse and page. Opening a row resumes it with `--resume <id>` in its folder, or mirrors it when another process runs it. Sessions open in Patchroom are marked. *Check: 300 sessions list cold under 300 ms; nothing under the transcript folders changes.*
 - **Activity view:** a single inbox of everything waiting on you, oldest first.
 
 ### 3.2 Messages and steering
@@ -65,6 +66,7 @@ Every feature lists its acceptance check.
 - Renders the user's existing statusLine output verbatim under the composer.
 - Structured chips from statusLine JSON: model, context %, cost, permission mode (click cycles, same as Shift+Tab), worktree, PR link.
 - Plugins can add chips (CI budget, rate limits).
+- **Built-in modules only.** No user script runs. Each module can be reordered (drag), hidden or shown, and set up from its gear (folder name or path, context meter, cost rounding). "Suggest a module…" opens a prefilled GitHub issue form in the browser, on a click only, with no identifiers. A workflow reviews submissions with an agent and opens a PR or explains a refusal; a maintainer merges. See `docs/modules.md`.
 
 ### 3.3a Model bundles
 - **Bundle:** a named set of model entries (tool plus a catalog id, a free-text model string, or `latest:<family>`), one default, a label and an emoji. A global default bundle, with optional per folder, per section and per session overrides (session wins, then section, then folder, then the default).

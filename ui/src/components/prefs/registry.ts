@@ -185,6 +185,22 @@ export const SETTINGS: readonly SettingEntry[] = [
     description: 'Text and an emoji in front of a module value.',
     keywords: ['label', 'emoji', 'module'],
   },
+  {
+    id: 'statusbar.options',
+    section: 'statusbar',
+    label: 'Status bar module options',
+    description:
+      'Folder name or path, context meter, cost rounding. Open with the gear on a module.',
+    keywords: ['options', 'configure', 'folder', 'path', 'context', 'meter', 'cost', 'decimals'],
+    conditional: true,
+  },
+  {
+    id: 'statusbar.suggest',
+    section: 'statusbar',
+    label: 'Suggest a module',
+    description: 'Opens a GitHub issue form to propose a module or submit a script for review.',
+    keywords: ['suggest', 'new module', 'script', 'submit', 'request', 'github', 'issue'],
+  },
 
   // Notifications
   {

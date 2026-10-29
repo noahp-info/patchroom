@@ -600,3 +600,11 @@
     display: none;
   }
 }
+
+/* A full-pane panel (Activity, Saved items, History) covers the conversation: what it covers
+   is inert and drawn hidden, so nothing shows through or reads under it. Layout is kept, so the
+   chat's scroll position survives. */
+.pr-app .ch[inert],
+.pr-app .pane[inert] {
+  visibility: hidden;
+}

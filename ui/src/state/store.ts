@@ -35,6 +35,7 @@ import { overlayCount, subscribeOverlays } from './overlays';
 import { bindAccountActions, setClaudeAccount } from '../lib/accounts';
 import { cleanQuote, textFragmentLink } from '../lib/comments';
 import { HINTS, type HintDef, type HintId } from '../lib/hints';
+import { SUGGEST_MODULE_URL } from '../lib/statusBar';
 import { adapterOf, modelTook } from '../lib/models/adapters';
 import { activeBundle, launchArgsFor, modelsOf, type BundleScope } from '../lib/models/bundles';
 import {
@@ -346,6 +347,17 @@ export class AppStore {
   getSnapshot = (): AppState => this.state;
 
   private set(patch: Partial<AppState>): void {
+    // A hint shown inside a panel leaves with the panel (it was marked seen when shown).
+    const h = this.state.hint;
+    if (
+      h &&
+      patch.panel !== undefined &&
+      patch.panel !== this.state.panel &&
+      patch.hint === undefined &&
+      (HINTS[h] as HintDef).place === 'panel'
+    ) {
+      patch = { ...patch, hint: null, hintVars: null };
+    }
     this.state = { ...this.state, ...patch };
     this.reportFocus();
     for (const fn of this.listeners) fn();
@@ -685,6 +697,20 @@ export class AppStore {
     }
     if (this.state.prefs) this.set({ prefs: { ...this.state.prefs, statusBar: next } });
     await this.setPrefs({ statusBar: next });
+  }
+
+  /** Set one option of a built-in status bar module, for every session. */
+  async setStatusBarOption(module: string, key: string, value: string): Promise<void> {
+    const cur = this.state.prefs?.statusBar ?? { default: null, perDm: {} };
+    const options = { ...cur.options, [module]: { ...cur.options?.[module], [key]: value } };
+    const next: StatusBarPrefs = { ...cur, options };
+    if (this.state.prefs) this.set({ prefs: { ...this.state.prefs, statusBar: next } });
+    await this.setPrefs({ statusBar: next });
+  }
+
+  /** "Suggest a module": the prefilled issue form, in the browser, on the person's click only. */
+  suggestModule(): void {
+    this.openLink(SUGGEST_MODULE_URL, { target: 'browser' });
   }
 
   /** Esc to the PTY: interrupts the running turn. */

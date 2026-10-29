@@ -10,6 +10,7 @@ import {
   modeText,
   prLabel,
   availableModules,
+  moduleOption,
   resolveLayout,
   visibleModules,
   type StatusFacts,
@@ -113,18 +114,22 @@ export function StatusStrip({
           <span key={id} className="sc" data-chip="folder" title={cwd}>
             {lab('folder')}
             <Icon name="folder" />
-            {cwdParts(cwd).base || cwd}
+            <span className="sc__txt">
+              {moduleOption(prefs, 'folder', 'show') === 'path' ? cwd : cwdParts(cwd).base || cwd}
+            </span>
           </span>
         );
       case 'context':
         return (
           <span key={id} className="sc" data-chip="context">
             {lab('context')}
-            <span
-              className="meter"
-              style={{ '--pct': `${pct}%` } as React.CSSProperties}
-              aria-hidden="true"
-            />
+            {moduleOption(prefs, 'context', 'show') !== 'percent' && (
+              <span
+                className="meter"
+                style={{ '--pct': `${pct}%` } as React.CSSProperties}
+                aria-hidden="true"
+              />
+            )}
             ctx {pct}%
           </span>
         );
@@ -132,7 +137,7 @@ export function StatusStrip({
         return (
           <span key={id} className="sc" data-chip="cost">
             {lab('cost')}
-            {costText(chips.cost!)}
+            {costText(chips.cost!, Number(moduleOption(prefs, 'cost', 'decimals')))}
           </span>
         );
       case 'mode':
@@ -255,6 +260,9 @@ export function StatusStrip({
             onChange={(next) =>
               void store.setStatusBar(layout.source === 'dm' ? sessionId : null, next)
             }
+            optionValue={(id, key) => moduleOption(prefs, id, key)}
+            onOption={(id, key, value) => void store.setStatusBarOption(id, key, value)}
+            onSuggest={() => store.suggestModule()}
           />
           <div className="sbmenu__foot">
             <button

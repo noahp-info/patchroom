@@ -307,6 +307,14 @@ Every feature ships with its first-use path designed.
 - Every setting row carries `data-setting="<id>"` and an entry in `ui/src/components/prefs/registry.ts` (label, description, keywords). `ui/tests/prefs-search.spec.ts` fails on a row without one.
 - Choosing a result opens the section and flashes a ring one `--ring-pad` outside the row. The ring is its own box, so nothing shifts.
 
+### History
+
+- A full-pane panel like Activity. A bar under the header holds the filter field, the grouping toggle (Folder, Date, Model, Branch) and Refresh, in flow.
+- Groups are collapsible headers with a count. The newest three start open; a search opens every matching group. Each open group shows 40 rows, then "Show 40 more of N".
+- A row is the title, then the first message (muted, one line) when it differs, then a meta line naming what the grouping does not (folder, branch, model). Tags on the right: Open (in Patchroom) and Live elsewhere, then the age.
+- A row live in another process asks in place before it opens as a mirror.
+- Below 560px the filter takes its own line and group headers drop the parent path.
+
 ### Queued messages
 
 A message sent while Claude is busy shows at once at the bottom of the log, muted, labeled Queued, with Send now. The transcript entry replaces it. After an interrupt or the session's end it reads Not sent, with Retry and Remove.

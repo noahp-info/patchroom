@@ -370,6 +370,8 @@ export interface PrefsApi {
   updateCheck?(): Promise<UpdateInfo>;
   /** Installed font families (Core Text), read only. Absent: bundled faces only. */
   fontsList?(): Promise<FontOption[]>;
+  /** Open an http(s) link in the default browser. Absent: the link is not opened. */
+  linkOpenExternal?(url: string): Promise<void>;
 }
 
 /** Real backend: command names and payloads from the P3 build bar. */

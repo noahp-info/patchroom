@@ -221,6 +221,39 @@ for (const scheme of SCHEMES) {
       await page.keyboard.press('Meta+j');
       await expect(page.getByTestId('view-label')).toHaveText('Chat');
 
+      // The status bar menu with a module's options open, and the suggest row.
+      await page.getByTestId('strip-customize').click();
+      const sbm = page.getByRole('dialog', { name: 'Customize status bar' });
+      await expect(sbm).toBeVisible();
+      await sbm.getByTestId('sbe-options-context').click();
+      await expect(sbm.getByTestId('sbe-opts-context')).toBeVisible();
+      await sbm.getByTestId('sbe-suggest').scrollIntoViewIfNeeded();
+      await check('status bar options and suggest', '.sbmenu');
+      expect(await ringFindings(page, '.sbmenu'), where('status bar menu rings')).toEqual([]);
+      await page.keyboard.press('Escape');
+      await expect(sbm).toHaveCount(0);
+
+      // History: hundreds of sessions grouped, a search, and the in-place mirror confirm.
+      await page.evaluate(() => window.__PR_MOCK__!.setHistoryFixture(300));
+      await page.getByTestId('nav-history').click();
+      const hist = page.getByTestId('history');
+      await expect(page.getByTestId('history-count')).toContainText('300 sessions');
+      await check('History by folder');
+      expect(await ringFindings(page, '.history'), where('History rings')).toEqual([]);
+      for (const g of ['Date', 'Model', 'Branch', 'Folder']) {
+        await hist.getByRole('button', { name: g, exact: true }).click();
+        await check(`History by ${g.toLowerCase()}`);
+      }
+      await page.getByTestId('history-filter').fill('p95');
+      const liveRow = hist.locator('.hrow-wrap', { hasText: 'Live elsewhere' }).first();
+      await liveRow.locator('.hrow').click();
+      await expect(liveRow.getByRole('group', { name: 'Confirm open' })).toBeVisible();
+      await check('History mirror confirm');
+      await liveRow.getByRole('button', { name: 'Cancel' }).click();
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+      await expect(hist).toHaveCount(0);
+
       if (!size.pane) return;
 
       // Every overlay draws over the pane: the native viewer steps aside for each.
@@ -273,6 +306,10 @@ for (const scheme of SCHEMES) {
       await expect(page.locator('.qs, [role="dialog"]').first()).toBeVisible();
       mark = await expectViewerStepsAside(page, mark);
       await check('quick switcher');
+      // A query that finds a first message, with the closing search row.
+      await page.keyboard.type('webhook');
+      await expect(page.locator('[data-search-row]')).toBeVisible();
+      await check('quick switcher with a query');
       await page.keyboard.press('Escape');
       await expectViewerBack(page, mark);
       mark = (await viewerLog(page)).length;

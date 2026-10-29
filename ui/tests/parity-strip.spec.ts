@@ -267,4 +267,58 @@ test.describe('session parity: customize the status bar', () => {
     await page.keyboard.press('Escape');
     expect(errs).toEqual([]);
   });
+
+  test('each built-in module takes its options from the gear, saved for every session', async ({
+    page,
+  }) => {
+    const id = await openChat(page, []);
+    await feed(page, id, '', CHIPS);
+    const menu = await openMenu(page);
+    await expect(chip(page, 'cost')).toHaveText('$1.82');
+    await expect(chip(page, 'context').locator('.meter')).toHaveCount(1);
+    // Modules without options have no gear.
+    await expect(menu.getByTestId('sbe-options-mode')).toHaveCount(0);
+    await menu.getByTestId('sbe-options-cost').click();
+    await menu
+      .getByRole('group', { name: 'Cost: Round to' })
+      .getByRole('button', { name: 'Whole dollars' })
+      .click();
+    await expect(chip(page, 'cost')).toHaveText('$2');
+    await menu.getByTestId('sbe-options-context').click();
+    await expect(menu.getByTestId('sbe-opts-cost')).toHaveCount(0);
+    await menu.getByRole('button', { name: 'Percent only' }).click();
+    await expect(chip(page, 'context').locator('.meter')).toHaveCount(0);
+    await expect(chip(page, 'context')).toHaveText('ctx 64%');
+    await menu.getByTestId('sbe-options-folder').click();
+    await menu.getByRole('button', { name: 'Full path' }).click();
+    await expect(chip(page, 'folder')).toHaveText('/tmp/patchroom-test');
+    expect((await prefs(page))!.options).toEqual({
+      cost: { decimals: '0' },
+      context: { show: 'percent' },
+      folder: { show: 'path' },
+    });
+  });
+
+  test('"Suggest a module" opens the issue form in the browser only on a click', async ({
+    page,
+  }) => {
+    const id = await openChat(page, []);
+    await feed(page, id, '', CHIPS);
+    const menu = await openMenu(page);
+    expect(await page.evaluate(() => window.__PR_MOCK__!.external)).toEqual([]);
+    await menu.getByTestId('sbe-suggest').click();
+    // A plain URL: the repo's issue form, no identifiers, no query beyond the template.
+    expect(await page.evaluate(() => window.__PR_MOCK__!.external)).toEqual([
+      'https://github.com/noahp-info/patchroom/issues/new?template=status-bar-module.yml',
+    ]);
+    // Settings has the same button.
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Meta+,');
+    await page
+      .getByRole('dialog', { name: 'Settings' })
+      .getByRole('button', { name: 'Status bar', exact: true })
+      .click();
+    await page.getByTestId('prefs-statusbar').getByTestId('sbe-suggest').click();
+    await expect.poll(() => page.evaluate(() => window.__PR_MOCK__!.external.length)).toBe(2);
+  });
 });

@@ -64,6 +64,8 @@ const FOLDER_COMMANDS = [
   'folder_session_hide',
   'folder_session_open',
   'folder_sessions',
+  'history_session_open',
+  'history_sessions',
   'section_create_from_folder',
   'section_set_archive_days',
 ];
@@ -221,6 +223,25 @@ async function recordTauriCalls(): Promise<Call[]> {
         if (cmd === 'session_create' || cmd === 'section_create') return { id: 'x' };
         if (cmd === 'session_list' || cmd === 'section_list') return [];
         if (cmd === 'section_create_from_folder') return { id: 'x' };
+        if (cmd === 'history_sessions')
+          return {
+            sessions: [
+              {
+                sessionId: 'h1',
+                title: 't',
+                titleSource: 'ai-title',
+                firstPrompt: 'p',
+                launchCwd: '/w/.claude/worktrees/x',
+                folder: '/w',
+                branch: 'main',
+                model: 'claude-opus-5-5',
+                lastActivity: 1,
+                userTurns: 2,
+                liveState: 'free',
+              },
+            ],
+            skipped: 1,
+          };
         if (cmd === 'folder_sessions')
           return {
             sessions: [
@@ -240,7 +261,7 @@ async function recordTauriCalls(): Promise<Call[]> {
             ],
             hiddenCount: 0,
           };
-        if (cmd === 'folder_session_open')
+        if (cmd === 'folder_session_open' || cmd === 'history_session_open')
           return { id: 'd', name: 'n', cwd: '/w', title: '', status: 'busy', section_id: 's' };
         if (cmd === 'session_send_text')
           return { outcome: 'blocked_dialog', reason: 'dialog open' };
@@ -339,6 +360,16 @@ async function recordTauriCalls(): Promise<Call[]> {
   const opened = await ipc.folderSessionOpen('s', 'sid');
   expect(opened).toMatchObject({ id: 'd', sectionId: 's', folderChip: null });
   await ipc.folderSessionHide('s', 'sid', true);
+  const hist = await ipc.historySessions();
+  expect(hist.sessions[0]).toMatchObject({
+    sessionId: 'h1',
+    title: 't',
+    folder: '/w',
+    dmId: null,
+    liveState: 'free',
+  });
+  expect(hist.skipped).toBe(1);
+  await ipc.historySessionOpen('sid');
   const taken = await ipc.sessionTakeover('i', 80, 24);
   expect(taken).toMatchObject({ id: 'd', mirror: null });
   await ipc.sessionMirrorTakeoverWhenClosed('i', true);
@@ -492,6 +523,8 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
     expect(byCmd.section_create_from_folder).toEqual({ path: '/w', name: 'atlas' });
     expect(byCmd.section_set_archive_days).toEqual({ id: 's', days: 30 });
     expect(byCmd.folder_sessions).toEqual({ sectionId: 's' });
+    expect(byCmd.history_sessions).toEqual({});
+    expect(byCmd.history_session_open).toEqual({ sessionId: 'sid' });
     expect(byCmd.folder_session_open).toEqual({ sectionId: 's', sessionId: 'sid' });
     expect(byCmd.folder_session_hide).toEqual({ sectionId: 's', sessionId: 'sid', hidden: true });
     // Session parity: a mirror is taken over with the terminal grid, or armed with a flag.
