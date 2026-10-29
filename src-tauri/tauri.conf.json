@@ -48,7 +48,8 @@
     },
     "externalBin": [
       "binaries/patchroom-hook",
-      "binaries/patchroom-statusline"
+      "binaries/patchroom-statusline",
+      "binaries/patchroom-dictation"
     ],
     "macOS": {
       "hardenedRuntime": true,

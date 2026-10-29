@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- Embedded in the helper binary (__TEXT,__info_plist). The Speech framework reads the usage
+     strings from the process's own bundle info, and a command-line tool has no bundle. The
+     wording matches src-tauri/Info.plist. -->
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>dev.patchroom.app.dictation</string>
+  <key>CFBundleName</key>
+  <string>Patchroom Dictation</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Patchroom listens only while you dictate into a message. Audio stays on this Mac.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Patchroom turns your speech into text on this Mac. Nothing you say is sent anywhere.</string>
+</dict>
+</plist>

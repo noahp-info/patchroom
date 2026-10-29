@@ -10,6 +10,11 @@
 //!
 //! The nested cargo build uses its own target dir under `OUT_DIR`, so it never
 //! contends for the outer build's lock.
+//!
+//! It also compiles the on-device dictation helper (`crates/patchroom-dictation/helper`, Swift)
+//! with `swiftc` and stages it the same way as `patchroom-dictation`. Its Info.plist is linked
+//! into the binary, because the Speech framework reads the usage strings from the process
+//! itself. On a target that is not macOS a stub stands in that reports `helper_missing`.
 
 use std::error::Error;
 use std::os::unix::fs::PermissionsExt;
@@ -18,6 +23,7 @@ use std::process::Command;
 
 fn main() -> Result<(), Box<dyn Error>> {
     stage_hook_sidecar()?;
+    stage_dictation_helper()?;
     tauri_build::build();
     Ok(())
 }
@@ -84,5 +90,48 @@ fn stage_hook_sidecar() -> Result<(), Box<dyn Error>> {
         // The staged copy must be executable: the CLI runs it as a hook or statusLine command.
         std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))?;
     }
+    Ok(())
+}
+
+fn stage_dictation_helper() -> Result<(), Box<dyn Error>> {
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
+    let root = manifest_dir
+        .parent()
+        .ok_or("src-tauri has no parent directory")?
+        .to_path_buf();
+    let helper = root.join("crates/patchroom-dictation/helper");
+    println!("cargo:rerun-if-changed={}", helper.display());
+    let target = std::env::var("TARGET")?;
+    let dest_dir = manifest_dir.join("binaries");
+    std::fs::create_dir_all(&dest_dir)?;
+    let dest = dest_dir.join(format!("patchroom-dictation-{target}"));
+
+    let new = if target.ends_with("apple-darwin") {
+        let arch = target.split('-').next().unwrap_or("aarch64");
+        let arch = if arch == "aarch64" { "arm64" } else { arch };
+        let out = PathBuf::from(std::env::var("OUT_DIR")?).join("patchroom-dictation");
+        let status = Command::new("swiftc")
+            .args(["-O", "-swift-version", "5", "-target"])
+            .arg(format!("{arch}-apple-macos13.0"))
+            .args(["-framework", "Speech", "-framework", "AVFoundation"])
+            .args(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT"])
+            .args(["-Xlinker", "__info_plist", "-Xlinker"])
+            .arg(helper.join("Info.plist"))
+            .arg(helper.join("PatchroomDictation.swift"))
+            .arg("-o")
+            .arg(&out)
+            .status()?;
+        if !status.success() {
+            return Err("building the patchroom-dictation helper with swiftc failed".into());
+        }
+        std::fs::read(&out)?
+    } else {
+        b"#!/bin/sh\necho '{\"type\":\"error\",\"code\":\"helper_missing\"}'\necho '{\"type\":\"end\"}'\n"
+            .to_vec()
+    };
+    if std::fs::read(&dest).map_or(true, |old| old != new) {
+        std::fs::write(&dest, new)?;
+    }
+    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))?;
     Ok(())
 }

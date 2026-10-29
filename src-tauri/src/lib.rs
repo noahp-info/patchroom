@@ -65,6 +65,11 @@
 //! matching Settings > Updates check on; both are a plain GET through the system curl. The model
 //! catalog's ed25519 signature is checked against the key in `patchroom-catalog`.
 //!
+//! # Dictation
+//! Commands: `dictation_start`, `dictation_stop`, `dictation_locales`,
+//! `dictation_open_settings`. Event: `dictation:event`. On-device only; see [`dictation`] and
+//! `patchroom-dictation`. The helper runs only while dictating and is killed on quit.
+//!
 //! # Fonts
 //! `fonts_list {} -> [{family, mono}]`: installed families from Core Text for Settings >
 //! Themes > Fonts, read only. `Prefs.fonts` holds the per-area choices and the per-section and
@@ -88,6 +93,7 @@
 pub mod agents;
 pub mod capture;
 pub mod commands;
+pub mod dictation;
 #[cfg(debug_assertions)]
 pub mod e2e;
 pub mod events;
@@ -359,6 +365,10 @@ macro_rules! app_handler {
             commands::update_check,
             commands::app_restart,
             commands::app_restart_pending,
+            dictation::dictation_start,
+            dictation::dictation_stop,
+            dictation::dictation_locales,
+            dictation::dictation_open_settings,
             e2e::e2e_report,
             e2e::e2e_pgrep,
             e2e::e2e_sleep,
@@ -465,6 +475,10 @@ macro_rules! app_handler {
             commands::update_check,
             commands::app_restart,
             commands::app_restart_pending,
+            dictation::dictation_start,
+            dictation::dictation_stop,
+            dictation::dictation_locales,
+            dictation::dictation_open_settings,
         ]
     };
 }
@@ -522,6 +536,7 @@ pub fn run() {
             }
             app.manage(manager);
             app.manage(steer::ShotState::default());
+            app.manage(dictation::DictationState::default());
             app.manage(viewer::ViewerShared::new(viewer_store_id(&data_dir(app)?)));
             open_main_window(app)?;
             Ok(())
@@ -535,6 +550,10 @@ pub fn run() {
         if let RunEvent::Exit = event {
             #[cfg(debug_assertions)]
             e2e::stop_outside();
+            // The dictation helper goes first: the microphone closes before anything else.
+            if let Some(d) = handle.try_state::<dictation::DictationState>() {
+                d.shutdown();
+            }
             if let Some(m) = handle.try_state::<Arc<Manager>>() {
                 m.shutdown();
             }
@@ -659,6 +678,20 @@ mod tests {
         ] {
             assert_eq!(SRC.matches(&format!("steer::{c},")).count(), 2, "{c}");
         }
+    }
+
+    #[test]
+    fn dictation_commands_are_in_both_handler_lists_and_stop_on_quit() {
+        const SRC: &str = include_str!("lib.rs");
+        for c in [
+            "dictation_start",
+            "dictation_stop",
+            "dictation_locales",
+            "dictation_open_settings",
+        ] {
+            assert_eq!(SRC.matches(&format!("dictation::{c},")).count(), 2, "{c}");
+        }
+        assert!(SRC.contains("d.shutdown();"));
     }
 
     #[test]
