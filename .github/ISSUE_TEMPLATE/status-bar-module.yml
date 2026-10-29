@@ -1,0 +1,63 @@
+name: Status bar module
+description: Suggest a status bar module, or submit a script for review as a new built-in module.
+title: "Module: "
+labels: ["status-bar-module"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Patchroom's status bar runs **built-in modules only**. It never runs a user's script.
+        If your idea is accepted, it is rewritten as a built-in module, with tests, and a
+        maintainer reviews and merges it. An automated reviewer reads your script for safety
+        first. It never runs your script. See docs/modules.md.
+
+        Do not paste secrets, tokens, real email addresses or paths that name you.
+  - type: textarea
+    id: shows
+    attributes:
+      label: What it shows
+      description: One or two sentences. What does the module put in the status bar, and why is it useful?
+      placeholder: "The number of open pull requests on the current branch, e.g. 'PRs 2'."
+    validations:
+      required: true
+  - type: dropdown
+    id: refresh
+    attributes:
+      label: How often it refreshes
+      description: How fresh does the value need to be?
+      options:
+        - Only when the session's statusLine updates
+        - Every few seconds
+        - Every minute or so
+        - Every few minutes or less
+        - Only on click
+    validations:
+      required: true
+  - type: textarea
+    id: data
+    attributes:
+      label: The data it reads
+      description: |
+        Every file, command, environment variable or network address it reads. Say if it needs
+        the network at all. Modules that need the network, write files or read other apps' data
+        are unlikely to be accepted.
+      placeholder: "Runs `git rev-parse --abbrev-ref HEAD` in the session folder. No network. No files written."
+    validations:
+      required: true
+  - type: textarea
+    id: script
+    attributes:
+      label: The script itself
+      description: Optional. The statusLine script or command you use today. It is read, never run.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Before you submit
+      options:
+        - label: The script holds no secrets, tokens or personal details.
+          required: true
+        - label: I agree my submission may be rewritten and shipped under the project's Apache-2.0 license (see CONTRIBUTING.md for the CLA).
+          required: true

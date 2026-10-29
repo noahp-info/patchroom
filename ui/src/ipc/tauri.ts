@@ -10,6 +10,8 @@ import type {
   SearchHit,
   FolderSession,
   FolderSessions,
+  HistorySession,
+  HistorySessions,
   SearchResult,
   SectionInfo,
   MirrorInfo,
@@ -72,6 +74,23 @@ function folderSession(r: Loose): FolderSession {
     liveState: pick<FolderSession['liveState']>(r, 'liveState', 'live_state'),
     hidden: Boolean(r.hidden),
     dmId: pick<string | null>(r, 'dmId', 'dm_id') ?? null,
+  };
+}
+function historySession(r: Loose): HistorySession {
+  const live = pick<string>(r, 'liveState', 'live_state');
+  return {
+    sessionId: String(pick(r, 'sessionId', 'session_id') ?? ''),
+    title: String(r.title ?? ''),
+    titleSource: String(pick(r, 'titleSource', 'title_source') ?? 'prompt'),
+    firstPrompt: String(pick(r, 'firstPrompt', 'first_prompt') ?? ''),
+    launchCwd: String(pick(r, 'launchCwd', 'launch_cwd') ?? ''),
+    folder: String(r.folder ?? ''),
+    branch: (r.branch as string | null | undefined) ?? null,
+    model: (r.model as string | null | undefined) ?? null,
+    lastActivity: pick(r, 'lastActivity', 'last_activity') as HistorySession['lastActivity'],
+    userTurns: Number(pick(r, 'userTurns', 'user_turns') ?? 0),
+    dmId: pick<string | null>(r, 'dmId', 'dm_id') ?? null,
+    liveState: live === 'live' || live === 'free' ? live : 'checking',
   };
 }
 /** The typed `check_failed` outcome, or an error whose text starts `could not check`. */
@@ -301,6 +320,26 @@ export function createTauriIpc(): Ipc {
     },
     folderSessionHide: (sectionId, sessionId, hidden) =>
       invoke('folder_session_hide', { sectionId, sessionId, hidden }),
+    historySessions: async () => {
+      const r = await invoke<Loose>('history_sessions', {});
+      return {
+        sessions: ((r.sessions as Loose[] | undefined) ?? []).map(historySession),
+        skipped: Number(r.skipped ?? 0),
+      } satisfies HistorySessions;
+    },
+    historySessionOpen: async (sessionId, opts) => {
+      try {
+        const r = await invoke<WireSession | CheckFailed>('history_session_open', {
+          sessionId,
+          openAnyway: opts?.openAnyway || undefined,
+        });
+        return checkFailedOf(r) ?? wireSession(r as WireSession);
+      } catch (err) {
+        const f = checkFailedOf(err);
+        if (f) return f;
+        throw err;
+      }
+    },
     on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
   };
 }

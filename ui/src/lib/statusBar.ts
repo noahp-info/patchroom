@@ -23,6 +23,66 @@ export const MODULES: ModuleDef[] = [
 ];
 
 export const MODULE_IDS: StatusModuleId[] = MODULES.map((m) => m.id);
+
+/** One option of a built-in module. The first choice is the default. Built-ins only: no scripts. */
+export interface ModuleOption {
+  key: string;
+  label: string;
+  choices: readonly { value: string; label: string }[];
+}
+
+/** Every module option. The backend accepts exactly these pairs (`MODULE_OPTIONS` in prefs). */
+export const MODULE_OPTIONS: Partial<Record<StatusModuleId, readonly ModuleOption[]>> = {
+  folder: [
+    {
+      key: 'show',
+      label: 'Show',
+      choices: [
+        { value: 'name', label: 'Folder name' },
+        { value: 'path', label: 'Full path' },
+      ],
+    },
+  ],
+  context: [
+    {
+      key: 'show',
+      label: 'Show',
+      choices: [
+        { value: 'meter', label: 'Meter and percent' },
+        { value: 'percent', label: 'Percent only' },
+      ],
+    },
+  ],
+  cost: [
+    {
+      key: 'decimals',
+      label: 'Round to',
+      choices: [
+        { value: '2', label: 'Cents' },
+        { value: '0', label: 'Whole dollars' },
+      ],
+    },
+  ],
+};
+
+/** A module's option value: the saved one when it is known, else the default. */
+export function moduleOption(
+  prefs: Pick<Prefs, 'statusBar'> | null | undefined,
+  id: StatusModuleId,
+  key: string,
+): string {
+  const opt = MODULE_OPTIONS[id]?.find((o) => o.key === key);
+  const saved = prefs?.statusBar?.options?.[id]?.[key];
+  if (opt && saved && opt.choices.some((c) => c.value === saved)) return saved;
+  return opt?.choices[0].value ?? '';
+}
+
+/**
+ * Where "Suggest a module" goes: a new issue on the public repo from the status-bar-module
+ * form. A plain URL with no identifiers. Patchroom opens it only when the person clicks.
+ */
+export const SUGGEST_MODULE_URL =
+  'https://github.com/noahp-info/patchroom/issues/new?template=status-bar-module.yml';
 const KNOWN = new Set<string>(MODULE_IDS);
 
 export const moduleLabel = (id: string): string => MODULES.find((m) => m.id === id)?.label ?? id;
@@ -37,8 +97,9 @@ export function modeText(m: string): string {
   return m.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
 }
 
-export function costText(c: number | string): string {
-  return typeof c === 'number' ? `$${c.toFixed(2)}` : c.startsWith('$') ? c : `$${c}`;
+export function costText(c: number | string, decimals = 2): string {
+  if (typeof c === 'number') return `$${c.toFixed(decimals)}`;
+  return c.startsWith('$') ? c : `$${c}`;
 }
 
 export function contextPct(chips: StatusChips): number | undefined {

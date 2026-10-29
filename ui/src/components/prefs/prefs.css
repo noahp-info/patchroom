@@ -1014,6 +1014,28 @@
   color: var(--muted);
   font-size: 12px;
 }
+/* Labels: one row per group, a one-click style then the template field */
+.mb-groups {
+  display: grid;
+  gap: var(--group-gap);
+  margin: var(--group-gap) 0;
+}
+.mb-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--group-gap);
+}
+.mb-group__name {
+  flex: 0 0 110px;
+  align-self: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+.mb-group__tpl {
+  flex: 1 1 180px;
+  max-width: 260px;
+}
 .mb-labels,
 .sb-labels {
   display: grid;

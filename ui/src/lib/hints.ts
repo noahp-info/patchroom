@@ -18,12 +18,13 @@ export interface HintDef {
   /**
    * Where it sits, always in flow: under the conversation header (default), above the status
    * strip next to the model chip, above the message log's bottom edge, or at the top of a
-   * Settings section (shown by that section, not the app store).
+   * Settings section (shown by that section, not the app store), or at the top of the panel
+   * view that shows it (History).
    */
   place?: HintPlace;
 }
 
-export type HintPlace = 'header' | 'strip' | 'log' | 'settings';
+export type HintPlace = 'header' | 'strip' | 'log' | 'settings' | 'panel';
 
 export const HINTS = {
   'links.browser': {
@@ -72,6 +73,11 @@ export const HINTS = {
     text: 'Dictation runs on this Mac. Pick its language, shortcut and silence timeout in Settings > Dictation.',
     action: { label: 'Dictation settings', tab: 'dictation' },
     place: 'strip',
+  },
+  'history.group': {
+    text: 'History groups every session by folder, date, model or branch, and remembers your pick. Set the default in Settings > History.',
+    action: { label: 'Open History settings', tab: 'history', setting: 'history.group' },
+    place: 'panel',
   },
   restart: {
     text: 'Patchroom restarted and reopened {count}. Turn on update checks in Settings > Updates.',

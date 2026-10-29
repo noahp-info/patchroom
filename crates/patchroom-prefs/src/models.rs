@@ -165,11 +165,24 @@ pub struct GroupLabels {
     pub local: String,
 }
 
+/// The Local template before 2026-10-29 (a house). A stored template equal to it moves to
+/// the laptop default; anything the user typed stays.
+pub const OLD_LOCAL_DEFAULT: &str = "\u{1f3e0} {name}";
+
 impl Default for GroupLabels {
     fn default() -> Self {
         Self {
             cloud: "\u{2601}\u{fe0f} {name}".into(),
-            local: "\u{1f3e0} {name}".into(),
+            local: "\u{1f4bb} {name}".into(),
+        }
+    }
+}
+
+impl GroupLabels {
+    /// Move a Local template that still equals the old default to the new one.
+    pub fn migrate_local_default(&mut self) {
+        if self.local == OLD_LOCAL_DEFAULT {
+            self.local = Self::default().local;
         }
     }
 }
@@ -385,8 +398,25 @@ mod tests {
     }
 
     #[test]
-    fn templates_default_to_cloud_and_home() {
+    fn templates_default_to_cloud_and_laptop() {
         let g = GroupLabels::default();
         assert!(g.cloud.contains("{name}") && g.local.contains("{name}"));
+        assert_eq!(g.local, "\u{1f4bb} {name}");
+    }
+
+    #[test]
+    fn only_the_old_local_default_migrates() {
+        let mut g = GroupLabels {
+            local: OLD_LOCAL_DEFAULT.into(),
+            ..GroupLabels::default()
+        };
+        g.migrate_local_default();
+        assert_eq!(g.local, GroupLabels::default().local);
+        let mut own = GroupLabels {
+            local: "\u{1f3e0} at home: {name}".into(),
+            ..GroupLabels::default()
+        };
+        own.migrate_local_default();
+        assert_eq!(own.local, "\u{1f3e0} at home: {name}");
     }
 }

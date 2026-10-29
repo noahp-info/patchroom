@@ -415,6 +415,10 @@ export interface Ipc {
   dictationLocales(): Promise<DictationLocales>;
   /** Open the System Settings pane that fixes a dictation problem. */
   dictationOpenSettings(pane: SettingsPane): Promise<void>;
+  /** Every resumable session across all folders. Read only. */
+  historySessions(): Promise<HistorySessions>;
+  /** Open a History row: the open DM, or a new one resumed (or mirrored) in its folder. */
+  historySessionOpen(sessionId: string, opts?: OpenOptions): Promise<SessionInfo | CheckFailed>;
   on<K extends keyof IpcEvents>(
     event: K,
     handler: (payload: IpcEvents[K]) => void,
@@ -711,6 +715,8 @@ export interface Prefs {
   fonts?: FontPrefs;
   /** On-device dictation in the composer. Absent: on, system language, Cmd+Shift+D, 8s. */
   dictation?: DictationPrefs;
+  /** The History panel's grouping, remembered from its header toggle. Absent: folder. */
+  history?: { groupBy: HistoryGroup };
 }
 
 /** Tools a bundle entry can name. */
@@ -798,6 +804,8 @@ export interface StatusBarPrefs {
   perDm: Record<string, string[]>;
   /** The user's label per module: text plus an emoji. */
   labels?: Record<string, ModuleLabel>;
+  /** Options of the built-in modules: module id to option to value (`statusBar.ts`). */
+  options?: Record<string, Record<string, string>>;
 }
 
 export interface ModuleLabel {
@@ -859,6 +867,42 @@ export interface FolderSessions {
   sessions: FolderSession[];
   hiddenCount: number;
 }
+
+// ---------------------------------------------------------------------------------------------
+// History panel: every Claude Code session across all folders (read only). camelCase JSON.
+// ---------------------------------------------------------------------------------------------
+
+/** Where a History title came from: Claude's own title, else the first prompt. */
+export type TitleSource = 'custom-title' | 'ai-title' | 'prompt';
+
+/** One session in the History panel. Only the title and the first prompt leave the backend. */
+export interface HistorySession {
+  sessionId: string;
+  title: string;
+  titleSource: TitleSource | (string & {});
+  firstPrompt: string;
+  /** Where `--resume` runs. */
+  launchCwd: string;
+  /** The project folder it groups under (a Claude worktree groups under its project). */
+  folder: string;
+  branch?: string | null;
+  /** Newest model id the transcript reports. */
+  model?: string | null;
+  lastActivity: Timestamp;
+  userTurns: number;
+  /** The Patchroom DM this session was opened as. */
+  dmId?: string | null;
+  liveState: 'checking' | 'live' | 'free';
+}
+
+export interface HistorySessions {
+  sessions: HistorySession[];
+  /** Transcripts left out: subagent runs, `-p` runs and sessions with no prompt. */
+  skipped: number;
+}
+
+/** How the History panel groups sessions. Stored in prefs (`history.groupBy`). */
+export type HistoryGroup = 'folder' | 'date' | 'model' | 'branch';
 
 export interface FolderChangedEvent {
   sectionId: string;

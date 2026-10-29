@@ -193,7 +193,9 @@ test.describe('workspace: folder section order, noise and older sessions (checkl
     // The hidden noise rows never show up.
     const box = page.getByRole('combobox', { name: 'Jump to a session' });
     await box.fill('(no prompt)');
-    await expect(page.getByRole('option')).toHaveCount(0);
+    // Only the closing "Search messages for" row is left.
+    await expect(page.getByRole('option')).toHaveCount(1);
+    await expect(page.locator('[data-search-row]')).toBeVisible();
     await box.fill(name);
     await page.keyboard.press('Enter');
     await expect(page.getByRole('dialog', { name: 'Quick switcher' })).toHaveCount(0);

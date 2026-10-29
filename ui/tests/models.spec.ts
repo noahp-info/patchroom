@@ -28,7 +28,7 @@ const DAILY: ModelPrefs = {
   perSection: {},
   perSession: {},
   labels: {},
-  groupLabels: { cloud: '☁️ {name}', local: '\u{1F3E0} {name}' },
+  groupLabels: { cloud: '☁️ {name}', local: '\u{1F4BB} {name}' },
   // The label offer is for models after the first, so seed one seen model.
   seen: ['claude-opus-5-5'],
   // Sonnet 5.5 and Opus 5.5 are newer than two entries; offered already, so tests start quiet.
@@ -171,7 +171,7 @@ test.describe('model bundles', () => {
         }),
       id,
     );
-    await expect(chip(page)).toHaveText('\u{1F3E0} Opus 5.5');
+    await expect(chip(page)).toHaveText('\u{1F4BB} Opus 5.5');
     await page.evaluate(
       (sid) =>
         window.__PR_MOCK__!.setStatusline(sid, '', {
@@ -420,5 +420,39 @@ test.describe('Settings > Models', () => {
     await expect
       .poll(() => page.evaluate(() => window.__PR_MOCK__!.prefs().models?.groupLabels.cloud))
       .toBe('Cloud: {name}');
+    // A hand-typed template is custom: neither one-click style is on.
+    const cloud = page.getByTestId('label-style-cloud');
+    await expect(cloud.getByRole('radio', { name: 'Icon and name' })).not.toBeChecked();
+    await expect(cloud.getByRole('radio', { name: 'Name only' })).not.toBeChecked();
+  });
+
+  test('labels: one click picks icon and name, or the name only, per group', async ({ page }) => {
+    await page.goto('/?mock');
+    await seedModels(page, DAILY);
+    const id = await newSession(page);
+    await page.evaluate(
+      (sid) =>
+        window.__PR_MOCK__!.setStatusline(sid, '', {
+          model: 'Opus 5.5',
+          modelId: 'claude-opus-5-5',
+          apiLocal: true,
+        }),
+      id,
+    );
+    await expect(chip(page)).toHaveText('\u{1F4BB} Opus 5.5');
+    await page.evaluate(() => window.__PR_STORE__!.openPrefs({ tab: 'models' }));
+    const local = page.getByTestId('label-style-local');
+    await expect(local.getByRole('radio', { name: 'Icon and name' })).toBeChecked();
+    await local.getByRole('radio', { name: 'Name only' }).check({ force: true });
+    await expect
+      .poll(() => page.evaluate(() => window.__PR_MOCK__!.prefs().models?.groupLabels.local))
+      .toBe('{name}');
+    await expect(page.getByTestId('label-tpl-local')).toHaveValue('{name}');
+    // The cloud group is its own choice.
+    await expect(
+      page.getByTestId('label-style-cloud').getByRole('radio', { name: 'Icon and name' }),
+    ).toBeChecked();
+    await page.evaluate(() => window.__PR_STORE__!.closePanel());
+    await expect(chip(page)).toHaveText('Opus 5.5');
   });
 });

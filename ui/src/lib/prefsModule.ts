@@ -33,6 +33,7 @@ export type PrefsTabId =
   | 'hooks'
   | 'links'
   | 'dictation'
+  | 'history'
   | 'accounts'
   | 'models'
   | 'updates';
@@ -73,6 +74,7 @@ interface PrefsApi {
   fontsList: Ipc['fontsList'];
   dictationLocales: Ipc['dictationLocales'];
   dictationOpenSettings: Ipc['dictationOpenSettings'];
+  linkOpenExternal: Ipc['linkOpenExternal'];
 }
 
 interface PrefsExports {
@@ -136,6 +138,7 @@ export function installPrefsApi(ipc: Ipc): void {
     fontsList: () => ipc.fontsList(),
     dictationLocales: () => ipc.dictationLocales(),
     dictationOpenSettings: (pane) => ipc.dictationOpenSettings(pane),
+    linkOpenExternal: (url) => ipc.linkOpenExternal(url),
   });
 }
 

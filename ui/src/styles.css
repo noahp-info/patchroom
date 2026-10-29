@@ -4050,3 +4050,52 @@ body.dragging .sbe__grip {
   background: var(--hover);
   color: var(--fg);
 }
+/* Status bar editor: inline module options and the suggest link */
+.sbe__row:has(.sbe__opts) {
+  flex-wrap: wrap;
+}
+.sbe__opts {
+  display: grid;
+  flex-basis: 100%;
+  gap: var(--ring-gap);
+  padding: var(--ring-gap) 0 var(--ring-gap) 30px;
+}
+.sbe__opt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--group-gap);
+}
+.sbe__optname {
+  color: var(--muted);
+  --fs: 12px;
+}
+.sbe__opts .scope {
+  margin-right: 0;
+}
+.sbe__suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--group-gap);
+  margin-top: var(--group-gap);
+}
+.sbe__suggest .sbe__add {
+  margin-left: 0;
+  border: 1px solid var(--line);
+}
+.sbe__suggestnote {
+  flex: 1 1 200px;
+  color: var(--muted);
+  --fs: 11.5px;
+}
+/* A full-path folder chip shortens with an ellipsis instead of pushing the strip wide. */
+.chat .strip .sc[data-chip='folder'] {
+  max-width: 48ch;
+}
+.sc__txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

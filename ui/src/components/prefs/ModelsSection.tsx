@@ -8,7 +8,13 @@ import type {
   ToolId,
 } from '../../ipc/types.ts';
 import { ADAPTERS, TOOL_IDS, safeModel } from '../../lib/models/adapters.ts';
-import { modelsOf, newId } from '../../lib/models/bundles.ts';
+import {
+  LABEL_STYLES,
+  labelStyleOf,
+  labelTemplate,
+  modelsOf,
+  newId,
+} from '../../lib/models/bundles.ts';
 import {
   LATEST_PREFIX,
   SHIPPED_CATALOG,
@@ -248,34 +254,22 @@ export function ModelsSection({
 
       <h3 data-setting="models.labels">Labels</h3>
       <p className="pf-hint">
-        What the model chip says. A model&#8217;s own label wins. Otherwise the Cloud or Local
-        template applies, with {'{name}'} for the model&#8217;s name. Local means the session talks
-        to an API on this Mac.
+        What the model chip says. A model&#8217;s own label wins. Otherwise its group applies. Local
+        means the session talks to an API on this Mac.
       </p>
-      <div className="pf-row" data-setting="models.labels">
-        <label className="pf">
-          <span>Cloud models</span>
-          <input
-            data-testid="label-tpl-cloud"
-            value={models.groupLabels.cloud}
-            maxLength={48}
-            onChange={(e) =>
-              save({ ...models, groupLabels: { ...models.groupLabels, cloud: e.target.value } })
-            }
+      <div className="mb-groups">
+        {(['cloud', 'local'] as const).map((g) => (
+          <GroupLabelRow
+            key={g}
+            place={g}
+            value={models.groupLabels[g]}
+            onChange={(v) => save({ ...models, groupLabels: { ...models.groupLabels, [g]: v } })}
           />
-        </label>
-        <label className="pf">
-          <span>Local models</span>
-          <input
-            data-testid="label-tpl-local"
-            value={models.groupLabels.local}
-            maxLength={48}
-            onChange={(e) =>
-              save({ ...models, groupLabels: { ...models.groupLabels, local: e.target.value } })
-            }
-          />
-        </label>
+        ))}
       </div>
+      <p className="pf-hint" id="mb-tpl-help">
+        For your own wording, edit a template. {'{name}'} stands for the model&#8217;s name.
+      </p>
       {labelIds.length > 0 && (
         <div className="mb-labels">
           {labelIds.map((id) => {
@@ -328,6 +322,53 @@ export function ModelsSection({
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/** One group's label: a one-click style plus the template text for anything custom. */
+function GroupLabelRow({
+  place,
+  value,
+  onChange,
+}: {
+  place: ModelPlace;
+  value: string;
+  onChange(v: string): void;
+}) {
+  const style = labelStyleOf(place, value);
+  const title = place === 'cloud' ? 'Cloud models' : 'Local models';
+  return (
+    <div className="mb-group" data-setting={`models.labels.${place}`}>
+      <span className="mb-group__name">{title}</span>
+      <div
+        className="pf-seg"
+        role="radiogroup"
+        aria-label={`${title} label style`}
+        data-testid={`label-style-${place}`}
+      >
+        {LABEL_STYLES.map((st) => (
+          <label key={st.id} className="pf-seg__opt">
+            <input
+              type="radio"
+              name={`label-style-${place}`}
+              checked={style === st.id}
+              onChange={() => onChange(labelTemplate(place, st.id))}
+            />
+            <span>{st.label}</span>
+          </label>
+        ))}
+      </div>
+      <label className="pf mb-group__tpl">
+        <span>Template{style === 'custom' ? ' (custom)' : ''}</span>
+        <input
+          data-testid={`label-tpl-${place}`}
+          value={value}
+          maxLength={48}
+          aria-describedby="mb-tpl-help"
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </label>
     </div>
   );
 }

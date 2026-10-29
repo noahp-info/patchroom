@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { StatusModuleId } from '../../ipc';
 import { beginDrag } from '../../lib/dnd';
-import { MODULES, moduleLabel, moveModule } from '../../lib/statusBar';
+import { MODULE_OPTIONS, MODULES, moduleLabel, moveModule } from '../../lib/statusBar';
 import { Icon } from '../Icon';
 
 export interface StatusBarEditorProps {
@@ -12,6 +12,11 @@ export interface StatusBarEditorProps {
   /** Enabled modules with nothing to show right now (no data yet). Dimmed, never removed. */
   idle?: ReadonlySet<StatusModuleId>;
   onChange(next: StatusModuleId[]): void;
+  /** Current value of a module option (`MODULE_OPTIONS`). Without it, rows offer no options. */
+  optionValue?(id: StatusModuleId, key: string): string;
+  onOption?(id: StatusModuleId, key: string, value: string): void;
+  /** "Suggest a module…": opens the issue form in the browser. Omit to hide the button. */
+  onSuggest?(): void;
 }
 
 type DropAt =
@@ -35,8 +40,17 @@ function dropTarget(under: Element | null, y: number): DropAt | null {
  * Reorder, remove and add status strip modules. Drag a row by its grip (pointer events: HTML5
  * drag and drop is unreliable in the webview), or focus the grip and press the arrow keys.
  */
-export function StatusBarEditor({ active, tray, idle, onChange }: StatusBarEditorProps) {
+export function StatusBarEditor({
+  active,
+  tray,
+  idle,
+  onChange,
+  optionValue,
+  onOption,
+  onSuggest,
+}: StatusBarEditorProps) {
   const [drag, setDrag] = useState<{ id: StatusModuleId; at: DropAt | null } | null>(null);
+  const [opened, setOpened] = useState<StatusModuleId | null>(null);
 
   const begin = (e: React.PointerEvent, id: StatusModuleId) => {
     let at: DropAt | null = null;
@@ -79,6 +93,7 @@ export function StatusBarEditor({ active, tray, idle, onChange }: StatusBarEdito
       <ul className="sbe__list" aria-label="Shown in the status bar" data-sbe-active="">
         {active.length === 0 && <li className="sbe__none">Nothing shown. Add a module below.</li>}
         {active.map((id) => {
+          const opts = optionValue && onOption ? MODULE_OPTIONS[id] : undefined;
           const mark =
             drag?.at?.kind === 'row' && drag.at.id === id
               ? drag.at.after
@@ -107,6 +122,20 @@ export function StatusBarEditor({ active, tray, idle, onChange }: StatusBarEdito
                 {moduleLabel(id)}
               </span>
               {idle?.has(id) && <span className="sbe__tag">Nothing to show yet</span>}
+              {opts && (
+                <button
+                  type="button"
+                  className="sbe__x"
+                  aria-label={`${moduleLabel(id)} options`}
+                  aria-expanded={opened === id}
+                  aria-controls={`sbe-opt-${id}`}
+                  title="Options"
+                  data-testid={`sbe-options-${id}`}
+                  onClick={() => setOpened(opened === id ? null : id)}
+                >
+                  <Icon name="gear" />
+                </button>
+              )}
               <button
                 type="button"
                 className="sbe__x"
@@ -115,6 +144,37 @@ export function StatusBarEditor({ active, tray, idle, onChange }: StatusBarEdito
               >
                 <Icon name="x" />
               </button>
+              {opts && opened === id && (
+                <div
+                  ref={(el) => el?.scrollIntoView({ block: 'nearest' })}
+                  className="sbe__opts"
+                  id={`sbe-opt-${id}`}
+                  data-setting="statusbar.options"
+                  data-testid={`sbe-opts-${id}`}
+                >
+                  {opts.map((o) => (
+                    <div key={o.key} className="sbe__opt">
+                      <span className="sbe__optname">{o.label}</span>
+                      <div
+                        className="scope"
+                        role="group"
+                        aria-label={`${moduleLabel(id)}: ${o.label}`}
+                      >
+                        {o.choices.map((c) => (
+                          <button
+                            key={c.value}
+                            type="button"
+                            aria-pressed={optionValue!(id, o.key) === c.value}
+                            onClick={() => onOption!(id, o.key, c.value)}
+                          >
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </li>
           );
         })}
@@ -151,6 +211,18 @@ export function StatusBarEditor({ active, tray, idle, onChange }: StatusBarEdito
           </li>
         ))}
       </ul>
+      {onSuggest && (
+        <div className="sbe__suggest" data-setting="statusbar.suggest">
+          <button type="button" className="sbe__add" data-testid="sbe-suggest" onClick={onSuggest}>
+            <Icon name="ext" />
+            Suggest a module…
+          </button>
+          <span className="sbe__suggestnote">
+            Opens a GitHub issue form in your browser. Modules are built in; Patchroom never runs
+            your scripts.
+          </span>
+        </div>
+      )}
     </div>
   );
 }

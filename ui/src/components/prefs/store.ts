@@ -77,6 +77,12 @@ export class PrefsStore {
     if (v === this.version) this.adopt(saved);
   }
 
+  /** Open an http(s) link in the default browser (the person clicked it). */
+  async openExternal(url: string): Promise<void> {
+    if (!/^https:\/\//.test(url)) return;
+    await this.api.linkOpenExternal?.(url);
+  }
+
   async refreshDetected(): Promise<void> {
     this.detected = await this.api.soundHooksDetect().catch(() => []);
     this.snap = { ...this.snap, detected: this.detected };
