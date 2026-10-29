@@ -34,7 +34,7 @@ patchroom-sounds = { path = "../crates/patchroom-sounds" }
 patchroom-themeimport = { path = "../crates/patchroom-themeimport" }
 patchroom-dictation = { path = "../crates/patchroom-dictation" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-base64 = "0.22"
+base64 = "0.23"
 vt100 = "0.16"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

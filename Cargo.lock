@@ -2738,7 +2738,7 @@ dependencies = [
 name = "patchroom"
 version = "0.0.1"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "core-graphics",
  "core-text",
@@ -2869,7 +2869,7 @@ dependencies = [
 name = "patchroom-sounds"
 version = "0.0.1"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "patchroom-prefs",
  "serde",
  "serde_json",
