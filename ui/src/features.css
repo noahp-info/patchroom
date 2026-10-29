@@ -422,15 +422,27 @@
   border-radius: var(--r-sm);
   color: var(--muted);
 }
-.history__q input {
+.pr-app .history__q input {
   flex: 1;
   min-width: 0;
+  height: 28px;
+  padding: 0;
   border: 0;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
   outline: 0;
   background: transparent;
   color: var(--fg);
   font: inherit;
   font-size: 13px;
+}
+.pr-app .history__q input:focus,
+.pr-app .history__q input:focus-visible {
+  outline: none;
+}
+.history__q input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
 }
 .history__q:focus-within {
   outline: 2px solid var(--link);
@@ -543,8 +555,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Line one: the title wins room, the meta shortens first. */
+.hrow__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--group-gap);
+  min-width: 0;
+}
 .hrow__title {
+  flex: 0 1 auto;
+  min-width: 4ch;
   font-weight: 600;
+}
+.hrow__line .hrow__meta {
+  flex: 0 10 auto;
+  min-width: 0;
 }
 .hrow__prompt {
   color: var(--muted);

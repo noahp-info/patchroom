@@ -249,9 +249,11 @@ function HistoryRow({
         }`}
       >
         <span className="hrow__main">
-          <span className="hrow__title">{row.title}</span>
+          <span className="hrow__line">
+            <span className="hrow__title">{row.title}</span>
+            {meta.length > 0 && <span className="hrow__meta">{meta.join(' · ')}</span>}
+          </span>
           {showPrompt && <span className="hrow__prompt">{row.firstPrompt}</span>}
-          {meta.length > 0 && <span className="hrow__meta">{meta.join(' · ')}</span>}
         </span>
         <span className="hrow__side">
           {inPatchroom && (
