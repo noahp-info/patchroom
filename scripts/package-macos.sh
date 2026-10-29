@@ -32,9 +32,13 @@ pnpm tauri build --bundles app
 echo "== sign ($([ "$IDENTITY" = "-" ] && echo ad-hoc || echo "$IDENTITY"))"
 TS=()
 [ "$IDENTITY" != "-" ] && TS=(--timestamp)
+# The dictation helper reads the microphone itself, so it carries the audio-input entitlement.
+HELPER="$APP/Contents/MacOS/patchroom-dictation"
+HELPER_ENT="$ROOT/crates/patchroom-dictation/helper/Entitlements.plist"
 while IFS= read -r bin; do
   codesign --force --options runtime ${TS[@]+"${TS[@]}"} -s "$IDENTITY" "$bin"
-done < <(find "$APP/Contents/MacOS" -type f -perm -u+x ! -name patchroom)
+done < <(find "$APP/Contents/MacOS" -type f -perm -u+x ! -name patchroom ! -name patchroom-dictation)
+codesign --force --options runtime ${TS[@]+"${TS[@]}"} --entitlements "$HELPER_ENT" -s "$IDENTITY" "$HELPER"
 codesign --force --options runtime ${TS[@]+"${TS[@]}"} --entitlements "$ENT" -s "$IDENTITY" "$APP"
 
 echo "== verify"
@@ -43,8 +47,17 @@ codesign --verify --deep --strict "$APP"
 ENTS="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null)"
 INFO="$(codesign -dv "$APP" 2>&1)"
 grep -q automation.apple-events <<<"$ENTS" || { echo "verify: entitlements missing"; exit 1; }
+grep -q device.audio-input <<<"$ENTS" || { echo "verify: app audio-input entitlement missing"; exit 1; }
 grep -q 'flags=.*runtime' <<<"$INFO" || { echo "verify: hardened runtime missing"; exit 1; }
-echo "signature, hardened runtime and entitlements ok"
+HENTS="$(codesign -d --entitlements - --xml "$HELPER" 2>/dev/null)"
+HINFO="$(codesign -dv "$HELPER" 2>&1)"
+grep -q device.audio-input <<<"$HENTS" || { echo "verify: helper audio-input entitlement missing"; exit 1; }
+grep -q 'flags=.*runtime' <<<"$HINFO" || { echo "verify: helper hardened runtime missing"; exit 1; }
+PLIST="$(plutil -p "$APP/Contents/Info.plist")"
+for k in NSMicrophoneUsageDescription NSSpeechRecognitionUsageDescription; do
+  grep -q "$k" <<<"$PLIST" || { echo "verify: $k missing from Info.plist"; exit 1; }
+done
+echo "signature, hardened runtime, entitlements and usage strings ok (app and dictation helper)"
 
 echo "== smoke"
 DATA="$(mktemp -d /tmp/pr-smoke.XXXX)"

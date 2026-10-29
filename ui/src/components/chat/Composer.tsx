@@ -11,7 +11,29 @@ import {
 import type { ChatModel, ChatNotice } from '../../state/chat';
 import type { SendResultKind } from '../../state/store';
 import { composeMessage, type DraftComment } from '../../lib/comments';
+import {
+  anchorAt,
+  errorView,
+  matchesShortcut,
+  placeWords,
+  shortcutLabel,
+  type Anchor,
+  type DictationPrefs,
+} from '../../lib/dictation';
+import type { DictationController, DictationSnapshot } from '../../state/dictation';
 import { Icon } from '../Icon';
+
+/** On-device dictation for this composer. Absent: no mic button. */
+export interface ComposerDictation {
+  controller: DictationController;
+  /** The DM this composer writes to (the run's owner). */
+  owner: string;
+  prefs: DictationPrefs;
+  /** This composer is on screen: it takes the shortcut. */
+  active: boolean;
+  /** A run ended with words heard (the first-time hint). */
+  onUsed?(): void;
+}
 
 export interface ComposerProps {
   model: ChatModel;
@@ -40,9 +62,12 @@ export interface ComposerProps {
   onShot?(): void;
   /** A side-pane comment line's jump back. */
   onRevealLink?(link: string, quote: string): void;
+  dictation?: ComposerDictation;
 }
 
 const MAX_HEIGHT = 200;
+
+const IDLE_DICTATION: DictationSnapshot = { phase: 'idle', owner: null, error: null, notice: null };
 
 /** Composer: Enter sends, Shift+Enter adds a line, text reaches claude exactly as typed. */
 export function Composer({
@@ -61,6 +86,7 @@ export function Composer({
   onPasteImage,
   onShot,
   onRevealLink,
+  dictation,
 }: ComposerProps) {
   const [text, setText] = useState(model.draft);
   const { comments } = useSyncExternalStore(model.subscribe, model.getSnapshot);
@@ -87,6 +113,127 @@ export function Composer({
   }, [text]);
 
   const off = ended || !!readOnly;
+
+  // ---- dictation ----------------------------------------------------------------------------
+  const ctl = dictation?.controller ?? null;
+  const noRun = useCallback(() => () => undefined, []);
+  const dsnap = useSyncExternalStore(
+    ctl?.subscribe ?? noRun,
+    ctl?.getSnapshot ?? (() => IDLE_DICTATION),
+  );
+  const owner = dictation?.owner ?? '';
+  const dictOn = !!dictation?.prefs.enabled && !off;
+  const phase = dsnap.owner === owner && owner ? dsnap.phase : 'idle';
+  const listening = phase !== 'idle';
+  const anchor = useRef<Anchor | null>(null);
+  const lastHeard = useRef('');
+  const caret = useRef<number | null>(null);
+  const usedRef = useRef(dictation?.onUsed);
+  useLayoutEffect(() => {
+    usedRef.current = dictation?.onUsed;
+  });
+
+  const startDictation = useCallback(() => {
+    if (!ctl || !dictation) return;
+    const el = box.current;
+    const cur = el?.value ?? '';
+    anchor.current = anchorAt(
+      cur,
+      el?.selectionStart ?? cur.length,
+      el?.selectionEnd ?? cur.length,
+    );
+    lastHeard.current = '';
+    el?.focus();
+    void ctl.start(
+      owner,
+      { locale: dictation.prefs.locale, silenceSecs: dictation.prefs.silenceSecs },
+      {
+        onWords(heard, final) {
+          const a = anchor.current;
+          if (!a) return;
+          const placed = placeWords(a, heard);
+          lastHeard.current = heard;
+          caret.current = placed.caret;
+          setText(placed.text);
+          if (final) {
+            // Settled words stay; anything heard after this is a new utterance.
+            anchor.current = anchorAt(placed.text, placed.caret, placed.caret);
+            lastHeard.current = '';
+          }
+        },
+        onEnd(_reason, heard) {
+          anchor.current = null;
+          lastHeard.current = '';
+          if (heard) usedRef.current?.();
+        },
+      },
+    );
+  }, [ctl, dictation, owner]);
+
+  const stopDictation = useCallback(() => ctl?.stop(), [ctl]);
+  const toggleDictation = useCallback(() => {
+    if (listening) stopDictation();
+    else startDictation();
+  }, [listening, startDictation, stopDictation]);
+
+  // The caret follows the dictated words.
+  useLayoutEffect(() => {
+    const at = caret.current;
+    const el = box.current;
+    if (at === null || !el) return;
+    caret.current = null;
+    el.setSelectionRange(at, at);
+  }, [text]);
+
+  // The shortcut starts and stops dictation in the composer on screen.
+  const shortcut = dictation?.prefs.shortcut ?? 'off';
+  const active = !!dictation?.active;
+  useEffect(() => {
+    if (!dictOn || !active || shortcut === 'off') return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!matchesShortcut(e, shortcut)) return;
+      // A dialog (Settings, New session) owns the keyboard.
+      if (!listening && document.querySelector('dialog[open]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggleDictation();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [dictOn, active, shortcut, listening, toggleDictation]);
+
+  // While listening: Esc anywhere stops, and so does leaving the window or the DM.
+  useEffect(() => {
+    if (!listening) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      stopDictation();
+    };
+    const onBlur = () => stopDictation();
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [listening, stopDictation]);
+  useEffect(() => {
+    if (listening && (!active || off)) stopDictation();
+  }, [listening, active, off, stopDictation]);
+  // Leaving (another DM, the chat closed) ends this composer's own run, never another's.
+  useEffect(
+    () => () => {
+      if (ctl && owner && ctl.getSnapshot().owner === owner) ctl.stop();
+    },
+    [ctl, owner],
+  );
+
+  const dictError = dsnap.error?.owner === owner && owner ? dsnap.error : null;
+  const dictNotice = dsnap.notice?.owner === owner && owner ? dsnap.notice : null;
+  const errView = dictError ? errorView(dictError.code, dictError.language) : null;
+  const keyLabel = shortcutLabel(shortcut);
   const placeholder = ended
     ? 'This session has ended. Resume it to keep talking.'
     : readOnly
@@ -97,6 +244,11 @@ export function Composer({
 
   const send = useCallback(() => {
     if (off || empty) return;
+    // Never send mid-dictation: Enter finishes the words first, and the next Enter sends.
+    if (listening) {
+      stopDictation();
+      return;
+    }
     // A dialog only the terminal can answer is up: writing now would answer it by accident.
     if (blocked) {
       onBlocked?.();
@@ -115,13 +267,16 @@ export function Composer({
       setText(next);
       model.setDraft(next);
     });
-  }, [off, empty, text, blocked, onBlocked, onSend, model]);
+  }, [off, empty, text, blocked, onBlocked, onSend, model, listening, stopDictation]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       send();
+    } else if (e.key === 'Escape' && listening) {
+      e.preventDefault();
+      stopDictation();
     } else if (e.key === 'Escape' && busy) {
       e.preventDefault();
       onStop();
@@ -159,6 +314,37 @@ export function Composer({
           )}
         </div>
       )}
+      {(errView || dictNotice) && (
+        <div
+          className="cnotice cnotice--dict"
+          role={errView ? 'alert' : 'status'}
+          data-testid="dictation-notice"
+          data-kind={errView ? 'dict-error' : 'dict-note'}
+          data-code={dictError?.code}
+        >
+          <span>{errView?.text ?? dictNotice?.text}</span>
+          {errView?.action && (
+            <button
+              type="button"
+              className="btn sec"
+              data-testid="dictation-settings"
+              onClick={() => ctl?.openSettings(errView.action!.pane)}
+            >
+              {errView.action.label}
+            </button>
+          )}
+          <button
+            type="button"
+            className="ib"
+            aria-label="Dismiss"
+            title="Dismiss"
+            data-testid="dictation-dismiss"
+            onClick={() => ctl?.dismiss(owner)}
+          >
+            <Icon name="x" />
+          </button>
+        </div>
+      )}
       {(readOnly || (ended && !onResume)) && (
         <div className="cnotice cnotice--reason" role="status" data-testid="composer-reason">
           <span>
@@ -170,7 +356,11 @@ export function Composer({
           </span>
         </div>
       )}
-      <div className="box" data-readonly={readOnly ? 'true' : undefined}>
+      <div
+        className="box"
+        data-readonly={readOnly ? 'true' : undefined}
+        data-dictating={listening ? phase : undefined}
+      >
         {ended && !readOnly && onResume && (
           <button
             type="button"
@@ -208,7 +398,18 @@ export function Composer({
             aria-placeholder={placeholder}
             data-testid="composer-input"
             spellCheck
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              // Typing while dictating: the words so far stay, new ones land at the caret.
+              if (listening && anchor.current) {
+                anchor.current = {
+                  ...anchorAt(v, e.target.selectionStart, e.target.selectionEnd),
+                  skip: lastHeard.current,
+                };
+              }
+              if (dictNotice) ctl?.dismiss(owner);
+              setText(v);
+            }}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
           />
@@ -253,16 +454,61 @@ export function Composer({
               <Icon name="shot" />
             </button>
           )}
+          {dictation?.prefs.enabled && (
+            <button
+              type="button"
+              className={`ib dict${listening ? ' dict--on' : ''}`}
+              // Listening: the name is the visible text, so speech input can say what it shows.
+              aria-label={listening ? undefined : 'Dictate'}
+              aria-pressed={listening}
+              title={
+                listening
+                  ? 'Stop dictation (esc)'
+                  : `Dictate on this Mac${keyLabel && shortcut !== 'off' ? ` (${keyLabel})` : ''}`
+              }
+              data-testid="dictate-btn"
+              data-phase={phase}
+              disabled={off}
+              onClick={toggleDictation}
+            >
+              {listening ? (
+                <>
+                  <i aria-hidden="true" />
+                  <span className="dict__label">
+                    {phase === 'starting'
+                      ? 'Starting'
+                      : phase === 'stopping'
+                        ? 'Finishing'
+                        : 'Listening'}
+                  </span>
+                  <kbd>esc</kbd>
+                </>
+              ) : (
+                <Icon name="mic" />
+              )}
+            </button>
+          )}
+          <span className="sr-only" role="status" aria-live="polite">
+            {phase === 'listening'
+              ? 'Listening. Press Escape to stop.'
+              : phase === 'starting'
+                ? 'Starting dictation'
+                : phase === 'stopping'
+                  ? 'Finishing dictation'
+                  : ''}
+          </span>
           <span className="hint-keys" data-testid="composer-hint">
-            {readOnly
-              ? 'Read-only. Sending is off.'
-              : ended
-                ? onResume
-                  ? 'Ended. Click the box to resume.'
-                  : 'Ended. Sending is off.'
-                : blocked
-                  ? 'Enter keeps your message here while the terminal is open. Shift+Enter adds a line.'
-                  : 'Enter sends. Shift+Enter adds a line.'}
+            {listening
+              ? 'Speak now. Nothing sends until you press Enter.'
+              : readOnly
+                ? 'Read-only. Sending is off.'
+                : ended
+                  ? onResume
+                    ? 'Ended. Click the box to resume.'
+                    : 'Ended. Sending is off.'
+                  : blocked
+                    ? 'Enter keeps your message here while the terminal is open. Shift+Enter adds a line.'
+                    : 'Enter sends. Shift+Enter adds a line.'}
           </span>
           <span className="sp" />
           {busy && (

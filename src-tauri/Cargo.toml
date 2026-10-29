@@ -32,6 +32,7 @@ patchroom-catalog = { path = "../crates/patchroom-catalog" }
 patchroom-folders = { path = "../crates/patchroom-folders" }
 patchroom-sounds = { path = "../crates/patchroom-sounds" }
 patchroom-themeimport = { path = "../crates/patchroom-themeimport" }
+patchroom-dictation = { path = "../crates/patchroom-dictation" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 base64 = "0.22"
 vt100 = "0.16"

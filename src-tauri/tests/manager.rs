@@ -1,7 +1,8 @@
 //! Backend integration tests: real PTYs, a real bridge, a real SQLite file.
 //! Nothing here touches `~/.claude` or the user's data dir.
 
-use std::os::unix::fs::PermissionsExt;
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command as Proc;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -252,12 +253,10 @@ fn quit_leaves_no_child_or_hook_processes() {
 
 fn stub_claude(dir: &Path) -> PathBuf {
     let p = dir.join("claude-stub");
-    std::fs::write(
+    common::write_exe(
         &p,
         "#!/bin/sh\nfor a in \"$@\"; do printf 'ARG[%s]\\n' \"$a\"; done\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    );
     p
 }
 

@@ -2749,6 +2749,7 @@ dependencies = [
  "patchroom-catalog",
  "patchroom-claude",
  "patchroom-core",
+ "patchroom-dictation",
  "patchroom-folders",
  "patchroom-prefs",
  "patchroom-pty",
@@ -2801,6 +2802,15 @@ dependencies = [
 [[package]]
 name = "patchroom-core"
 version = "0.0.1"
+
+[[package]]
+name = "patchroom-dictation"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+]
 
 [[package]]
 name = "patchroom-folders"

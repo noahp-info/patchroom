@@ -366,6 +366,7 @@ Homeroom: 5px controls, 8px panels, 14px chips, 9px count badges, 8px avatars. P
 - **Artifact pane**: tabs, a sheet with a diff and gutters, and a note line.
 - **Side-pane viewer**: back, forward, reload, the page title, Comment on selection, Open in browser and close. A claude.ai sign-in screen adds one Sign in line above the page. Settings > Accounts is the one place to sign in to claude.ai, in the pane's own web storage, and to sign out.
 - **Screenshot-to-steer**: Cmd+Shift+2 or the composer's screenshot button freezes the window. Drag a box anywhere, side pane included. A note box pins under the box. Check adds the crop and the note as one composer line; X or Esc discards both.
+- **Dictation**: a mic button in the composer bar. While the mic is open it becomes a Listening pill in the `stop` colors with a pulsing dot. It keeps one width across Starting, Listening and Finishing. The box keeps its own border, so the red never reads as Needs you. Errors and the silence note sit in flow above the box, like the send notice, each with its fix button.
 - **Comment lines**: a chat quote (click jumps to the row), a side-pane quote (click scrolls the pane to it through a `#:~:text=` link) or a screenshot thumbnail, each with its note. Nothing sends before Send.
 
 ## Preview and verification

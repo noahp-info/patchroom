@@ -120,6 +120,13 @@ const MODEL_COMMANDS = [
   'session_set_model',
   'update_check',
 ];
+/** On-device dictation (src-tauri/src/dictation.rs). */
+const DICTATION_COMMANDS = [
+  'dictation_locales',
+  'dictation_open_settings',
+  'dictation_start',
+  'dictation_stop',
+];
 /** Declared by the backend beyond the fixed contract; the UI uses them when present. */
 const P2_OPTIONAL = ['session_view', 'session_focus'];
 const P1B_EVENTS = ['pty:exit', 'pty:output', 'session:status', 'session:title'];
@@ -168,7 +175,7 @@ const camel = (s: string) => s.replace(/_([a-z])/g, (_, c: string) => c.toUpperC
 /** `#[tauri::command] pub async fn name(params...)` blocks from commands.rs. */
 function declaredCommands(): Map<string, Declared> {
   // Steering commands live in their own module (src-tauri/src/steer.rs).
-  const src = ['commands.rs', 'steer.rs']
+  const src = ['commands.rs', 'steer.rs', 'dictation.rs']
     .map((f) => readFileSync(join(RUST, f), 'utf8'))
     .join('\n');
   const out = new Map<string, Declared>();
@@ -388,6 +395,10 @@ async function recordTauriCalls(): Promise<Call[]> {
   await ipc.shotBegin();
   await ipc.shotCommit('i', rect);
   await ipc.shotCancel();
+  await ipc.dictationStart('en-GB', 8);
+  await ipc.dictationStop(1);
+  await ipc.dictationLocales();
+  await ipc.dictationOpenSettings('microphone');
   const ended = await ipc.sessionMirrorEnd('i', 80, 24);
   expect(ended).toMatchObject({ id: 'd', mirror: null });
   void listens;
@@ -418,7 +429,9 @@ test.describe('ipc contract with src-tauri/src/commands.rs', () => {
       expect(declared, `theme import command ${c}`).toContain(c);
     for (const c of STEER_COMMANDS) expect(declared, `steer command ${c}`).toContain(c);
     for (const c of MODEL_COMMANDS) expect(declared, `model command ${c}`).toContain(c);
+    for (const c of DICTATION_COMMANDS) expect(declared, `dictation command ${c}`).toContain(c);
     const known = new Set([
+      ...DICTATION_COMMANDS,
       ...MODEL_COMMANDS,
       ...SOUND_COMMANDS,
       ...THEME_IMPORT_COMMANDS,

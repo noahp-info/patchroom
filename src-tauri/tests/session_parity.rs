@@ -4,6 +4,8 @@
 //! Claude is a stub that records every start in `starts.txt`; `claude agents --json` is a
 //! fixed list the test edits. Nothing here touches a real session.
 
+mod common;
+
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
@@ -145,15 +147,13 @@ struct Env {
 /// The stub appends a line to `starts.txt` on every start, then runs `body`.
 fn claude_stub(dir: &Path, body: &str) -> PathBuf {
     let p = dir.join("claude-stub");
-    std::fs::write(
+    common::write_exe(
         &p,
-        format!(
+        &format!(
             "#!/bin/sh\necho started >> '{d}/starts.txt'\n{body}\n",
             d = dir.display()
         ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&p, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    );
     p
 }
 

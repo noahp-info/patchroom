@@ -15,6 +15,9 @@ const PATHS: Record<string, ReactNode> = {
   chat: <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />,
   send: <path d="M13.5 2.5 2.5 7l4.5 2 2 4.5zM7 9l6.5-6.5" />,
   slash: <path d="M10.5 2.5l-5 11" />,
+  mic: (
+    <path d="M8 2a2 2 0 0 0-2 2v4a2 2 0 0 0 4 0V4a2 2 0 0 0-2-2zM4 7.5a4 4 0 0 0 8 0M8 11.5V14M5.5 14h5" />
+  ),
   clip: (
     <path d="M11 6.5 7 10.5a1.4 1.4 0 0 1-2-2L9.5 4a2.6 2.6 0 0 1 3.7 3.7l-4.6 4.6a3.8 3.8 0 0 1-5.4-5.4L6 3.9" />
   ),

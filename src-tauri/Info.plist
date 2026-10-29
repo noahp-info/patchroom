@@ -4,5 +4,9 @@
 <dict>
   <key>NSAppleEventsUsageDescription</key>
   <string>Patchroom brings the iTerm or Terminal tab that runs a session to the front when you click Show in iTerm.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Patchroom listens only while you dictate into a message. Audio stays on this Mac.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Patchroom turns your speech into text on this Mac. Nothing you say is sent anywhere.</string>
 </dict>
 </plist>

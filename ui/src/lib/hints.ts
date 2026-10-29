@@ -69,6 +69,11 @@ export const HINTS = {
     action: { label: 'Chat settings', tab: 'themes', setting: 'themes.carrydraft' },
     choices: [{ label: 'Turn on', choice: 'carry-on' }],
   },
+  'dictation.settings': {
+    text: 'Dictation runs on this Mac. Pick its language, shortcut and silence timeout in Settings > Dictation.',
+    action: { label: 'Dictation settings', tab: 'dictation' },
+    place: 'strip',
+  },
   'history.group': {
     text: 'History groups every session by folder, date, model or branch, and remembers your pick. Set the default in Settings > History.',
     action: { label: 'Open History settings', tab: 'history', setting: 'history.group' },

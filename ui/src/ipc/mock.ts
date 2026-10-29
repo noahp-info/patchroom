@@ -7,6 +7,8 @@ import type {
   ActivityRow,
   ChatItem,
   DetectedHook,
+  DictationEvent,
+  DictationLocales,
   FolderSession,
   HistorySession,
   Ipc,
@@ -174,6 +176,17 @@ export interface MockControl {
   prefs(): Prefs;
   /** What `sound_hooks_detect` returns. */
   soundHooks: DetectedHook[];
+  /**
+   * Dictation calls in order: `start <locale> <secs>`, `stop <sid>`, `locales`,
+   * `settings <pane>`. The mock helper says nothing by itself; tests drive it with `dictate`.
+   */
+  dictationCalls: string[];
+  /** The id of the last started run (0: none yet). */
+  dictationSid: number;
+  /** Emit a helper line for the current run, as `dictation:event`. */
+  dictate(ev: Omit<DictationEvent, 'sid'>): void;
+  /** What `dictation_locales` returns. */
+  dictationLocales: DictationLocales;
   /** The sound-pack backend: next picked file, files on the "disk", Claude profiles, calls. */
   sound: MockSoundControl;
   /** Emit `notify:fire`, as the backend does after its own decision. */
@@ -593,6 +606,21 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     focusCalls: [],
     notifyTests: 0,
     soundHooks: [],
+    dictationCalls: [],
+    dictationSid: 0,
+    dictate: (ev) => emit('dictation:event', { sid: control.dictationSid, ...ev }),
+    dictationLocales: {
+      locales: [
+        { id: 'en-US', name: 'English (United States)', onDevice: true },
+        { id: 'en-GB', name: 'English (United Kingdom)', onDevice: true },
+        { id: 'fr-FR', name: 'French (France)', onDevice: false },
+        { id: 'de-DE', name: 'German (Germany)', onDevice: false },
+      ],
+      current: 'en-US',
+      speech: 'not_determined',
+      mic: 'not_determined',
+      available: true,
+    },
     sound: soundBackend.control,
     storedMarks: () => marks.map((m) => ({ ...m })),
     prefs: () => structuredClone(prefs),
@@ -1309,6 +1337,21 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     themeImportDetect: () => Promise.resolve(structuredClone(MOCK_IMPORT_SOURCES)),
     themeImportFile: () => Promise.resolve(structuredClone(MOCK_IMPORT_FILE)),
     fontsList: () => Promise.resolve(structuredClone(MOCK_SYSTEM_FONTS)),
+    async dictationStart(locale, silenceSecs) {
+      control.dictationSid += 1;
+      control.dictationCalls.push(`start ${locale} ${silenceSecs}`);
+      return { sid: control.dictationSid };
+    },
+    async dictationStop(sid) {
+      control.dictationCalls.push(`stop ${sid}`);
+    },
+    async dictationLocales() {
+      control.dictationCalls.push('locales');
+      return structuredClone(control.dictationLocales);
+    },
+    async dictationOpenSettings(pane) {
+      control.dictationCalls.push(`settings ${pane}`);
+    },
     async soundHooksDetect() {
       return control.soundHooks.map((h) => ({ ...h }));
     },

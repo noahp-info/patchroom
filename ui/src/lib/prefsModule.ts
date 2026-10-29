@@ -32,6 +32,7 @@ export type PrefsTabId =
   | 'dnd'
   | 'hooks'
   | 'links'
+  | 'dictation'
   | 'history'
   | 'accounts'
   | 'models'
@@ -71,6 +72,8 @@ interface PrefsApi {
   catalogRefresh: Ipc['catalogRefresh'];
   updateCheck: Ipc['updateCheck'];
   fontsList: Ipc['fontsList'];
+  dictationLocales: Ipc['dictationLocales'];
+  dictationOpenSettings: Ipc['dictationOpenSettings'];
   linkOpenExternal: Ipc['linkOpenExternal'];
 }
 
@@ -133,6 +136,8 @@ export function installPrefsApi(ipc: Ipc): void {
     catalogRefresh: () => ipc.catalogRefresh(),
     updateCheck: () => ipc.updateCheck(),
     fontsList: () => ipc.fontsList(),
+    dictationLocales: () => ipc.dictationLocales(),
+    dictationOpenSettings: (pane) => ipc.dictationOpenSettings(pane),
     linkOpenExternal: (url) => ipc.linkOpenExternal(url),
   });
 }

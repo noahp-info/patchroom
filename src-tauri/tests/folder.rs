@@ -2,6 +2,8 @@
 //! `claude --resume` from the launch folder, hide, the watcher, restart and read-only checks.
 //! Claude is a stub that records its arguments and cwd; the config dir is a temp dir.
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -82,15 +84,13 @@ fn hook_bin() -> PathBuf {
 /// stays alive.
 fn claude_stub(dir: &Path) -> PathBuf {
     let p = dir.join("claude-stub");
-    std::fs::write(
+    common::write_exe(
         &p,
-        format!(
+        &format!(
             "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{d}/args.txt'\npwd -P > '{d}/cwd.txt'\necho $$ > '{d}/pid.txt'\nsleep 60\n",
             d = dir.display()
         ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&p, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    );
     p
 }
 

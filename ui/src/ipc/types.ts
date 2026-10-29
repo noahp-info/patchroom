@@ -9,6 +9,7 @@ import type {
 import type { Theme } from '../theme/types.ts';
 import type { ImportEntry, ImportSource } from '../theme/themeImport.ts';
 import type { FontOption, FontPrefs } from '../theme/typeface.ts';
+import type { DictationPrefs, SettingsPane } from '../lib/dictation.ts';
 
 /** Session status as reported by the backend (`session:status` and `session_list`). */
 export type SessionStatus = 'busy' | 'idle' | 'waiting' | 'exited';
@@ -175,6 +176,34 @@ export interface IpcEvents {
   'menu:screenshot': Record<string, never> | null;
   /** The app menu's Restart Patchroom item. */
   'menu:restart': Record<string, never> | null;
+  /** A line from the on-device dictation helper, or `ended` last. */
+  'dictation:event': DictationEvent;
+}
+
+/** `dictation:event`: one helper line of run `sid`, or `ended` once at the end. */
+export interface DictationEvent {
+  sid: number;
+  type: 'ready' | 'partial' | 'final' | 'error' | 'end' | 'ended';
+  text?: string;
+  code?: string;
+  message?: string;
+  locale?: string;
+  /** The locale's display name, for "isn't available for <language>". */
+  language?: string;
+  reason?: 'stopped' | 'silence' | 'error' | 'killed' | 'exited';
+}
+
+export type DictationPermission =
+  'authorized' | 'denied' | 'restricted' | 'not_determined' | 'unknown';
+
+/** `dictation_locales`: languages and permission states, read without asking. */
+export interface DictationLocales {
+  locales: { id: string; name: string; onDevice: boolean }[];
+  current: string;
+  speech: DictationPermission;
+  mic: DictationPermission;
+  /** False when this build has no helper (the browser, a non-macOS build). */
+  available: boolean;
 }
 
 export interface TerminalWaitEvent extends TerminalWait {
@@ -379,6 +408,13 @@ export interface Ipc {
   ): Promise<SessionInfo | CheckFailed>;
   /** Hides or unhides a row in the list only; the transcript is never touched. */
   folderSessionHide(sectionId: string, sessionId: string, hidden: boolean): Promise<void>;
+  /** Start one on-device dictation run; events arrive as `dictation:event`. */
+  dictationStart(locale: string, silenceSecs: number): Promise<{ sid: number }>;
+  /** Ask run `sid` for its final text and end it. */
+  dictationStop(sid: number): Promise<void>;
+  dictationLocales(): Promise<DictationLocales>;
+  /** Open the System Settings pane that fixes a dictation problem. */
+  dictationOpenSettings(pane: SettingsPane): Promise<void>;
   /** Every resumable session across all folders. Read only. */
   historySessions(): Promise<HistorySessions>;
   /** Open a History row: the open DM, or a new one resumed (or mirrored) in its folder. */
@@ -677,6 +713,8 @@ export interface Prefs {
   chat?: { autoScroll: boolean; carryDraft?: boolean };
   /** Fonts per area, and the chat font per section or session. Absent: base defaults. */
   fonts?: FontPrefs;
+  /** On-device dictation in the composer. Absent: on, system language, Cmd+Shift+D, 8s. */
+  dictation?: DictationPrefs;
   /** The History panel's grouping, remembered from its header toggle. Absent: folder. */
   history?: { groupBy: HistoryGroup };
 }

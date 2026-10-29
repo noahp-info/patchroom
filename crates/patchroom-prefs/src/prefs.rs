@@ -397,6 +397,8 @@ pub struct Prefs {
     pub chat: ChatPrefs,
     /// Fonts per area, and the chat font per section or session.
     pub fonts: Fonts,
+    /// On-device dictation in the composer.
+    pub dictation: crate::dictation::DictationPrefs,
     /// The History panel.
     pub history: HistoryPrefs,
 }
@@ -534,6 +536,7 @@ impl Default for Prefs {
             emoji: EmojiPrefs::default(),
             chat: ChatPrefs::default(),
             fonts: Fonts::default(),
+            dictation: crate::dictation::DictationPrefs::default(),
             history: HistoryPrefs::default(),
         }
     }
@@ -762,6 +765,7 @@ impl Prefs {
         self.sidebar_width = self.sidebar_width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
         self.models.validate()?;
         self.fonts.validate()?;
+        self.dictation.validate()?;
         if self.status_bar.labels.len() > 32 || self.status_bar.labels.values().any(|l| !l.valid())
         {
             return Err(PrefsError("bad status bar label".into()));

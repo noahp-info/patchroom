@@ -353,9 +353,7 @@ mod tests {
     fn login_env_finds_claude_on_the_captured_path() {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("claude");
-        std::fs::write(&bin, "#!/bin/sh\n").unwrap();
-        std::fs::set_permissions(&bin, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-            .unwrap();
+        crate::test_exe::write_exe(&bin, "#!/bin/sh\n");
         let raw = format!(
             "HOME=/h\0PATH=/nonexistent:{}\0CLAUDECODE=1\0",
             dir.path().display()

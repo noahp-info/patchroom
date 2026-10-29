@@ -1,3 +1,5 @@
+import type { DictationPrefs, SettingsPane } from '../../lib/dictation.ts';
+import type { DictationLocales } from '../../ipc/types.ts';
 import { DEFAULT_BASE, getBase } from '../../theme/bases.ts';
 import type {
   EmojiFlavor,
@@ -161,6 +163,8 @@ export interface Prefs {
   chat?: { autoScroll: boolean; carryDraft?: boolean };
   /** Fonts per area, and the chat font per section or session (Settings > Themes > Fonts). */
   fonts?: FontPrefs;
+  /** On-device dictation (Settings > Dictation). */
+  dictation?: DictationPrefs;
   /** The History panel's grouping. */
   history?: { groupBy: HistoryGroup };
 }
@@ -370,6 +374,10 @@ export interface PrefsApi {
   updateCheck?(): Promise<UpdateInfo>;
   /** Installed font families (Core Text), read only. Absent: bundled faces only. */
   fontsList?(): Promise<FontOption[]>;
+  /** Dictation languages and permission states, read without asking. */
+  dictationLocales?(): Promise<DictationLocales>;
+  /** Open the System Settings pane for a dictation problem. */
+  dictationOpenSettings?(pane: SettingsPane): Promise<void>;
   /** Open an http(s) link in the default browser. Absent: the link is not opened. */
   linkOpenExternal?(url: string): Promise<void>;
 }
@@ -457,6 +465,14 @@ export function createTauriPrefsApi(): PrefsApi {
     async fontsList() {
       const { invoke } = await import('@tauri-apps/api/core');
       return invoke<FontOption[]>('fonts_list');
+    },
+    async dictationLocales() {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return invoke<DictationLocales>('dictation_locales');
+    },
+    async dictationOpenSettings(pane) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('dictation_open_settings', { pane });
     },
     async onPrefsChanged(handler) {
       const { listen } = await import('@tauri-apps/api/event');
