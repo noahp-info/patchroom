@@ -61,6 +61,15 @@ Every feature lists its acceptance check.
 - **Drafts** persist per conversation. **Pins** and **Saved for later**. **Full-text search** across all transcripts.
 - **Terminal toggle:** every DM can flip to the full live terminal (Cmd+J) or show it inline when the chat layer can't render something.
 
+### 3.2a Dictation (on device only)
+Decided by Noah, 2026-10-29 (D4): on-device Apple Speech. Speech never leaves the Mac.
+
+- **Use:** the composer's mic button or the shortcut (default Cmd+Shift+D; Ctrl+Cmd+D, Cmd+Shift+. or none in Settings > Dictation). Fn Fn stays macOS system dictation. Partial words appear at the cursor, and the final text replaces them. Esc, the button, Enter, leaving the window or the DM, or the silence timeout (default 8 s) stops it. Nothing ever sends by itself. *Check: `ui/tests/dictation.spec.ts`.*
+- **Mechanism:** a small Swift helper, `patchroom-dictation`, ships in `Contents/MacOS`. It captures audio with AVAudioEngine and runs `SFSpeechRecognizer` with `requiresOnDeviceRecognition = true`, streaming JSON lines on stdout (`crates/patchroom-dictation`). The app spawns it only while dictating. A separate process keeps Apple's frameworks out of the Rust code, so `unsafe_code` stays forbidden.
+- **No server fallback:** a language without an on-device model shows "On-device dictation isn't available for <language>" and a button to Keyboard > Dictation, where macOS downloads it.
+- **Permissions:** asked on the first dictation, never at launch. Denied or restricted Microphone or Speech Recognition shows a plain message and a button to that Privacy pane. Info.plist carries `NSMicrophoneUsageDescription` and `NSSpeechRecognitionUsageDescription`. The app and the helper carry the hardened-runtime `com.apple.security.device.audio-input` entitlement.
+- **Data handling:** no audio or transcript is written to disk or logged. Audio stays in memory buffers inside the helper; its stderr goes to `/dev/null`. Transcripts reach the webview in memory and land only in the draft. The helper is killed on stop, on quit, and leaves by itself when its stdin closes (an app crash). *Check: `crates/patchroom-dictation` lifecycle tests with a fake helper.*
+
 ### 3.3 Status strip
 - Renders the user's existing statusLine output verbatim under the composer.
 - Structured chips from statusLine JSON: model, context %, cost, permission mode (click cycles, same as Shift+Tab), worktree, PR link.
@@ -163,6 +172,7 @@ Phases are ordered by dependency. Each phase is a gauntlet loop: parallel builde
 
 - **D1** GitHub repo owner (personal account vs an org). Domains: patchroom.dev registered by Noah on 2026-10-14. patchroom.app registration failed; Noah is following up. patchroom.com is taken.
 - **D2** Gauntlet budget per phase (iterations cap and model tier for builders vs judges).
+- **D4** Decided by Noah, 2026-10-29: **dictation is on-device Apple Speech only.** Speech never leaves the Mac, and there is no server fallback. See section 3.2a.
 - **D3** Decided by Noah, 2026-10-16: **opt-in.** Settings > Updates has "Check for app updates" and "Check for newer models", both off by default. The bundle editor and the model picker ask once ("Want to check for newer models?", Turn on or Not now). Nothing fetches until one is on. Each check is a plain GET (GitHub Releases, and a model catalog with a detached ed25519 signature checked against a key built into the app); Patchroom never listens. Every build still ships the latest model catalog.
 
 ## 10. Business model
@@ -198,5 +208,5 @@ Rules that keep C possible:
 - **The UI talks to sessions only through the IPC contract** (`src-tauri/src/commands.rs` and the `session:*`/`chat:*` events). No UI code reads files, spawns processes or calls the OS directly.
 - **Host-only work stays in the host:** PTYs, process checks and signals, terminal focus (AppleScript), transcript tailing, hooks and the bridge. A feature that needs one of these exposes a command, so a remote client can call it or hide it.
 - **The contract stays serializable** (plain JSON, no handles or paths the client must open itself), so it can later travel over an authenticated transport instead of in-process IPC. That transport is an opt-in, authenticated connection, never an open listener (principle 5).
-- **Entitlements stay minimal:** today the hardened runtime needs only Apple Events (for "Show in iTerm"). Anything new is justified in `src-tauri/Entitlements.plist`.
+- **Entitlements stay minimal:** today the hardened runtime needs Apple Events (for "Show in iTerm") and audio input (for on-device dictation, section 3.2a). Anything new is justified in `src-tauri/Entitlements.plist`.
 
