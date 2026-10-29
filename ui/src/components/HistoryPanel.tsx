@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { HistoryGroup, HistorySession } from '../ipc';
 import { relativeAge, relativeAgeLong } from '../lib/folder';
 import {
@@ -54,6 +54,7 @@ export function HistoryPanel({ state, store }: { state: AppState; store: AppStor
   }, [store, confirm, q]);
 
   const searching = q.trim() !== '';
+  const words = useMemo(() => q.toLowerCase().split(/\s+/).filter(Boolean), [q]);
   const buckets = useMemo<HistoryBucket[]>(
     () => groupHistory(filterHistory(h.sessions, q, state.catalog), by, state.catalog),
     [h.sessions, q, by, state.catalog],
@@ -92,7 +93,8 @@ export function HistoryPanel({ state, store }: { state: AppState; store: AppStor
             ref={field}
             type="search"
             aria-label="Filter sessions"
-            placeholder={`Filter by title, first message, folder, branch or model`}
+            placeholder="Filter sessions"
+            title="Matches the title, first message, folder, branch and model"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             data-testid="history-filter"
@@ -177,6 +179,7 @@ export function HistoryPanel({ state, store }: { state: AppState; store: AppStor
                       row={r}
                       by={by}
                       model={modelDisplay(state.catalog, r.model)}
+                      words={words}
                       inPatchroom={!!r.dmId && openDms.has(r.dmId)}
                       confirming={confirm?.sessionId === r.sessionId}
                       onOpen={() => open(r)}
@@ -211,10 +214,33 @@ export function HistoryPanel({ state, store }: { state: AppState; store: AppStor
   );
 }
 
+/** `text` with every filter word marked, case-insensitively. */
+function marked(text: string, words: string[]): ReactNode {
+  if (words.length === 0) return text;
+  const low = text.toLowerCase();
+  const on = new Array<boolean>(text.length).fill(false);
+  for (const w of words) {
+    for (let i = low.indexOf(w); i >= 0; i = low.indexOf(w, i + w.length)) {
+      for (let k = i; k < i + w.length; k++) on[k] = true;
+    }
+  }
+  const out: ReactNode[] = [];
+  let start = 0;
+  for (let i = 1; i <= text.length; i++) {
+    if (i === text.length || on[i] !== on[start]) {
+      const part = text.slice(start, i);
+      out.push(on[start] ? <mark key={start}>{part}</mark> : part);
+      start = i;
+    }
+  }
+  return out;
+}
+
 function HistoryRow({
   row,
   by,
   model,
+  words,
   inPatchroom,
   confirming,
   onOpen,
@@ -224,6 +250,8 @@ function HistoryRow({
   row: HistorySession;
   by: HistoryGroup;
   model: string;
+  /** Filter words to mark in the row. */
+  words: string[];
   inPatchroom: boolean;
   confirming: boolean;
   onOpen(): void;
@@ -250,10 +278,12 @@ function HistoryRow({
       >
         <span className="hrow__main">
           <span className="hrow__line">
-            <span className="hrow__title">{row.title}</span>
-            {meta.length > 0 && <span className="hrow__meta">{meta.join(' · ')}</span>}
+            <span className="hrow__title">{marked(row.title, words)}</span>
+            {meta.length > 0 && (
+              <span className="hrow__meta">{marked(meta.join(' · '), words)}</span>
+            )}
           </span>
-          {showPrompt && <span className="hrow__prompt">{row.firstPrompt}</span>}
+          {showPrompt && <span className="hrow__prompt">{marked(row.firstPrompt, words)}</span>}
         </span>
         <span className="hrow__side">
           {inPatchroom && (

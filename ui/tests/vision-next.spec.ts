@@ -94,7 +94,6 @@ for (const scheme of SCHEMES) {
       const sbm = page.getByRole('dialog', { name: 'Customize status bar' });
       await sbm.getByTestId('sbe-options-folder').click();
       await sbm.getByRole('button', { name: 'Full path' }).click();
-      await sbm.getByTestId('sbe-suggest').scrollIntoViewIfNeeded();
       await shot('strip-menu-options');
       await page.keyboard.press('Escape');
       await shot('strip-full-path');

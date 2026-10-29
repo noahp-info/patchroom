@@ -146,6 +146,7 @@ export function StatusBarEditor({
               </button>
               {opts && opened === id && (
                 <div
+                  ref={(el) => el?.scrollIntoView({ block: 'nearest' })}
                   className="sbe__opts"
                   id={`sbe-opt-${id}`}
                   data-setting="statusbar.options"

@@ -464,8 +464,11 @@
   margin: 0 0 var(--group-gap);
   color: var(--err-text);
 }
+/* Each group starts on a hairline, so a dozen groups never blur into one list. */
 .hgroup + .hgroup {
   margin-top: var(--ring-gap);
+  padding-top: var(--ring-gap);
+  border-top: 1px solid var(--line);
 }
 .hgroup__h {
   margin: 0;
@@ -564,12 +567,19 @@
 }
 .hrow__title {
   flex: 0 1 auto;
-  min-width: 4ch;
+  min-width: 0;
   font-weight: 600;
 }
+/* The meta keeps enough room to read; a long title shortens first past that. */
 .hrow__line .hrow__meta {
-  flex: 0 10 auto;
-  min-width: 0;
+  flex: 0 4 auto;
+  min-width: min(16ch, 45%);
+}
+.hrow mark {
+  background: var(--mark);
+  color: inherit;
+  border-radius: 2px;
+  box-shadow: 0 1.5px 0 var(--mark-line);
 }
 .hrow__prompt {
   color: var(--muted);
@@ -583,7 +593,7 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: var(--ring-gap);
+  gap: var(--group-gap);
 }
 .hrow__side time {
   min-width: 3ch;
