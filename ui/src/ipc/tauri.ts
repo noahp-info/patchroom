@@ -269,6 +269,11 @@ export function createTauriIpc(): Ipc {
     themeImportDetect: () => invoke('theme_import_detect', {}),
     themeImportFile: () => invoke('theme_import_file', {}),
     fontsList: () => invoke('fonts_list', {}),
+    dictationStart: (locale, silenceSecs) =>
+      invoke<{ sid: number }>('dictation_start', { locale, silenceSecs }),
+    dictationStop: (sid) => invoke('dictation_stop', { sid }),
+    dictationLocales: () => invoke('dictation_locales', {}),
+    dictationOpenSettings: (pane) => invoke('dictation_open_settings', { pane }),
     sessionFocus: (id) => invoke('session_focus', { id }),
     sectionCreateFromFolder: (path, name) =>
       invoke<{ id: string }>('section_create_from_folder', { path, name }),

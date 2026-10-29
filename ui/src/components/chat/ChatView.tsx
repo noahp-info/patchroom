@@ -20,6 +20,8 @@ import { Hint } from '../Hint';
 import { ChatContext } from './ChatContext';
 import { ChatLog, type ScrollState } from './ChatLog';
 import { Composer } from './Composer';
+import { dictationPrefs } from '../../lib/dictation';
+import { getDictation } from '../../state/dictation';
 import { Floating } from '../Floating';
 import { Icon } from '../Icon';
 import { MarkList } from '../MarkList';
@@ -494,6 +496,13 @@ export function ChatView({
             onSend={(t) => store.sendText(id, t)}
             onStop={() => store.stopTurn(id)}
             onPasteImage={(f) => store.pasteImage(id, f)}
+            dictation={{
+              controller: getDictation(store.ipc),
+              owner: id,
+              prefs: dictationPrefs(prefs?.dictation),
+              active: visible,
+              onUsed: () => store.showHint('dictation.settings'),
+            }}
           />
           {placed('strip')}
           <StatusStrip

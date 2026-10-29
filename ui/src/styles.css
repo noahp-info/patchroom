@@ -3979,3 +3979,46 @@ body.dragging .sbe__grip {
 .qmsg__act[data-testid='queued-remove'] {
   color: var(--err-text);
 }
+
+/* Dictation: the mic button turns into a Listening pill, like Stop, while the mic is open. */
+.chat .bar .ib.dict--on {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--stop-line);
+  color: var(--stop);
+  font-weight: 600;
+  --fs: 12.5px;
+  white-space: nowrap;
+  /* Starting, Listening and Finishing keep one width, so the bar never shifts. */
+  min-width: 9.5em;
+  justify-content: center;
+}
+.chat .bar .ib.dict--on i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dict-pulse 1.2s ease-in-out infinite;
+}
+.chat .bar .ib.dict--on[data-phase='starting'] i,
+.chat .bar .ib.dict--on[data-phase='stopping'] i {
+  animation: none;
+  opacity: 0.5;
+}
+@keyframes dict-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat .bar .ib.dict--on i {
+    animation: none;
+  }
+}
+.chat .cnotice[data-kind='dict-error']::before {
+  background: var(--err);
+}

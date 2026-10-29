@@ -142,6 +142,35 @@ for (const scheme of SCHEMES) {
       await check('main screen');
       expect(await ringFindings(page, '.side'), where('sidebar rings')).toEqual([]);
 
+      // Dictation: the Listening pill and live words in the box, then a denied notice.
+      const say = (ev: Record<string, unknown>) =>
+        page.evaluate((e) => window.__PR_MOCK__!.dictate(e as never), ev);
+      await page.getByTestId('dictate-btn').click();
+      await say({ type: 'ready' });
+      await say({
+        type: 'partial',
+        text: 'refactor the ledger reconcile job so each account runs on its own and the public API stays stable',
+      });
+      await expect(page.getByTestId('dictate-btn')).toHaveAttribute('data-phase', 'listening');
+      await check('dictation listening');
+      await page.keyboard.press('Escape');
+      await say({ type: 'ended', reason: 'stopped' });
+      // The first run with words offers its settings once, above the status strip.
+      await expect(page.locator('[data-hint="dictation.settings"]')).toBeVisible();
+      await check('dictation first-use hint');
+      await page.getByRole('button', { name: 'Dismiss hint' }).click();
+      await page.getByTestId('composer-input').fill('');
+      await page.getByTestId('dictate-btn').click();
+      await say({
+        type: 'error',
+        code: 'on_device_unavailable',
+        language: 'Chinese, Traditional (Hong Kong)',
+      });
+      await say({ type: 'ended', reason: 'error' });
+      await expect(page.getByTestId('dictation-notice')).toBeVisible();
+      await check('dictation unavailable notice');
+      await page.getByTestId('dictation-dismiss').click();
+
       // The hover bar of a named row and of a continuation row (the tool rows).
       const named = page.locator('.msg.head[data-key]').first();
       await named.hover();

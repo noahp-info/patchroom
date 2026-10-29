@@ -68,6 +68,11 @@ export const HINTS = {
     action: { label: 'Chat settings', tab: 'themes', setting: 'themes.carrydraft' },
     choices: [{ label: 'Turn on', choice: 'carry-on' }],
   },
+  'dictation.settings': {
+    text: 'Dictation runs on this Mac. Pick its language, shortcut and silence timeout in Settings > Dictation.',
+    action: { label: 'Dictation settings', tab: 'dictation' },
+    place: 'strip',
+  },
   restart: {
     text: 'Patchroom restarted and reopened {count}. Turn on update checks in Settings > Updates.',
     action: { label: 'Open Updates settings', tab: 'updates' },

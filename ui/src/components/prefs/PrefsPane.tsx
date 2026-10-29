@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import './prefs.css';
+import { DictationSection } from './DictationSection.tsx';
 import { DndSection } from './DndSection.tsx';
 import { HooksSection } from './HooksSection.tsx';
 import { AccountsSection } from './AccountsSection.tsx';
@@ -286,6 +287,7 @@ export function PrefsPane({
             {tab === 'dnd' && <DndSection />}
             {tab === 'hooks' && <HooksSection />}
             {tab === 'links' && <LinksSection />}
+            {tab === 'dictation' && <DictationSection />}
             {tab === 'models' && <ModelsSection dms={dms} sections={sections} />}
             {tab === 'updates' && <UpdatesSection />}
             {tab === 'accounts' && <AccountsSection />}

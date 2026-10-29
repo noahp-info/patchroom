@@ -14,6 +14,7 @@ export const SECTIONS = [
   { id: 'dnd', label: 'Do Not Disturb' },
   { id: 'hooks', label: 'Sound hooks' },
   { id: 'links', label: 'Links' },
+  { id: 'dictation', label: 'Dictation' },
   { id: 'models', label: 'Models' },
   { id: 'updates', label: 'Updates' },
   { id: 'accounts', label: 'Accounts' },
@@ -330,6 +331,43 @@ export const SETTINGS: readonly SettingEntry[] = [
     label: 'Model labels',
     description: 'How the model chip names models, cloud or local.',
     keywords: ['label', 'cloud', 'local', 'name'],
+  },
+
+  // Dictation
+  {
+    id: 'dictation.enabled',
+    section: 'dictation',
+    label: 'Dictation in the composer',
+    description: 'A mic button and a shortcut. Speech is turned into text on this Mac only.',
+    keywords: ['dictate', 'voice', 'speech', 'microphone', 'mic', 'talk', 'transcribe'],
+  },
+  {
+    id: 'dictation.language',
+    section: 'dictation',
+    label: 'Dictation language',
+    description: 'The language you speak. Only languages with an on-device model work.',
+    keywords: ['locale', 'language', 'on-device', 'download', 'speech'],
+  },
+  {
+    id: 'dictation.shortcut',
+    section: 'dictation',
+    label: 'Dictation shortcut',
+    description: 'The keys that start and stop dictation in the composer.',
+    keywords: ['keyboard', 'shortcut', 'hotkey', 'keys', 'dictate'],
+  },
+  {
+    id: 'dictation.silence',
+    section: 'dictation',
+    label: 'Stop after silence',
+    description: 'How long a pause ends dictation.',
+    keywords: ['timeout', 'silence', 'pause', 'stop', 'seconds'],
+  },
+  {
+    id: 'dictation.permissions',
+    section: 'dictation',
+    label: 'Microphone and Speech Recognition access',
+    description: 'Whether macOS lets Patchroom listen, and where to change it.',
+    keywords: ['privacy', 'permission', 'denied', 'allow', 'system settings', 'microphone'],
   },
 
   // Updates

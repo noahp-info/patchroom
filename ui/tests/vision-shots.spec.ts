@@ -66,6 +66,33 @@ for (const scheme of SCHEMES) {
         window.__PR_MOCK__!.setStatus(s.activeId!, 'waiting', 'permission');
       });
       await shot('01-main');
+      // Dictation: listening with live words, the first-use hint, the unavailable notice.
+      const say = (ev: Record<string, unknown>) =>
+        page.evaluate((e) => window.__PR_MOCK__!.dictate(e as never), ev);
+      await page.getByTestId('dictate-btn').click();
+      await say({ type: 'ready' });
+      await say({ type: 'partial', text: 'refactor the ledger reconcile job so each account' });
+      await shot('01a-dictation-listening');
+      await page.keyboard.press('Escape');
+      await say({
+        type: 'final',
+        text: 'Refactor the ledger reconcile job so each account runs alone.',
+      });
+      await say({ type: 'ended', reason: 'stopped' });
+      await expect(page.locator('[data-hint="dictation.settings"]')).toBeVisible();
+      await shot('01b-dictation-hint');
+      await page.getByRole('button', { name: 'Dismiss hint' }).click();
+      await page.getByTestId('composer-input').fill('');
+      await page.getByTestId('dictate-btn').click();
+      await say({ type: 'error', code: 'on_device_unavailable', language: 'French (France)' });
+      await say({ type: 'ended', reason: 'error' });
+      await shot('01c-dictation-unavailable');
+      await page.getByTestId('dictation-dismiss').click();
+      await page.getByTestId('dictate-btn').click();
+      await say({ type: 'error', code: 'mic_denied' });
+      await say({ type: 'ended', reason: 'error' });
+      await shot('01d-dictation-mic-denied');
+      await page.getByTestId('dictation-dismiss').click();
       const named = page.locator('.msg.head[data-key]').first();
       await named.hover();
       await shot('02-hover-named');
@@ -85,7 +112,7 @@ for (const scheme of SCHEMES) {
       }
       await page.keyboard.press('Meta+,');
       const dlg = page.getByRole('dialog', { name: 'Settings' });
-      for (const t of ['Themes', 'Terminal', 'Sounds', 'Links', 'Accounts']) {
+      for (const t of ['Themes', 'Terminal', 'Sounds', 'Links', 'Dictation', 'Accounts']) {
         await dlg
           .getByRole('navigation', { name: 'Settings sections' })
           .getByRole('button', { name: t, exact: true })
