@@ -46,6 +46,8 @@ const MAX_NAME: usize = 80;
 /// State of the folder-section feature inside the manager.
 pub(super) struct FolderState {
     discovery: Discovery,
+    /// The History panel's listing of every session (its own light scan cache).
+    pub(super) history: patchroom_folders::History,
     live: Mutex<Live>,
     /// Last fingerprint per folder section, for the watcher.
     sigs: Mutex<HashMap<String, u64>>,
@@ -65,6 +67,7 @@ impl FolderState {
     pub(super) fn new() -> Self {
         Self {
             discovery: Discovery::new(),
+            history: patchroom_folders::History::new(),
             live: Mutex::new(Live::default()),
             sigs: Mutex::new(HashMap::new()),
             watching: AtomicBool::new(false),
@@ -212,25 +215,14 @@ impl Manager {
                 .into_iter()
                 .find(|s| s.session_id == session_id)
                 .ok_or_else(|| Error::Invalid(format!("no such session: {session_id}")))?;
-            self.create_folder_dm(&section, &found)?
+            self.create_resume_dm(
+                Some(section.id),
+                &found.name,
+                &found.launch_cwd,
+                &found.session_id,
+            )?
         };
-        let running = lock(&self.live)
-            .get(&dm_id)
-            .is_some_and(|l| l.pty.exit_info().is_none());
-        if !running {
-            let go = if open_anyway {
-                self.resume_anyway(&dm_id, Some(DEFAULT_COLS), Some(DEFAULT_ROWS))
-            } else {
-                self.resume(&dm_id, Some(DEFAULT_COLS), Some(DEFAULT_ROWS))
-            };
-            if let Err(e) = go {
-                if created {
-                    // A DM that never started should not linger in the sidebar.
-                    let _ = self.delete(&dm_id);
-                }
-                return Err(e);
-            }
-        }
+        self.start_resumable(&dm_id, created, open_anyway)?;
         self.sink.emit(UiEvent::FolderChanged {
             section_id: section_id.to_owned(),
         });
@@ -238,6 +230,40 @@ impl Manager {
             .into_iter()
             .find(|s| s.id == dm_id)
             .ok_or(Error::NoSession(dm_id))
+    }
+
+    /// Start a discovered session's DM with `claude --resume`, unless it already runs here.
+    /// The resume path re-checks `claude agents --json` and mirrors a session that runs in
+    /// another process instead of spawning a second copy. A DM made for this open that never
+    /// started is deleted again.
+    ///
+    /// # Errors
+    /// A failed spawn or a re-check that did not finish.
+    pub(super) fn start_resumable(
+        self: &Arc<Self>,
+        dm_id: &str,
+        created: bool,
+        open_anyway: bool,
+    ) -> Result<()> {
+        let running = lock(&self.live)
+            .get(dm_id)
+            .is_some_and(|l| l.pty.exit_info().is_none());
+        if running {
+            return Ok(());
+        }
+        let go = if open_anyway {
+            self.resume_anyway(dm_id, Some(DEFAULT_COLS), Some(DEFAULT_ROWS))
+        } else {
+            self.resume(dm_id, Some(DEFAULT_COLS), Some(DEFAULT_ROWS))
+        };
+        if let Err(e) = go {
+            if created {
+                // A DM that never started should not linger in the sidebar.
+                let _ = self.delete(dm_id);
+            }
+            return Err(e);
+        }
+        Ok(())
     }
 
     /// `folder_session_hide {sectionId, sessionId, hidden}`: remove a row from the list only.
@@ -269,12 +295,17 @@ impl Manager {
         Ok(section)
     }
 
-    /// Create the DM row of a discovered session (not started).
-    fn create_folder_dm(&self, section: &Section, found: &FolderSession) -> Result<String> {
-        if !Path::new(&found.launch_cwd).is_dir() {
+    /// Create the DM row of a discovered session (not started), in `section` or ungrouped.
+    pub(super) fn create_resume_dm(
+        &self,
+        section: Option<patchroom_store::Id>,
+        name: &str,
+        launch_cwd: &str,
+        session_id: &str,
+    ) -> Result<String> {
+        if !Path::new(launch_cwd).is_dir() {
             return Err(Error::Invalid(format!(
-                "the session's folder no longer exists: {}",
-                found.launch_cwd
+                "the session's folder no longer exists: {launch_cwd}"
             )));
         }
         let store = lock(&self.store);
@@ -282,13 +313,13 @@ impl Manager {
             &Author::me(),
             &NewConversation {
                 workspace_id: self.workspace,
-                section_id: Some(section.id),
+                section_id: section,
                 kind: ConversationKind::Dm,
-                name: found.name.chars().take(MAX_NAME).collect(),
+                name: name.chars().take(MAX_NAME).collect(),
                 provider: Some("claude".into()),
-                cwd: Some(found.launch_cwd.clone()),
+                cwd: Some(launch_cwd.to_owned()),
                 worktree: None,
-                session_id: Some(found.session_id.clone()),
+                session_id: Some(session_id.to_owned()),
                 assign_mode: None,
             },
         )?;
@@ -300,7 +331,7 @@ impl Manager {
     }
 
     /// Transcript roots: the Claude config dir's `projects`, then any extra roots.
-    fn projects_dirs(&self) -> Vec<PathBuf> {
+    pub(super) fn projects_dirs(&self) -> Vec<PathBuf> {
         self.cfg
             .claude_config_dir
             .iter()
@@ -345,7 +376,7 @@ impl Manager {
     /// Session ids running in another terminal, from the cached `claude agents --json`, and
     /// whether that cache is fresh enough to call every other session free. A stale cache is
     /// refreshed in the background; until it answers the listing says "checking".
-    fn live_elsewhere(
+    pub(super) fn live_elsewhere(
         self: &Arc<Self>,
         dms: &HashMap<String, (String, String)>,
     ) -> (HashSet<String>, bool) {

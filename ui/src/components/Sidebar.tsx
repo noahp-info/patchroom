@@ -822,6 +822,16 @@ export function Sidebar({
         <button
           type="button"
           className="navrow"
+          aria-pressed={state.panel === 'history'}
+          onClick={() => store.setPanel(state.panel === 'history' ? null : 'history')}
+          data-testid="nav-history"
+        >
+          <Icon name="resume" />
+          <span className="nm">History</span>
+        </button>
+        <button
+          type="button"
+          className="navrow"
           aria-pressed={state.panel === 'search'}
           onClick={() => store.setPanel(state.panel === 'search' ? null : 'search', 'all')}
           data-testid="nav-search"

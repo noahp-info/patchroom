@@ -8,6 +8,8 @@ import type {
   ModelPrefs,
   UpdateInfo,
   FolderSession,
+  HistoryGroup,
+  HistorySession,
   Ipc,
   MarkInfo,
   MarkKind,
@@ -83,7 +85,7 @@ export interface PrefsTarget {
   setting?: string;
 }
 
-export type Panel = null | 'activity' | 'saved' | 'search' | 'switcher' | 'prefs';
+export type Panel = null | 'activity' | 'saved' | 'history' | 'search' | 'switcher' | 'prefs';
 
 /** Where a dragged DM lands. */
 export type DropDest =
@@ -96,7 +98,22 @@ export type DropDest =
 export interface PendingCheck {
   name: string;
   reason: string;
-  target: { kind: 'resume'; id: string } | { kind: 'folder'; sectionId: string; sessionId: string };
+  target:
+    | { kind: 'resume'; id: string }
+    | { kind: 'folder'; sectionId: string; sessionId: string }
+    | { kind: 'history'; sessionId: string };
+}
+
+/** What `history_sessions` last returned. */
+export interface HistoryListing {
+  sessions: HistorySession[];
+  skipped: number;
+  /** True while a read runs. */
+  loading: boolean;
+  /** Set when the last read failed; the previous rows stay. */
+  error: string | null;
+  /** When the last read finished, epoch ms (0: never). */
+  at: number;
 }
 
 /** What `folder_sessions` last returned for one folder section. */
@@ -175,6 +192,8 @@ export interface AppState {
   recent: string[];
   /** Folder section id to the sessions found under its home folder. */
   folders: Record<string, FolderListing>;
+  /** Every Claude Code session across all folders, for the History panel. */
+  history: HistoryListing;
   /** Terminal background per DM from its palette, for the stage behind the terminal. */
   termBg: Record<string, string>;
   /**
@@ -304,6 +323,7 @@ export class AppStore {
     searchSeed: '',
     recent: readRecent(),
     folders: {},
+    history: { sessions: [], skipped: 0, loading: false, error: null, at: 0 },
     termBg: {},
     termNotes: {},
     termToast: null,
@@ -952,6 +972,8 @@ export class AppStore {
     if (!p) return;
     if (p.target.kind === 'folder') {
       await this.openFolderSession(p.target.sectionId, p.target.sessionId, true);
+    } else if (p.target.kind === 'history') {
+      await this.openHistorySession(p.target.sessionId, true);
     } else {
       const s = this.state.sessions.find((x) => x.id === (p.target as { id: string }).id);
       if (s) await this.resume(s, true);
@@ -1934,6 +1956,82 @@ export class AppStore {
       this.activityTimer = 0;
       void this.loadActivity();
     }, 30);
+  }
+
+  // ---- History panel -------------------------------------------------------------------
+
+  /**
+   * Read the History listing. A listing younger than `maxAgeMs` is kept (the panel and Cmd+K
+   * both ask; the first scan of thousands of transcripts is the slow one).
+   */
+  async loadHistory(maxAgeMs = 0): Promise<void> {
+    const cur = this.state.history;
+    if (cur.loading || (maxAgeMs > 0 && cur.at > 0 && Date.now() - cur.at < maxAgeMs)) return;
+    this.set({ history: { ...cur, loading: true } });
+    try {
+      const r = await this.ipc.historySessions();
+      this.set({
+        history: {
+          sessions: r.sessions,
+          skipped: r.skipped,
+          loading: false,
+          error: null,
+          at: Date.now(),
+        },
+      });
+    } catch (err) {
+      this.set({
+        history: { ...this.state.history, loading: false, error: String(err), at: Date.now() },
+      });
+    }
+  }
+
+  /** How the History panel groups, from prefs. */
+  get historyGroup(): HistoryGroup {
+    return this.state.prefs?.history?.groupBy ?? 'folder';
+  }
+
+  /** Remember the History grouping. */
+  setHistoryGroup(groupBy: HistoryGroup): void {
+    if (this.state.prefs) this.set({ prefs: { ...this.state.prefs, history: { groupBy } } });
+    void this.setPrefs({ history: { groupBy } });
+  }
+
+  /** Open a History row: its DM, or a new one resumed (or mirrored) in its launch folder. */
+  async openHistorySession(sessionId: string, openAnyway = false): Promise<void> {
+    try {
+      const info = await this.ipc.historySessionOpen(sessionId, { openAnyway });
+      if (isCheckFailed(info)) {
+        const row = this.state.history.sessions.find((s) => s.sessionId === sessionId);
+        this.set({
+          checkFailed: {
+            name: row?.title || 'this session',
+            reason: info.reason,
+            target: { kind: 'history', sessionId },
+          },
+        });
+        return;
+      }
+      const known = this.state.sessions.some((s) => s.id === info.id);
+      this.set({
+        checkFailed: null,
+        panel: null,
+        sessions: known
+          ? this.state.sessions.map((s) => (s.id === info.id ? { ...s, ...info } : s))
+          : [...this.state.sessions, info],
+        history: {
+          ...this.state.history,
+          sessions: this.state.history.sessions.map((s) =>
+            s.sessionId === sessionId ? { ...s, dmId: info.id } : s,
+          ),
+        },
+        error: null,
+      });
+      this.openDm(info.id);
+      await this.refresh();
+    } catch (err) {
+      this.set({ error: `Could not open the session: ${String(err)}` });
+    }
   }
 
   async loadActivity(): Promise<void> {

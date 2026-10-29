@@ -1,6 +1,7 @@
 import { DEFAULT_BASE, getBase } from '../../theme/bases.ts';
 import type {
   EmojiFlavor,
+  HistoryGroup,
   ModelCatalog,
   ModelPrefs,
   ModuleLabel,
@@ -138,6 +139,8 @@ export interface Prefs {
     default: string[] | null;
     perDm: Record<string, string[]>;
     labels?: Record<string, ModuleLabel>;
+    /** Options of the built-in modules: module id to option to value. */
+    options?: Record<string, Record<string, string>>;
   };
   sidebarWidth: number;
   /** Where a plain click opens a link. Cmd-click opens it in the other place. */
@@ -158,6 +161,8 @@ export interface Prefs {
   chat?: { autoScroll: boolean; carryDraft?: boolean };
   /** Fonts per area, and the chat font per section or session (Settings > Themes > Fonts). */
   fonts?: FontPrefs;
+  /** The History panel's grouping. */
+  history?: { groupBy: HistoryGroup };
 }
 
 export type LinkTarget = 'patchroom' | 'browser';
@@ -246,7 +251,11 @@ function normalizeStatusBar(raw: unknown): NonNullable<Prefs['statusBar']> {
       if (l) perDm[k] = l;
     }
   }
-  return { default: list(r.default), perDm };
+  const out: NonNullable<Prefs['statusBar']> = { default: list(r.default), perDm };
+  // Keep labels and module options: a save of one must not drop the others.
+  if (isRecord(r.labels)) out.labels = r.labels as Record<string, ModuleLabel>;
+  if (isRecord(r.options)) out.options = r.options as Record<string, Record<string, string>>;
+  return out;
 }
 
 /**

@@ -15,9 +15,11 @@
 
 pub mod discover;
 pub mod encode;
+pub mod history;
 pub mod names;
 pub mod scan;
 pub mod worktrees;
 
 pub use discover::{signature, Discovery, FolderSession, Listing, LiveState, NameSource, Query};
+pub use history::{History, HistoryListing, HistoryQuery, HistorySession, TitleSource};
 pub use scan::FileScan;

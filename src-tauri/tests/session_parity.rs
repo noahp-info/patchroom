@@ -972,3 +972,15 @@ fn a_copy_that_ignores_the_signal_stays_armed_and_is_never_killed() {
     e.wait_starts(1);
     e.m.shutdown();
 }
+
+#[test]
+fn opening_from_history_a_session_that_runs_elsewhere_mirrors_it() {
+    let e = env("sleep 60");
+    e.transcript(SID);
+    e.agents.run(SID, "idle");
+    let dm = e.m.history_session_open(SID, false).unwrap();
+    assert!(dm.mirror.is_some(), "a mirror, not a process");
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(e.starts(), 0, "claude was started");
+    e.m.shutdown();
+}

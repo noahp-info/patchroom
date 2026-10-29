@@ -324,6 +324,8 @@ macro_rules! app_handler {
             commands::folder_sessions,
             commands::folder_session_open,
             commands::folder_session_hide,
+            commands::history_sessions,
+            commands::history_session_open,
             commands::session_takeover,
             commands::session_mirror_takeover_when_closed,
             commands::session_mirror_reveal,
@@ -430,6 +432,8 @@ macro_rules! app_handler {
             commands::folder_sessions,
             commands::folder_session_open,
             commands::folder_session_hide,
+            commands::history_sessions,
+            commands::history_session_open,
             commands::session_takeover,
             commands::session_mirror_takeover_when_closed,
             commands::session_mirror_reveal,
@@ -555,7 +559,7 @@ mod tests {
     #[test]
     fn p3_commands_are_registered_in_both_handler_lists() {
         const SRC: &str = include_str!("lib.rs");
-        const P3: [&str; 34] = [
+        const P3: [&str; 36] = [
             "section_rename",
             "section_delete",
             "section_reorder",
@@ -581,6 +585,8 @@ mod tests {
             "folder_sessions",
             "folder_session_open",
             "folder_session_hide",
+            "history_sessions",
+            "history_session_open",
             "section_set_emoji",
             "sound_packs",
             "sound_file",

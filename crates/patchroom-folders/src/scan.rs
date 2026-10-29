@@ -22,6 +22,14 @@ pub const FULL_SCAN_MAX: u64 = 8 * 1024 * 1024;
 const WINDOW: u64 = 256 * 1024;
 /// Window read for the newest timestamp.
 const TS_WINDOW: u64 = 64 * 1024;
+/// Light mode (the History panel, thousands of files): files up to this size are read in full.
+const LIGHT_FULL_MAX: u64 = 256 * 1024;
+/// Light mode head window: the launch folder and the first prompt live near the top.
+const LIGHT_HEAD: u64 = 128 * 1024;
+/// Light mode tail window: titles, the newest branch and model live near the end.
+const LIGHT_TAIL: u64 = 64 * 1024;
+/// Longest model id kept.
+const MODEL_CHARS: usize = 80;
 /// Longest stored prompt, in characters.
 const PROMPT_CHARS: usize = 200;
 
@@ -59,6 +67,8 @@ pub struct FileScan {
     pub ai_title: Option<String>,
     /// Newest record timestamp, epoch milliseconds.
     pub last_ts_ms: Option<i64>,
+    /// Newest model id an assistant line reports (`message.model`).
+    pub model: Option<String>,
     /// A subagent transcript (`isSidechain`).
     pub sidechain: bool,
     /// Started by `-p` or as a background run: not a session someone sat in.
@@ -91,6 +101,10 @@ impl Acc {
         } else if line.contains("\"type\":\"ai-title\"") {
             if let Some(t) = field(line, "aiTitle") {
                 self.scan.ai_title = Some(t);
+            }
+        } else if line.contains("\"type\":\"assistant\"") {
+            if let Some(m) = quick_model(line) {
+                self.scan.model = Some(m);
             }
         } else if line.contains("\"type\":\"last-prompt\"") {
             if let Some(t) = field(line, "lastPrompt") {
@@ -199,6 +213,22 @@ fn real_prompt(v: &Value) -> Option<String> {
     Some(t.to_owned())
 }
 
+/// The first `"model":"..."` value of an assistant line, without parsing the line. The message
+/// object names its model before its content, so the first hit is `message.model`. Claude's
+/// placeholder `<synthetic>` is not a model.
+fn quick_model(line: &str) -> Option<String> {
+    let key = "\"model\":\"";
+    let i = line.find(key)? + key.len();
+    let rest = &line[i..];
+    let m = &rest[..rest.find('"')?];
+    let ok = !m.is_empty()
+        && m.len() <= MODEL_CHARS
+        && m.chars().all(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '[' | ']' | ':' | '/')
+        });
+    ok.then(|| m.to_owned())
+}
+
 /// RFC 3339 timestamp to epoch milliseconds.
 fn parse_ts(s: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(s)
@@ -241,9 +271,25 @@ struct Entry {
 
 /// Cache of transcript scans, keyed by path. Cheap to call again: an unchanged file costs one
 /// `stat`.
-#[derive(Default)]
 pub struct Scanner {
     cache: Mutex<HashMap<PathBuf, Entry>>,
+    /// Files up to this size are read in full.
+    full_max: u64,
+    /// Head window of a larger file.
+    head: u64,
+    /// Tail window of a larger file.
+    tail: u64,
+}
+
+impl Default for Scanner {
+    fn default() -> Self {
+        Self {
+            cache: Mutex::default(),
+            full_max: FULL_SCAN_MAX,
+            head: WINDOW,
+            tail: WINDOW,
+        }
+    }
 }
 
 impl Scanner {
@@ -251,6 +297,18 @@ impl Scanner {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A cache that reads every file above 256 KB as a 128 KB head plus a 64 KB tail. For
+    /// listings of thousands of sessions, where the prompt count may be approximate.
+    #[must_use]
+    pub fn light() -> Self {
+        Self {
+            full_max: LIGHT_FULL_MAX,
+            head: LIGHT_HEAD,
+            tail: LIGHT_TAIL,
+            ..Self::default()
+        }
     }
 
     /// Scan `path`, reusing and extending the cached result when the file is unchanged or only
@@ -273,7 +331,7 @@ impl Scanner {
             }
         }
         let mut f = File::open(path)?;
-        let entry = if size <= FULL_SCAN_MAX {
+        let entry = if size <= self.full_max {
             let (mut acc, mut offset) = match prev {
                 Some(p) if p.full && size >= p.offset => (p.acc, p.offset),
                 _ => (Acc::default(), 0),
@@ -306,8 +364,9 @@ impl Scanner {
             }
         } else {
             let mut acc = Acc::default();
-            feed_window(&mut f, 0, WINDOW.min(size), true, &mut acc)?;
-            feed_window(&mut f, size - WINDOW, WINDOW, false, &mut acc)?;
+            feed_window(&mut f, 0, self.head.min(size), true, &mut acc)?;
+            let tail = self.tail.min(size);
+            feed_window(&mut f, size - tail, tail, false, &mut acc)?;
             Entry {
                 size,
                 mtime,
@@ -504,6 +563,50 @@ mod tests {
         assert_eq!(s.custom_title.as_deref(), Some("Late name"));
         assert_eq!(s.user_turns, 2);
         assert_eq!(s.last_ts_ms, parse_ts("2026-02-09T00:00:00Z"));
+    }
+
+    #[test]
+    fn the_newest_assistant_model_is_kept_and_placeholders_are_not() {
+        let d = tempfile::tempdir().unwrap();
+        let body = format!(
+            "{}{}{}{}",
+            user("hi", "/w", "2026-01-01T00:00:00Z"),
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-sonnet-4-6\",\"content\":[]}}\n",
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-5-5\",\"content\":[{\"type\":\"tool_use\",\"input\":{\"model\":\"x\"}}]}}\n",
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\",\"content\":[]}}\n",
+        );
+        let p = write(d.path(), "m.jsonl", &body);
+        assert_eq!(
+            Scanner::new().scan(&p).unwrap().model.as_deref(),
+            Some("claude-opus-5-5")
+        );
+    }
+
+    #[test]
+    fn light_mode_reads_a_big_file_as_a_small_head_and_tail() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("big.jsonl");
+        let mut f = std::fs::File::create(&p).unwrap();
+        f.write_all(user("first", "/w/p", "2026-02-01T00:00:00Z").as_bytes())
+            .unwrap();
+        let filler = format!(
+            "{{\"type\":\"assistant\",\"timestamp\":\"2026-02-01T00:00:01Z\",\"x\":\"{}\"}}\n",
+            "z".repeat(10_000)
+        );
+        for _ in 0..80 {
+            f.write_all(filler.as_bytes()).unwrap();
+        }
+        f.write_all(b"{\"type\":\"ai-title\",\"aiTitle\":\"Late title\"}\n")
+            .unwrap();
+        f.write_all(b"{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\"}}\n")
+            .unwrap();
+        drop(f);
+        assert!(std::fs::metadata(&p).unwrap().len() > LIGHT_FULL_MAX);
+        let s = Scanner::light().scan(&p).unwrap();
+        assert_eq!(s.first_prompt, "first");
+        assert_eq!(s.launch_cwd.as_deref(), Some("/w/p"));
+        assert_eq!(s.ai_title.as_deref(), Some("Late title"));
+        assert_eq!(s.model.as_deref(), Some("claude-haiku-5-5"));
     }
 
     #[test]

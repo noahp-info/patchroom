@@ -32,6 +32,7 @@ export type PrefsTabId =
   | 'dnd'
   | 'hooks'
   | 'links'
+  | 'history'
   | 'accounts'
   | 'models'
   | 'updates';

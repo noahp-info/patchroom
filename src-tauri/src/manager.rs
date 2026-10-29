@@ -43,6 +43,7 @@ use serde::{Deserialize, Serialize};
 mod chat;
 mod folder;
 mod handoff;
+mod history;
 mod mirror;
 mod models;
 mod needs;

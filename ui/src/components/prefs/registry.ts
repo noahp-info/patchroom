@@ -14,6 +14,7 @@ export const SECTIONS = [
   { id: 'dnd', label: 'Do Not Disturb' },
   { id: 'hooks', label: 'Sound hooks' },
   { id: 'links', label: 'Links' },
+  { id: 'history', label: 'History' },
   { id: 'models', label: 'Models' },
   { id: 'updates', label: 'Updates' },
   { id: 'accounts', label: 'Accounts' },
@@ -298,6 +299,15 @@ export const SETTINGS: readonly SettingEntry[] = [
     label: 'Pin artifacts automatically',
     description: 'Each artifact is pinned once in its session.',
     keywords: ['pin', 'artifact'],
+  },
+
+  // History
+  {
+    id: 'history.group',
+    section: 'history',
+    label: 'Group History by',
+    description: 'Folder, date, model or branch. The History header changes it too.',
+    keywords: ['history', 'sessions', 'group', 'folder', 'date', 'model', 'branch', 'resume'],
   },
 
   // Models

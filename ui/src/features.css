@@ -372,3 +372,231 @@
   margin: var(--group-gap) 0 0;
   color: var(--muted);
 }
+
+/* Cmd+K: a first-message hit and the closing "Search messages for" row */
+.palette__prompt mark {
+  background: var(--mark);
+  color: inherit;
+  border-radius: 2px;
+  box-shadow: 0 1.5px 0 var(--mark-line);
+}
+.palette__search {
+  margin-top: var(--ring-gap);
+  color: var(--muted);
+}
+.palette__search .palette__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+.palette__search .palette__name b {
+  color: var(--fg);
+}
+.palette__search kbd {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* History panel: a filter and the grouping toggle, then collapsible groups that page */
+.pr-app .history {
+  container-type: inline-size;
+}
+.history__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--group-gap);
+  padding: var(--group-gap) var(--gutter);
+  border-bottom: 1px solid var(--line);
+}
+.history__q {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 var(--ring-pad);
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+}
+.history__q input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.history__q:focus-within {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+.pr-app .history__by {
+  flex: none;
+  margin-right: 0;
+}
+.history__hint {
+  padding: var(--group-gap) var(--gutter) 0;
+}
+.history__count {
+  margin: 4px 0 var(--group-gap);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.history__err {
+  margin: 0 0 var(--group-gap);
+  color: var(--err-text);
+}
+.hgroup + .hgroup {
+  margin-top: var(--ring-gap);
+}
+.hgroup__h {
+  margin: 0;
+  font-size: 13px;
+}
+.hgroup__h button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px var(--ring-pad);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hgroup__h button:hover {
+  background: var(--hover);
+}
+.hgroup__name {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hgroup__detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hgroup__ct {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.hlist {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 var(--ring-gap);
+  padding: 0 0 0 22px;
+  list-style: none;
+}
+.hrow {
+  display: flex;
+  align-items: center;
+  gap: var(--group-gap);
+  width: 100%;
+  padding: 6px var(--ring-pad);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hrow:hover {
+  background: var(--hover);
+}
+.hrow:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: -2px;
+}
+.hrow__main {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+.hrow__title,
+.hrow__prompt,
+.hrow__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hrow__title {
+  font-weight: 600;
+}
+.hrow__prompt {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.hrow__meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+.hrow__side {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ring-gap);
+}
+.hrow__side time {
+  min-width: 3ch;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+.hrow__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--group-gap);
+  margin: var(--ring-gap) 0;
+  padding: var(--ring-pad);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.hrow__confirm p {
+  flex: 1 1 260px;
+  margin: 0;
+  font-size: 12.5px;
+}
+.hrow__btns {
+  display: flex;
+  gap: var(--ring-gap);
+}
+.hlist__more {
+  padding: var(--ring-gap) var(--ring-pad);
+}
+/* A narrow panel stacks the filter over the grouping toggle and drops the folder's parent path. */
+@container (max-width: 560px) {
+  .history__bar {
+    flex-wrap: wrap;
+  }
+  .history__q {
+    flex-basis: 100%;
+  }
+  .hgroup__detail {
+    display: none;
+  }
+}
