@@ -41,7 +41,7 @@ serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
 thiserror = "2"
 ulid = "3.0.0"
-png = "0.17"
+png = "0.18"
 
 # Window capture of our own window (screenshot-to-steer, frozen viewer). Safe APIs only.
 [target.'cfg(target_os = "macos")'.dependencies]
