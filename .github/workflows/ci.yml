@@ -49,8 +49,10 @@ jobs:
       - name: Commit emails self-test
         run: bash scripts/test-author-emails.sh
       # Public repo: every new commit carries a GitHub noreply author and committer email.
+      # Skipped for the dev-to-main promotion: each commit on dev passed this check on its own PR
+      # into dev, or predates the check (three 2026-10-13 commits, already public, never rewritten).
       - name: Commit emails
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.head_ref != 'dev'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
