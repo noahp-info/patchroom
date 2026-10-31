@@ -4099,3 +4099,32 @@ body.dragging .sbe__grip {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A line to copy (the sound-hook guard): the code wraps rather than clips, the button stays. */
+.copyline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--group-gap);
+  flex: 1 1 100%;
+  min-width: 0;
+}
+/* In a hint the line sits under the text, past the bell, and shares its row with the buttons. */
+.hint > .copyline {
+  flex: 1 1 auto;
+  padding-left: calc(16px + var(--group-gap));
+}
+.copyline__code {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 4px var(--ring-pad);
+  border-radius: var(--r-sm);
+  background: var(--code-bg);
+  font-family: var(--f-mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.copyline__btn {
+  flex: none;
+}

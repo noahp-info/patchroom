@@ -112,3 +112,14 @@ export function usePrefsState(): { prefs: Prefs; detected: HookDetect[]; ready: 
 export function usePrefs(): Prefs {
   return usePrefsState().prefs;
 }
+
+/** Sound hooks that still play inside Patchroom sessions (detected, not yet guarded). */
+export function unguardedSoundHooks(detected: readonly HookDetect[]): HookDetect[] {
+  return detected.filter((h) => !h.guarded);
+}
+
+/** True while detection finds a sound hook that also plays in Patchroom sessions. */
+export function useSoundHookOverlap(): boolean {
+  const { detected, ready } = usePrefsState();
+  return ready && unguardedSoundHooks(detected).length > 0;
+}

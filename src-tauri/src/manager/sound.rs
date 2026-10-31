@@ -50,7 +50,7 @@ pub(super) fn session_start_hook(cfg: &ManagerConfig, store: &Store, workspace: 
         .collect();
     detect_sound_hooks(cfg.claude_config_dir.as_deref(), &dirs)
         .iter()
-        .any(|h| h.event == "SessionStart")
+        .any(|h| h.event == "SessionStart" && !h.guarded)
 }
 
 /// Delete custom sounds that the stored prefs do not reference. Does nothing when there are

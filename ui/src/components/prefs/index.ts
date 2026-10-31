@@ -1,7 +1,14 @@
 export { PrefsPane } from './PrefsPane.tsx';
 export type { PrefsPaneProps } from './PrefsPane.tsx';
 export type { PrefsDm } from './types.ts';
-export { getPrefsStore, setPrefsApi, usePrefs, usePrefsState, PrefsStore } from './store.ts';
+export {
+  getPrefsStore,
+  setPrefsApi,
+  usePrefs,
+  usePrefsState,
+  useSoundHookOverlap,
+  PrefsStore,
+} from './store.ts';
 export {
   DEFAULT_PREFS,
   SOUND_EVENTS,

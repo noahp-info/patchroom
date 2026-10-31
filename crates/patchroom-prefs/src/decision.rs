@@ -23,6 +23,9 @@ pub enum Event {
     Error,
     /// A terminal bell.
     Bell,
+    /// A session began (Claude's SessionStart on startup or resume). Sound only: it never
+    /// posts a notification, and it plays while the session is on screen.
+    Session,
 }
 
 impl Event {
@@ -35,6 +38,7 @@ impl Event {
             Event::Message => "message",
             Event::Error => "error",
             Event::Bell => "bell",
+            Event::Session => "session",
         }
     }
 }
@@ -120,9 +124,10 @@ fn no(reason: Reason) -> Decision {
 fn hook_keeps(prefs: &Prefs, event: Event, detected: &[DetectedHook]) -> bool {
     let covering = hook_events_for(event.as_str());
     let mut any = false;
+    // A guarded hook stays quiet in Patchroom sessions: it covers nothing here.
     for hook in detected
         .iter()
-        .filter(|h| covering.contains(&h.event.as_str()))
+        .filter(|h| !h.guarded && covering.contains(&h.event.as_str()))
     {
         any = true;
         let policy = prefs
@@ -161,7 +166,8 @@ pub fn decide(prefs: &Prefs, facts: &Facts<'_>) -> Decision {
         Level::Needs if !needs => return no(Reason::NeedsOnly),
         _ => {}
     }
-    if facts.focused {
+    // A start sound is a cue while you watch the session come up; focus never hides it.
+    if facts.focused && facts.event != Event::Session {
         return no(Reason::Focused);
     }
     if hook_keeps(prefs, facts.event, facts.detected) {
@@ -216,6 +222,8 @@ mod tests {
             command: "afplay x".into(),
             source: "user".into(),
             path: "/s".into(),
+            script: None,
+            guarded: false,
         }
     }
 
@@ -302,11 +310,30 @@ mod tests {
     }
 
     #[test]
+    fn session_start_sounds_while_focused_and_yields_to_a_start_hook() {
+        let p = Prefs::default();
+        let mut f = facts(Event::Session, &[]);
+        f.focused = true;
+        assert_eq!(d(&p, &f), (true, "ok"), "focus never hides the start cue");
+        let hooks = [hook("SessionStart")];
+        assert_eq!(d(&p, &facts(Event::Session, &hooks)), (false, "hook_keep"));
+        assert_eq!(Event::Session.as_str(), "session");
+    }
+
+    #[test]
+    fn a_guarded_hook_covers_nothing() {
+        let p = Prefs::default();
+        let mut stop = hook("Stop");
+        stop.guarded = true;
+        assert_eq!(d(&p, &facts(Event::Done, &[stop])), (true, "ok"));
+    }
+
+    #[test]
     fn a_detected_hook_keeps_its_event_silent_by_default() {
         let mut p = Prefs::default();
         let hooks = [hook("Stop"), hook("SessionStart")];
         assert_eq!(d(&p, &facts(Event::Done, &hooks)), (false, "hook_keep"));
-        // SessionStart duplicates no Patchroom event; needs and bell still fire.
+        // Neither hook duplicates needs or bell: they still fire.
         assert_eq!(d(&p, &facts(Event::Needs, &hooks)), (true, "ok"));
         assert_eq!(d(&p, &facts(Event::Bell, &hooks)), (true, "ok"));
         // "Play both" by the Claude hook event name, or by the Patchroom event name.

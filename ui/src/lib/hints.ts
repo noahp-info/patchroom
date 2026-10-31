@@ -22,7 +22,15 @@ export interface HintDef {
    * view that shows it (History).
    */
   place?: HintPlace;
+  /** A line to copy (a shell guard), shown in code with a Copy button. */
+  code?: string;
 }
+
+/**
+ * The guard a Claude Code hook can start with to stay quiet in Patchroom sessions. Patchroom
+ * sets `PATCHROOM_SESSION` in every session's environment; other terminals do not have it.
+ */
+export const HOOK_GUARD = '[ -n "$PATCHROOM_SESSION" ] && exit 0';
 
 export type HintPlace = 'header' | 'strip' | 'log' | 'settings' | 'panel';
 
@@ -78,6 +86,16 @@ export const HINTS = {
     text: 'History groups every session by folder, date, model or branch, and remembers your pick. Set the default in Settings > History.',
     action: { label: 'Open History settings', tab: 'history', setting: 'history.group' },
     place: 'panel',
+  },
+  'composer.history': {
+    text: 'Press \u2191 to bring back a previous message.',
+    action: { label: 'Composer settings', tab: 'themes', setting: 'themes.uphistory' },
+    place: 'strip',
+  },
+  'sounds.hooks': {
+    text: 'Your Claude Code hooks also play sounds here, so you may hear both. To silence a hook in Patchroom only, start it with this line:',
+    action: { label: 'Sounds settings', tab: 'sounds', setting: 'sounds.hooks' },
+    code: HOOK_GUARD,
   },
   restart: {
     text: 'Patchroom restarted and reopened {count}. Turn on update checks in Settings > Updates.',

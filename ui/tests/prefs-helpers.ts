@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import type { PrefsApi } from '../src/components/prefs/ipc';
-import type { Prefs } from '../src/components/prefs/ipc';
+import type { HookDetect, Prefs } from '../src/components/prefs/ipc';
 import type { SoundDecision, SoundLogEntry } from '../src/sound';
 import type { MockSoundBackend } from '../src/ipc/mockSounds';
 
@@ -13,6 +13,19 @@ interface Hooks {
   };
   api: PrefsApi & { notifyTests: number; sound: MockSoundBackend };
   playSound(event: string, opts?: Record<string, unknown>): SoundDecision;
+  decideSound(
+    event: string,
+    prefs: Prefs,
+    detected: readonly HookDetect[],
+    ctx?: { dmId?: string; now?: Date; force?: boolean },
+  ): SoundDecision;
+  eventsForHook(hookEvent: string): string[];
+  hookKeepsEvent(
+    event: string,
+    detected: readonly HookDetect[],
+    policy: Prefs['sound']['hookPolicy'],
+  ): boolean;
+  resolveChoice(event: string, sound: Prefs['sound'], dmId?: string): unknown;
   dndActive(dnd: Prefs['dnd'], now?: Date): boolean;
   dndSummary(s: Prefs['dnd']['schedule']): string;
   soundLog: SoundLogEntry[];

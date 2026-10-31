@@ -101,7 +101,7 @@ pub enum UiEvent {
     NotifyFire {
         /// Session id (empty for the test notification).
         id: String,
-        /// `needs`, `done`, `message`, `error` or `bell`.
+        /// `needs`, `done`, `message`, `error`, `bell` or `session` (sound only).
         event: &'static str,
         /// Notification title (the DM name).
         title: String,

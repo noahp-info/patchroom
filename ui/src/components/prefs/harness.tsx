@@ -6,7 +6,8 @@ import { PrefsPane } from './index.ts';
 import { createMockPrefsApi, type HookDetect } from './ipc.ts';
 import { setPrefsApi } from './store.ts';
 import type { TabId } from './PrefsPane.tsx';
-import { decideSound } from '../../sound/decide.ts';
+import { decideSound, eventsForHook, hookKeepsEvent } from '../../sound/decide.ts';
+import { resolveChoice } from '../../sound/mix.ts';
 import { effectiveGain, playSound, soundLog } from '../../sound/index.ts';
 import { GENERATED, notesPeak } from '../../sound/pack.ts';
 import { dndActive, dndSummary } from '../../sound/dnd.ts';
@@ -20,14 +21,28 @@ import type { StylableTerm } from '../../theme/terminal.ts';
  * Query: `hooks=Stop,TaskCompleted` seeds detected hooks, `dms=2` seeds two DMs.
  */
 const q = new URLSearchParams(window.location.search);
-const detected: HookDetect[] = (q.get('hooks') ?? '')
-  .split(',')
-  .filter(Boolean)
-  .map((event) => ({
+const list = (k: string) => (q.get(k) ?? '').split(',').filter(Boolean);
+const detected: HookDetect[] = [
+  ...list('hooks').map((event) => ({
     event,
     command: `afplay /System/Library/Sounds/${event}.aiff`,
     source: '/Users/me/.claude/settings.json',
-  }));
+  })),
+  // `scripthooks=Stop`: a wrapper script plays it. `guarded=Stop`: it already tests the guard.
+  ...list('scripthooks').map((event) => ({
+    event,
+    command: `$HOME/.claude/sounds/play.sh ${event.toLowerCase()}`,
+    source: 'user',
+    script: '$HOME/.claude/sounds/play.sh',
+  })),
+  ...list('guarded').map((event) => ({
+    event,
+    command: `$HOME/.claude/sounds/quiet.sh ${event.toLowerCase()}`,
+    source: 'user',
+    script: '$HOME/.claude/sounds/quiet.sh',
+    guarded: true,
+  })),
+];
 const mockApi = createMockPrefsApi({
   detected,
   storageKey: q.has('fresh') ? undefined : 'pr.prefs.harness',
@@ -48,6 +63,9 @@ Object.assign(window, {
     api: mockApi,
     playSound,
     decideSound,
+    eventsForHook,
+    hookKeepsEvent,
+    resolveChoice,
     soundLog,
     effectiveGain,
     generated: GENERATED,

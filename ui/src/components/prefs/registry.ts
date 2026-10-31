@@ -250,6 +250,15 @@ export const SETTINGS: readonly SettingEntry[] = [
   },
   {
     id: 'sounds.claude',
+  {
+    id: 'sounds.hooks',
+    section: 'sounds',
+    label: 'Your own Claude Code hooks play here too',
+    description:
+      'Your own hooks also play in Patchroom sessions. A one-line guard keeps them quiet here.',
+    keywords: ['hooks', 'double', 'twice', 'both', 'afplay', 'say', 'guard', 'PATCHROOM_SESSION'],
+    conditional: true,
+  },
     section: 'sounds',
     label: 'Your Claude sounds',
     description: 'Bring in the sounds your Claude hooks play.',

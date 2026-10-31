@@ -7,6 +7,7 @@ import { EVENT_INFO } from '../../sound/pack.ts';
 import { ClaudeImport } from './sounds/ClaudeImport.tsx';
 import { SoundCredits } from './sounds/Credits.tsx';
 import { DmSounds } from './sounds/DmSounds.tsx';
+import { HookNote } from './sounds/HookNote.tsx';
 import { MixBoard } from './sounds/MixBoard.tsx';
 import { PackCards } from './sounds/PackCards.tsx';
 import {
@@ -17,12 +18,16 @@ import {
   type PackInfo,
   type SoundEvent,
 } from './ipc.ts';
-import { getPrefsStore, usePrefs } from './store.ts';
+import { getPrefsStore, usePrefsState } from './store.ts';
 import type { PrefsDm } from './types.ts';
 
 export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string }) {
-  const prefs = usePrefs();
+  const { prefs, detected } = usePrefsState();
   const store = getPrefsStore();
+  // Detection is read only and cheap: look again each time Sounds opens.
+  useEffect(() => {
+    void store.refreshDetected();
+  }, [store]);
   const { packs, names } = useCatalog();
   const s = prefs.sound;
 
@@ -118,6 +123,8 @@ export function SoundsSection({ dms, openDm }: { dms: PrefsDm[]; openDm?: string
           <output className="pf-hint">{Math.round(s.volume * 100)}%</output>
         </label>
       </div>
+
+      <HookNote detected={detected} />
 
       <section
         ref={mixRef}

@@ -274,3 +274,56 @@
 .sounds-pane .pf-hint {
   max-width: 60ch;
 }
+
+/* Your own Claude Code hooks play here too: in flow under the master switch, one group gap between every
+   piece of text and the copy rows next to it. */
+.hooknote {
+  display: grid;
+  gap: var(--group-gap);
+  margin: var(--group-gap) 0 var(--gutter);
+  padding: calc(var(--ring-pad) + 4px);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.hooknote > h3 {
+  margin: 0;
+}
+.hooknote .pf-hint,
+.prefs .prefs__main .hooknote .pf-hint + :is(div, ul),
+.prefs .prefs__main .hooknote :is(div, ul) + .pf-hint {
+  margin: 0;
+  max-width: 72ch;
+}
+.hooknote__list {
+  display: grid;
+  gap: var(--group-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hooknote__list > li {
+  display: grid;
+  gap: var(--group-gap);
+  min-width: 0;
+}
+.hooknote__event {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--ring-pad);
+  font-weight: 700;
+}
+.hooknote__src {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.hooknote__how {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hooknote__how code {
+  font-family: var(--f-mono);
+  font-size: 12.5px;
+}

@@ -652,7 +652,7 @@ export interface ActivityRow {
 }
 
 export type NotifyLevel = 'all' | 'needs' | 'mute';
-export type NotifyEventName = 'needs' | 'done' | 'message' | 'error' | 'bell';
+export type NotifyEventName = 'needs' | 'done' | 'message' | 'error' | 'bell' | 'session';
 export type SoundEventName = 'needs' | 'done' | 'message' | 'error';
 
 export type {
@@ -817,6 +817,11 @@ export interface DetectedHook {
   event: string;
   command: string;
   source: string;
+  path?: string;
+  /** The wrapper script that plays the sound, as the command names it. Absent: inline. */
+  script?: string | null;
+  /** The hook already tests `PATCHROOM_SESSION`, so it is quiet in Patchroom sessions. */
+  guarded?: boolean;
 }
 
 export interface NotifyFireEvent {

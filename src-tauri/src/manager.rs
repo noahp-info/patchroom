@@ -1442,6 +1442,9 @@ impl Manager {
                         self.note_claude_session(key, sid);
                     }
                     self.on_hook_traffic(key, &rec.event, rec.transcript_path.as_deref());
+                    if rec.event == "SessionStart" && starts_session(&rec.payload) {
+                        self.sound_event(key, Event::Session);
+                    }
                 }
             }
             BridgeEvent::Permission(p) => self.on_permission_prompt(p),
@@ -1594,6 +1597,15 @@ fn sweep_by_cmdline(path: &Path) {
         .args(["-KILL", "-f"])
         .arg(pattern)
         .status();
+}
+
+/// A SessionStart that begins a session (a launch or a resume), not a `/clear` or a compaction.
+/// A payload without a `source` (older CLIs) counts as a start.
+fn starts_session(payload: &serde_json::Value) -> bool {
+    payload
+        .get("source")
+        .and_then(serde_json::Value::as_str)
+        .is_none_or(|s| matches!(s, "startup" | "resume"))
 }
 
 #[cfg(test)]

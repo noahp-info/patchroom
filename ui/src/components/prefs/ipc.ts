@@ -176,6 +176,10 @@ export interface HookDetect {
   event: string;
   command: string;
   source: string;
+  /** The wrapper script that plays the sound, as the command names it. Absent: inline. */
+  script?: string | null;
+  /** The hook already tests `PATCHROOM_SESSION`, so it is quiet in Patchroom sessions. */
+  guarded?: boolean;
 }
 
 /** `termPerDm` key that holds the default for every DM without its own entry. */

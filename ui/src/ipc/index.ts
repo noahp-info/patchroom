@@ -54,5 +54,15 @@ export function createIpc(): Ipc {
   window.__PR_MOCK__ = control;
   if (params.has('demo')) seedDemo(control);
   if (params.has('sidebar-demo')) seedSidebarDemo(control);
+  // `soundhooks=Stop,SessionStart`: the person's own sound hooks, as a wrapper script.
+  for (const event of (params.get('soundhooks') ?? '').split(',').filter(Boolean)) {
+    control.soundHooks.push({
+      event,
+      command: `$HOME/.claude/sounds/play.sh ${event.toLowerCase()}`,
+      source: 'user',
+      script: '$HOME/.claude/sounds/play.sh',
+      guarded: false,
+    });
+  }
   return ipc;
 }

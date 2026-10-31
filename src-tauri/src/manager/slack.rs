@@ -51,6 +51,8 @@ const TERMINAL_MIN_GAP: Duration = Duration::from_secs(2);
 const SAME_MOMENT: Duration = Duration::from_secs(3);
 /// A focus hint from `session_view` or `session_mark_read` is believed this long.
 const HINT_TTL: Duration = Duration::from_secs(8);
+/// Sound-only events closer together than this play once.
+const SOUND_BURST: Duration = Duration::from_secs(2);
 /// Longest draft the store accepts, in bytes.
 const MAX_DRAFT: usize = 1024 * 1024;
 /// Items after the located one that its `chat_locate` page reaches.
@@ -88,6 +90,8 @@ pub(super) struct SlackState {
     last_structured: Mutex<HashMap<String, Instant>>,
     last_terminal: Mutex<HashMap<String, Instant>>,
     seen_errors: Mutex<HashSet<String>>,
+    /// When the last sound-only event played, so a burst of session starts sounds once.
+    last_sound: Mutex<Option<Instant>>,
     log: Mutex<Option<std::fs::File>>,
     clock: Mutex<Option<LocalClock>>,
     syncing: AtomicBool,
@@ -115,6 +119,7 @@ impl SlackState {
             last_structured: Mutex::new(HashMap::new()),
             last_terminal: Mutex::new(HashMap::new()),
             seen_errors: Mutex::new(HashSet::new()),
+            last_sound: Mutex::new(None),
             log: Mutex::new(open_log(data_dir)),
             clock: Mutex::new(None),
             syncing: AtomicBool::new(false),
@@ -908,6 +913,51 @@ impl Manager {
         self.write_log(&log_line(&Self::timestamp(), event, id, decision));
         if decision.fire {
             self.fire(id, event, &conv.name, body);
+        }
+    }
+
+    /// A sound-only event (session start): decided like the others, logged, never a native
+    /// notification. Several sessions starting at once (a restart reopening them) sound once.
+    pub(super) fn sound_event(&self, id: &str, event: Event) {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return;
+        }
+        let Ok(conv_id) = parse_id(id) else { return };
+        let Ok(conv) = lock(&self.store).conversation(conv_id) else {
+            return;
+        };
+        let prefs = self.prefs_get();
+        let detected = self.cached_hooks();
+        let mut decision = decide(
+            &prefs,
+            &Facts {
+                dm: id,
+                event,
+                focused: self.is_focused_dm(id),
+                archived: conv.archived,
+                local_now: self.local_now(),
+                detected: &detected,
+            },
+        );
+        if decision.fire {
+            let mut last = lock(&self.slack.last_sound);
+            if last.is_some_and(|t| t.elapsed() < SOUND_BURST) {
+                decision = Decision {
+                    fire: false,
+                    reason: Reason::Duplicate,
+                };
+            } else {
+                *last = Some(Instant::now());
+            }
+        }
+        self.write_log(&log_line(&Self::timestamp(), event, id, decision));
+        if decision.fire {
+            self.sink.emit(UiEvent::NotifyFire {
+                id: id.to_owned(),
+                event: event.as_str(),
+                title: conv.name.clone(),
+                body: String::new(),
+            });
         }
     }
 

@@ -11,7 +11,8 @@ export function HooksSection() {
   for (const h of detected) {
     const g = byEvent.get(h.event) ?? { commands: [], sources: [] };
     g.commands.push(h.command);
-    if (!g.sources.includes(h.source)) g.sources.push(h.source);
+    const src = h.guarded ? `${h.source}, quiet in Patchroom` : h.source;
+    if (!g.sources.includes(src)) g.sources.push(src);
     byEvent.set(h.event, g);
   }
 
