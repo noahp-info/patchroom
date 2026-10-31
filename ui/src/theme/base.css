@@ -1,0 +1,1122 @@
+/*
+ * Shared chrome kit. Every base renders this structure; a base then overrides layout, density,
+ * type and chrome through its own file in ./bases. Nothing here or there sets a color: all color
+ * comes from the theme tokens (see tokens.ts) as `var(--name)`.
+ *
+ * Rules are prefixed with :where(.pr-app) so they add no specificity and cannot collide with app CSS.
+ * Base-only elements (jack, screw, cable) are hidden here and drawn by the base that owns them.
+ */
+
+.pr-app {
+  /* base dimensions and density: bases override these */
+  --side-w: 264px;
+  --art-w: 440px;
+  --r: 8px;
+  --r-sm: 5px;
+  --row-h: 28px;
+  --gutter: 18px;
+  /* The chat column and its prose measure. Wide windows use the room; text still wraps at a readable line. */
+  --chat-max: 1480px;
+  --measure: 128ch;
+  --log-gap: 14px;
+  /* The group gap: the least space between a control row and the text next to it (DESIGN.md). */
+  --group-gap: 12px;
+  /* Ring rule (DESIGN.md): an outline, ring, border or highlight box keeps --ring-pad between
+     itself and its content, and outlined siblings sit at least --ring-gap apart. */
+  --ring-pad: 8px;
+  --ring-gap: 6px;
+  --text: 14px;
+  --f-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --f-label: var(--f-ui);
+  /* Fonts per area (Settings > Themes > Fonts, ui/src/theme/typeface.ts). The runtime sets an
+     area's variable only when the person chose a value, so these defaults are the inheritance:
+     chat and sidebar follow the UI, the status strip and code follow the mono. --fz-* scale the
+     type of an area (chosen size / base size); --fz and --fzm are the scales in effect here. */
+  --f-chat: var(--f-ui);
+  --f-side: var(--f-ui);
+  --f-strip: var(--f-mono);
+  --fz-ui: 1;
+  --fz-chat: var(--fz-ui);
+  --fz-side: var(--fz-ui);
+  --fz-strip: var(--fz-ui);
+  --fz-code: 1;
+  --fz: var(--fz-ui);
+  --fzm: var(--fz-code);
+  --glyph: currentColor;
+
+  width: var(--app-w, 100%);
+  height: var(--app-h, 100%);
+  display: grid;
+  grid-template-columns: var(--side-w) minmax(0, 1fr) var(--art-w);
+  grid-template-rows: 40px minmax(0, 1fr);
+  background: var(--bg);
+  color: var(--fg);
+  font: var(--text) / 1.45 var(--f-ui);
+  border-radius: var(--app-radius, 12px);
+  overflow: hidden;
+  position: relative;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.08),
+    0 18px 40px -18px rgb(0 0 0 / 0.35);
+  border: 1px solid var(--frame);
+}
+.pr-app,
+.pr-app *,
+.pr-app *::before,
+.pr-app *::after {
+  box-sizing: border-box;
+}
+.pr-app ::selection {
+  background: var(--sel);
+}
+.pr-app svg.i {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+:where(.pr-app) button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+.pr-app kbd {
+  font: 11px var(--f-mono);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+:where(.pr-app) .tb {
+  grid-column: 1/-1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+  background: var(--tb-bg);
+  color: var(--tb-fg);
+  border-bottom: 1px solid var(--tb-line);
+}
+:where(.pr-app) .lights {
+  display: flex;
+  gap: 8px;
+}
+:where(.pr-app) .lights i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ec6a5e;
+}
+:where(.pr-app) .lights i:nth-child(2) {
+  background: #f4bf4f;
+}
+:where(.pr-app) .lights i:nth-child(3) {
+  background: #61c554;
+}
+:where(.pr-app) .tb-nav {
+  display: flex;
+  gap: 6px;
+  opacity: 0.75;
+}
+:where(.pr-app) .tb-search {
+  flex: 1;
+  max-width: 520px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: var(--tb-field);
+  color: var(--tb-muted);
+  font-size: 13px;
+}
+:where(.pr-app) .tb-search span {
+  flex: 1;
+}
+:where(.pr-app) .tb-search kbd {
+  border-color: transparent;
+  color: inherit;
+  background: color-mix(in srgb, var(--tb-line) 60%, var(--tb-field));
+}
+:where(.pr-app) .tb-act {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+:where(.pr-app) .tb-act b {
+  background: var(--needs);
+  color: var(--needs-fg);
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 9px;
+  line-height: 17px;
+}
+:where(.pr-app) .screw {
+  display: none;
+}
+/* Font areas: each container rebinds the UI face and the scale for everything inside it. */
+:where(.pr-app) .side {
+  --f-ui: var(--f-side);
+  --fz: var(--fz-side);
+  font-family: var(--f-ui);
+}
+:where(.pr-app) .logcol {
+  --f-ui: var(--f-chat);
+  --fz: var(--fz-chat);
+  font-family: var(--f-ui);
+}
+:where(.pr-app) .strip {
+  --f-ui: var(--f-strip);
+  --f-mono: var(--f-strip);
+  --fz: var(--fz-strip);
+  --fzm: var(--fz-strip);
+}
+/* sidebar */
+:where(.pr-app) .side {
+  background: var(--side-bg);
+  color: var(--side-fg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--side-line);
+}
+:where(.pr-app) .ws {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--side-line);
+}
+:where(.pr-app) .ws-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: var(--ws-mark);
+  color: var(--ws-mark-fg);
+  font-weight: 700;
+  font-size: 14px;
+}
+:where(.pr-app) img.ws-mark--logo {
+  display: block;
+  background: none;
+  /* The tile is jade like the sidebar: a hairline keeps its edge. */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--side-fg, #fff) 22%, transparent);
+}
+:where(.pr-app) .ws div {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+:where(.pr-app) .ws strong {
+  font-size: 15px;
+  line-height: 1.2;
+}
+:where(.pr-app) .ws small {
+  color: var(--side-muted);
+  font-size: 12px;
+}
+:where(.pr-app) .ws button {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--side-line);
+}
+:where(.pr-app) .side-scroll {
+  overflow: auto;
+  flex: 1;
+  padding: 8px 8px 12px;
+}
+:where(.pr-app) .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  color: var(--side-fg);
+  min-height: var(--row-h);
+  text-decoration: none;
+  font-size: 14px;
+}
+:where(.pr-app) .row:hover {
+  background: var(--side-hover);
+}
+:where(.pr-app) .row .nm {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:where(.pr-app) .row.unread .nm {
+  font-weight: 700;
+  color: var(--side-strong);
+}
+:where(.pr-app) .row .ct {
+  font-size: 12px;
+  color: var(--side-muted);
+}
+:where(.pr-app) :is(.row, .sec-h) .bdg {
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--unread);
+  color: var(--unread-fg);
+}
+:where(.pr-app) :is(.row, .sec-h) .bdg.needs {
+  background: var(--needs);
+  color: var(--needs-fg);
+}
+:where(.pr-app) .row .bdg.err {
+  background: transparent;
+  color: var(--side-strong);
+  border: 1.5px solid var(--err);
+}
+:where(.pr-app) .row.active {
+  background: var(--side-active);
+  color: var(--side-active-fg);
+}
+:where(.pr-app) .row.active .nm {
+  color: inherit;
+}
+:where(.pr-app) .row .hash {
+  opacity: 0.7;
+}
+:where(.pr-app) .sec {
+  margin-top: 0;
+}
+/* A hairline above every section but the first, so sections read as blocks. */
+:where(.pr-app) .side-scroll > .sec + .sec {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--side-line);
+}
+/* Headers are the strongest ink in the sidebar; rows below them use side-fg at 400. */
+:where(.pr-app) .sec-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 4px;
+  color: var(--side-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+:where(.pr-app) .sec-h svg.i {
+  width: 12px;
+  height: 12px;
+}
+:where(.pr-app) .side-foot {
+  white-space: nowrap;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--side-line);
+  color: var(--side-muted);
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+}
+:where(.pr-app) .legend {
+  display: flex;
+  gap: 10px;
+}
+:where(.pr-app) .legend span {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+/* presence: shape + color */
+:where(.pr-app) .dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--busy);
+}
+:where(.pr-app) .dot.idle {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.6px var(--idle);
+}
+:where(.pr-app) .dot.needs {
+  background: var(--needs);
+  box-shadow:
+    0 0 0 2px var(--side-bg),
+    0 0 0 3.5px var(--needs);
+}
+:where(.pr-app) .dot.err {
+  background: var(--err);
+  border-radius: 2px;
+  transform: rotate(45deg) scale(0.85);
+}
+:where(.pr-app) .jack {
+  display: none;
+}
+:where(.pr-app) .pg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--glyph);
+}
+:where(.pr-app) .pg.claude {
+  color: var(--g-claude);
+}
+:where(.pr-app) .side .pg.cursor,
+:where(.pr-app) .side .pg.codex {
+  color: var(--side-fg);
+}
+:where(.pr-app) .pg.cursor {
+  color: var(--g-cursor);
+}
+:where(.pr-app) .pg.codex {
+  color: var(--g-codex);
+}
+@media (prefers-reduced-motion: no-preference) {
+  :where(.pr-app) .dot.busy {
+    animation: pulse 2.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  }
+  @keyframes pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--busy) 55%, transparent);
+    }
+    70%,
+    100% {
+      box-shadow: 0 0 0 5px transparent;
+    }
+  }
+}
+/* conversation */
+:where(.pr-app) .conv {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+:where(.pr-app) .ch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px var(--gutter);
+  border-bottom: 1px solid var(--line);
+  min-height: 54px;
+}
+:where(.pr-app) .ch h2 {
+  white-space: nowrap;
+  flex: none;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+:where(.pr-app) .ch .pg {
+  width: 18px;
+  height: 18px;
+}
+:where(.pr-app) .fid {
+  font: 600 10.5px var(--f-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--chip);
+  color: var(--chip-fg);
+}
+:where(.pr-app) .ch .meta {
+  color: var(--muted);
+  font-size: 12.5px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+:where(.pr-app) .ch .meta span {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  white-space: nowrap;
+}
+:where(.pr-app) .ch .meta svg.i {
+  width: 13px;
+  height: 13px;
+}
+:where(.pr-app) .ch .tools {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+:where(.pr-app) .ch .tools button {
+  white-space: nowrap;
+}
+:where(.pr-app) .ch .tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--fg);
+}
+:where(.pr-app) .ch .tools button:hover {
+  background: var(--hover);
+}
+:where(.pr-app) .log {
+  flex: 1;
+  overflow: auto;
+  padding: 14px var(--gutter) 8px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--log-gap);
+  min-height: 0;
+}
+:where(.pr-app) .day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+:where(.pr-app) .day::before,
+:where(.pr-app) .day::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+:where(.pr-app) .msg {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 0 10px;
+  align-items: start;
+}
+:where(.pr-app) .msg .av {
+  grid-row: 1/3;
+}
+:where(.pr-app) .msg .who,
+:where(.pr-app) .msg .body {
+  grid-column: 2;
+}
+:where(.pr-app) .av {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 13px;
+  background: var(--av-user);
+  color: var(--av-user-fg);
+}
+:where(.pr-app) .av.bot {
+  background: var(--av-bot);
+  color: var(--g-claude);
+}
+:where(.pr-app) .av.bot .pg {
+  width: 20px;
+  height: 20px;
+}
+:where(.pr-app) .who {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+:where(.pr-app) .who b {
+  font-weight: 700;
+}
+:where(.pr-app) .who time {
+  color: var(--muted);
+  font-size: 12px;
+}
+:where(.pr-app) .body p {
+  margin: 2px 0 6px;
+  max-width: var(--measure);
+}
+:where(.pr-app) .body code {
+  font: 12.5px var(--f-mono);
+  background: var(--code-bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+:where(.pr-app) .hl {
+  background: var(--mark);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  box-shadow: 0 1.5px 0 var(--mark-line);
+}
+:where(.pr-app) .tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font-size: 13px;
+  max-width: 560px;
+}
+:where(.pr-app) .tool .tn {
+  font-weight: 700;
+}
+:where(.pr-app) .tool code {
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--fg);
+}
+:where(.pr-app) .tool .ok {
+  color: var(--ok);
+  font-weight: 600;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+:where(.pr-app) .tool .dur {
+  color: var(--muted);
+  margin-left: auto;
+  font-size: 12px;
+}
+:where(.pr-app) .tool .add {
+  color: var(--ok);
+}
+:where(.pr-app) .tool .del {
+  color: var(--err-text);
+}
+:where(.pr-app) .tool svg.i {
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+:where(.pr-app) .tool .pre {
+  display: none;
+}
+:where(.pr-app) .thread {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  max-width: 560px;
+}
+:where(.pr-app) .thread .stack {
+  display: flex;
+}
+:where(.pr-app) .thread .stack span {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: var(--av-bot);
+  color: var(--g-claude);
+  border: 2px solid var(--bg);
+}
+:where(.pr-app) .thread .stack span + span {
+  margin-left: -6px;
+}
+:where(.pr-app) .thread a {
+  color: var(--link);
+  font-weight: 700;
+  text-decoration: none;
+}
+:where(.pr-app) .thread .tx {
+  color: var(--muted);
+}
+:where(.pr-app) .thread .sum {
+  display: block;
+  color: var(--fg);
+  font-size: 12.5px;
+}
+/* ask widget */
+:where(.pr-app) .ask {
+  border: 1px solid var(--ask-line);
+  border-radius: var(--r);
+  background: var(--surface);
+  max-width: 620px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+:where(.pr-app) .ask-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--ask-head);
+  color: var(--ask-head-fg);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+:where(.pr-app) .ask-h .needs-pill {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: var(--needs);
+  color: var(--needs-fg);
+}
+:where(.pr-app) .ask-q {
+  padding: 12px 14px 6px;
+  font-weight: 700;
+  font-size: 15px;
+}
+:where(.pr-app) .opts {
+  list-style: none;
+  margin: 0;
+  padding: 4px 8px 8px;
+  display: grid;
+  gap: 2px;
+}
+:where(.pr-app) .opt {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 1px 10px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  align-items: start;
+}
+:where(.pr-app) .opt:hover {
+  background: var(--hover);
+}
+:where(.pr-app) .opt.sel {
+  background: var(--opt-sel);
+  box-shadow: inset 0 0 0 1px var(--opt-sel-line);
+}
+:where(.pr-app) .radio {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  margin-top: 2px;
+  box-shadow: inset 0 0 0 1.6px var(--muted);
+}
+:where(.pr-app) .opt.sel .radio {
+  box-shadow: inset 0 0 0 5px var(--accent);
+}
+:where(.pr-app) .opt .ol {
+  font-weight: 600;
+}
+:where(.pr-app) .opt .od {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 13px;
+}
+:where(.pr-app) .opt .rec {
+  font-size: 11px;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+:where(.pr-app) .opt .k {
+  display: none;
+  font: 11px var(--f-mono);
+  color: var(--muted);
+}
+:where(.pr-app) .opt .rec {
+  grid-column: 3;
+  grid-row: 1;
+}
+:where(.pr-app) .other {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 0 16px 12px;
+}
+:where(.pr-app) .other .radio {
+  flex: none;
+}
+:where(.pr-app) .other span.f {
+  flex: 1;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  padding: 4px 0;
+}
+:where(.pr-app) .ask-f {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+}
+:where(.pr-app) .ask-f .hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin-right: auto;
+}
+:where(.pr-app) .btn {
+  white-space: nowrap;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+:where(.pr-app) .btn.pri {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+:where(.pr-app) .btn.pri:hover {
+  background: var(--accent-hover);
+}
+:where(.pr-app) .btn.sec {
+  border: 1px solid var(--line);
+  color: var(--fg);
+}
+:where(.pr-app) .btn.sec:hover {
+  background: var(--hover);
+}
+/* composer */
+:where(.pr-app) .composer {
+  padding: 6px var(--gutter) 0;
+}
+:where(.pr-app) .chips {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+:where(.pr-app) .chip {
+  white-space: nowrap;
+  flex: none;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 13px;
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+  background: var(--bg);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+:where(.pr-app) .chip:hover {
+  background: var(--hover);
+}
+:where(.pr-app) .chips .ctx {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+:where(.pr-app) .box {
+  border: 1px solid var(--box-line);
+  border-radius: var(--r);
+  background: var(--box-bg);
+}
+:where(.pr-app) .queued {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  margin: 6px 6px 0;
+  border-radius: var(--r-sm);
+  background: var(--q-bg);
+  font-size: 13px;
+}
+:where(.pr-app) .queued .qq {
+  color: var(--muted);
+  border-left: 1px solid var(--mark-line);
+  padding-left: 7px;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:where(.pr-app) .queued .qc {
+  flex: 1;
+  min-width: 0;
+}
+:where(.pr-app) .queued button {
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+}
+:where(.pr-app) .queued button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+:where(.pr-app) .input {
+  padding: 10px 12px 6px;
+  color: var(--muted);
+  font-size: 14px;
+  min-height: 40px;
+}
+:where(.pr-app) .input .caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 17px;
+  background: var(--accent);
+  vertical-align: -3px;
+  margin-right: 1px;
+}
+:where(.pr-app) .bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 6px;
+}
+:where(.pr-app) .bar .ib {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+:where(.pr-app) .bar .ib:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+:where(.pr-app) .bar .sp {
+  flex: 1;
+}
+:where(.pr-app) .stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--stop-line);
+  color: var(--stop);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+:where(.pr-app) .stop:hover {
+  background: var(--hover);
+}
+:where(.pr-app) .stop i {
+  width: 9px;
+  height: 9px;
+  background: currentColor;
+  border-radius: 2px;
+}
+:where(.pr-app) .send {
+  width: 32px;
+  height: 28px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+:where(.pr-app) .strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px var(--gutter) 9px;
+  font: 12px var(--f-mono);
+  color: var(--muted);
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+:where(.pr-app) .strip .sc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--chip);
+  color: var(--chip-fg);
+  white-space: nowrap;
+}
+:where(.pr-app) .strip .sc svg.i {
+  width: 12px;
+  height: 12px;
+}
+:where(.pr-app) .strip .meter {
+  width: 44px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line);
+  position: relative;
+  overflow: hidden;
+}
+:where(.pr-app) .strip .meter::after {
+  content: '';
+  position: absolute;
+  inset: 0 36% 0 0;
+  background: var(--ctx);
+}
+:where(.pr-app) .strip .mode {
+  background: var(--mode-bg);
+  color: var(--mode-fg);
+  font-weight: 600;
+}
+:where(.pr-app) .strip .verb {
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+/* artifact pane */
+:where(.pr-app) .art {
+  background: var(--art-bg);
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+:where(.pr-app) .art-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 10px 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+:where(.pr-app) .art-tabs span {
+  padding: 6px 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+  border-radius: 6px 6px 0 0;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+}
+:where(.pr-app) .art-tabs span.on {
+  background: var(--art-sheet);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--line);
+  margin-bottom: -1px;
+  border-bottom: 1px solid var(--art-sheet);
+}
+:where(.pr-app) .art-tabs svg.i {
+  width: 13px;
+  height: 13px;
+}
+:where(.pr-app) .art-sheet {
+  flex: 1;
+  background: var(--art-sheet);
+  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+:where(.pr-app) .art-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--line);
+}
+:where(.pr-app) .art-h b {
+  font: 600 12.5px var(--f-mono);
+}
+:where(.pr-app) .art-h .st {
+  font: 12px var(--f-mono);
+}
+:where(.pr-app) .art-h .st .a {
+  color: var(--ok);
+}
+:where(.pr-app) .art-h .st .d {
+  color: var(--err-text);
+}
+:where(.pr-app) .diff {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12px/1.65 var(--f-mono);
+  tab-size: 4;
+}
+:where(.pr-app) .diff td {
+  padding: 0 8px;
+  white-space: pre;
+  vertical-align: top;
+}
+:where(.pr-app) .diff td.n {
+  width: 1%;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+:where(.pr-app) .diff tr.hunk td {
+  background: var(--hunk);
+  color: var(--muted);
+}
+:where(.pr-app) .diff tr.a td.c {
+  background: var(--add-bg);
+}
+:where(.pr-app) .diff tr.a td.n {
+  background: var(--add-gut);
+}
+:where(.pr-app) .diff tr.d td.c {
+  background: var(--del-bg);
+}
+:where(.pr-app) .diff tr.d td.n {
+  background: var(--del-gut);
+}
+:where(.pr-app) .diff .kw {
+  color: var(--syn-kw);
+}
+:where(.pr-app) .diff .cm {
+  color: var(--syn-cm);
+  font-style: italic;
+}
+:where(.pr-app) .diff .ty {
+  color: var(--syn-ty);
+}
+:where(.pr-app) .diff .fn {
+  color: var(--syn-fn);
+}
+:where(.pr-app) .art-note {
+  margin-top: auto;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+:where(.pr-app) .art-note kbd {
+  margin-left: auto;
+}
+:where(.pr-app) .cable {
+  display: none;
+}
+:where(.pr-app) .chip i {
+  display: none;
+}

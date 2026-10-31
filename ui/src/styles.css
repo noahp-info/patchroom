@@ -1,65 +1,4101 @@
-:root {
-  color-scheme: light dark;
-  --bg: #fafaf9;
-  --fg: #1c1917;
-  --muted: #78716c;
-  --border: #e7e5e4;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141413;
-    --fg: #f5f5f4;
-    --muted: #a8a29e;
-    --border: #2b2a28;
-  }
-}
-
-* {
-  box-sizing: border-box;
-}
-
+/* App-level layout on top of the theme kit. Colors only through theme tokens. */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
 }
-
 body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-size: 13px;
+  background: var(--frame, canvas);
 }
 
-.shell {
+.pr-app.shell {
+  --art-w: 0px;
+  grid-template-columns: var(--side-w) minmax(0, 1fr);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Top bar: the only bar. The window uses an overlay title bar, so macOS draws the window
+   controls over the bar's left end. --tb-inset keeps content clear of them (16px margin, three
+   12px buttons with 8px gaps, 16px breathing room). Full screen hides them, so the inset drops. */
+.pr-app {
+  --tb-inset: 84px;
+}
+.pr-app[data-fullscreen='true'] {
+  --tb-inset: 14px;
+}
+.tb-title {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.pr-app .tb {
+  padding-left: var(--tb-inset);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tb-spacer {
+  flex: 1;
+}
+
+/* sidebar additions */
+.side-empty {
+  margin: 12px 8px;
+  color: var(--side-muted);
+  font-size: 13px;
+}
+.sec-toggle {
+  width: 100%;
+  text-align: left;
+}
+.sec-toggle:hover {
+  color: var(--side-strong);
+}
+.pr-app .side .row {
+  width: 100%;
+  text-align: left;
+}
+.pr-app .side :focus-visible,
+.pr-app .ch :focus-visible,
+.pr-app .btn:focus-visible,
+.pr-app .tb-act:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+.legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+}
+.legend .dot.needs {
+  box-shadow:
+    0 0 0 1.5px var(--side-bg),
+    0 0 0 2.5px var(--needs);
+}
+
+/* conversation header: fixed height so resizing never shifts the layout */
+.pr-app .ch {
+  height: 54px;
+  flex: none;
+}
+/* Header, as in Homeroom: name, chip, meta (folder, status), tools. No breakpoints: the floors
+   below fit the 880px window minimum (sidebar 264 + padding 36 + h2 48 + chip 68 + meta 208
+   + tools ~178 + gaps 40 = 822), so every box only grows as the window widens. The parent
+   path gives way first, then the name and the folder name. Status and tools never shrink. */
+/* Free space splits name : meta as 1 : 2 from zero, so the folder keeps pace with a long
+   name; the name never grows past its own text, so short names leave no gap. */
+/* The name wins room before the path: it takes its own width first (up to 28ch) and only
+   shrinks once the folder path is down to its floor. */
+.pr-app .ch h2 {
+  flex: 0 1 auto;
+  max-width: max-content;
+  min-width: 48px; /* glyph + gap + a couple of letters; short names leave no dead space */
+  overflow: hidden;
+}
+.pr-app .ch h2 svg,
+.pr-app .ch h2 .pg {
+  flex: none;
+}
+.ch__name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 28ch;
+}
+.pr-app .ch .fid {
+  flex: none;
+}
+/* .meta floor = the longest status ("Needs you: permission", 600 weight, 134px measured)
+   + the cwd floor (60) + one 10px gap, rounded up. Pixels: Figtree's ch is wide. */
+/* .meta floor = the longest status ("Needs you: permission", 134px) + the cwd floor (52) +
+   one 10px gap. The parent path gives way first and the folder keeps a few letters, so the
+   session name keeps its room before the path does. */
+.pr-app .ch .meta {
+  flex: 1 1 0;
+  min-width: 204px;
+}
+.ch .meta > .ch__cwd {
+  gap: 0;
+  flex: 0 1 auto;
+  min-width: 52px; /* icon, the ellipsis of the cut path, and a few letters of the folder */
+  overflow: hidden;
+}
+.ch__cwd svg.i {
+  flex: none;
+  margin-right: 4px;
+}
+.ch .meta span.ch__cwd-path {
   display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 16px 20px;
+  align-items: baseline;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.ch .meta span.ch__cwd-dir {
+  flex: 0 1000 auto; /* the parent path goes first */
+  min-width: 1.2em; /* room for the ellipsis, so a cut path always shows "…" */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.ch .meta span.ch__cwd-base {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.ch .meta > .ch__status {
+  flex: none;
+}
+.ch__status {
+  gap: 0;
+  font-weight: 600;
+  color: var(--fg);
+}
+.ch__status[data-status='waiting'] {
+  color: var(--err-text);
+}
+.banner {
+  display: flex;
+  align-items: center;
   gap: 12px;
+  padding: 8px var(--gutter);
+  border-bottom: 1px solid var(--err);
+  color: var(--err-text);
+  font-size: 13px;
+}
+.banner span {
+  flex: 1;
+}
+.banner button {
+  text-decoration: underline;
 }
 
-.shell__header h1 {
-  margin: 0;
-  font-size: 1.25rem;
-}
-
-.shell__header p {
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.shell__terminal {
+/* terminal stage: every session stacked, one visible */
+.stage {
+  position: relative;
   flex: 1;
   min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px;
-  background: #000;
+  background: var(--term-bg);
+  overflow: hidden;
+}
+.term {
+  position: absolute;
+  inset: 0;
+  padding: 8px 0 8px 10px;
+  visibility: hidden;
+}
+.term--active {
+  visibility: visible;
+}
+.term__host {
+  width: 100%;
+  height: 100%;
+}
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 8px;
+  padding: 0 var(--gutter);
+  max-width: 44ch;
+  margin: 0 auto;
+  background: var(--bg);
+  color: var(--fg);
+}
+.stage:has(.empty) {
+  background: var(--bg);
+}
+.empty h3 {
+  margin: 0;
+}
+.empty p {
+  margin: 0 0 8px;
+  color: var(--muted);
 }
 
-.terminal {
+/* new DM dialog */
+.newdm {
+  width: min(480px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+.newdm::backdrop {
+  background: rgb(0 0 0 / 0.45); /* neutral scrim: a --fg mix would lighten it in dark mode */
+}
+.newdm h2 {
+  margin: 0 0 2px;
+}
+.newdm__lede {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+.field {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.field__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.field input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: 13px var(--f-mono);
+}
+.field input:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 0;
+}
+.newdm__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* sidebar sections */
+.sec-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-app .side .row.ended {
+  opacity: 0.6;
+}
+.side-add {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+.side-add input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--side-line, var(--box-line));
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.side-add input:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 0;
+}
+
+/* header section picker */
+.ch .tools .sel {
+  display: block;
+  flex: none;
+}
+.pr-app .ch .tools {
+  flex: none;
+}
+.sel select {
+  height: 28px;
+  max-width: 130px;
+  text-overflow: ellipsis;
+  padding: 0 6px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.sel select:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* theme .sec (sidebar section) leaks margin onto secondary buttons */
+.pr-app .btn.sec,
+.newdm .btn.sec {
+  margin: 0;
+}
+
+/* type scale: two sizes, 13px text and 11px captions. Hierarchy comes from weight and color.
+   The theme sets many in-between sizes; one rule routes every shell element through --fs. */
+.pr-app.shell {
+  --fs: 13px;
+  font-size: calc(13px * var(--fz-ui, 1));
+}
+.pr-app.shell .fid,
+.pr-app.shell .legend,
+.pr-app.shell .side-foot,
+.pr-app.shell small {
+  --fs: 11px;
+}
+/* Settings > Themes > Fonts scales each area through --fz (base.css). */
+.pr-app.shell *:not(.xterm, .xterm *) {
+  font-size: calc(var(--fs) * var(--fz, 1));
+}
+/* Code inside any area follows the Code and terminal size. */
+.pr-app.shell
+  :is(
+    .md code,
+    .md pre.code,
+    .toolbox .tsum,
+    .toolbox .tdiff,
+    .tpre,
+    .diff-path,
+    .ask-pre,
+    .body code,
+    .diff,
+    .mbanner__text code
+  ) {
+  --fz: var(--fzm);
+}
+.pr-app.shell h2,
+.pr-app.shell h3,
+.pr-app.shell .ch__name,
+.pr-app.shell strong {
+  font-weight: 700;
+}
+
+/* Terminal chrome for claude's ANSI status line, which is drawn in the iTerm palette (bright
+   colors made for black). Neutral black and white alpha, so it needs no theme token. The title
+   strip above the live terminal does not use these: it follows the terminal's own palette
+   (--termbar-*, set inline from the DM's real background). */
+.pr-app {
+  --term-chrome: rgb(0 0 0 / 0.9);
+  --term-chrome-line: rgb(255 255 255 / 0.12);
+  --term-chrome-fg: rgb(255 255 255 / 0.75);
+}
+/* claude's live title strip, attached to the top of the terminal */
+.termbar {
+  flex: none;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--gutter);
+  background: var(--termbar-bg, var(--code-bg));
+  border-bottom: 1px solid var(--termbar-line, var(--line));
+}
+.termbar__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--termbar-fg, var(--muted));
+}
+/* exited/resume state: app chrome under the header, never text in the terminal buffer */
+.exitbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px var(--gutter);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+}
+.exitbar span {
+  flex: 1;
+}
+.exitbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.exitbar :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+/* =========================================================================================
+   P2 chat layer. Colors only through theme tokens. Sizes follow the shell's two-step scale:
+   13px text and controls, 11px captions. The shell rule above routes every font-size through
+   --fs, so each block sets --fs instead of font-size. Hierarchy comes from weight and color.
+   ========================================================================================= */
+.pane {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.chat {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: var(--bg);
+  container: chat / inline-size;
+  --fs: 13px;
+}
+.chat--hidden {
+  visibility: hidden;
+}
+.chat-main {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chat :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+.logwrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.vlog {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 var(--gutter);
+  overscroll-behavior: contain;
+  /* The log anchors its own scroll position (ChatLog); the browser's anchoring would fight it. */
+  overflow-anchor: none;
+}
+.vlog:focus-visible {
+  outline-offset: -2px;
+}
+.vsize {
+  width: 100%;
+  max-width: var(--chat-max);
+}
+/* Rows are in normal flow between two spacers (the padding of .vsize), so a row's top is the sum
+   of the measured heights above it. */
+.vrow {
+  padding-top: 4px;
+}
+.vrow.head,
+.vrow.dayrow {
+  padding-top: var(--log-gap);
+}
+.logempty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  padding: 0 var(--gutter);
+  color: var(--muted);
+  text-align: center;
+  pointer-events: none;
+}
+.logempty b {
+  color: var(--fg);
+}
+.older {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  --fs: 11px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: var(--chip);
+  color: var(--chip-fg);
+  pointer-events: none;
+  z-index: 2;
+}
+.logcol {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The jump pill sits between the log and the composer, so it never covers a message. */
+.jumpbar {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 2px;
+}
+.jump {
+  --fs: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+.jump.needs {
+  background: var(--needs);
+  color: var(--needs-fg);
+}
+
+/* messages */
+.chat .msg {
+  --fs: 13px;
+}
+.chat .msg .av {
+  width: 32px;
+  height: 32px;
+  --fs: 11px;
+}
+.chat .msg {
+  grid-template-columns: 32px minmax(0, 1fr);
+}
+.chat .msg .who {
+  --fs: 13px;
+}
+.chat .msg .who time {
+  --fs: 11px;
+}
+.chat .msg .body {
+  min-width: 0;
+}
+.chat .msg.plain .body,
+.chat .msg.cont .body {
+  grid-column: 2;
+}
+.chat .usertext {
+  margin: 2px 0 6px;
+  max-width: var(--measure);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chatimgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0;
+}
+.chatimg {
+  display: block;
+  max-width: 240px;
+  max-height: 160px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--code-bg);
+}
+.chatimg--loading,
+.chatimg--missing {
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 80px;
+  --fs: 11px;
+  color: var(--muted);
+}
+
+/* markdown */
+.md {
+  max-width: var(--measure);
+  overflow-wrap: anywhere;
+}
+.md > :first-child {
+  margin-top: 2px;
+}
+.md p {
+  margin: 2px 0 8px;
+}
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  margin: 12px 0 4px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+.md h2 {
+  --fs: 13px;
+}
+.md h3 {
+  --fs: 13px;
+}
+.md h4,
+.md h5,
+.md h6 {
+  --fs: 13px;
+}
+.md ul,
+.md ol {
+  margin: 2px 0 8px;
+  padding-left: 22px;
+}
+.md li {
+  margin: 2px 0;
+}
+.md li > .tp {
+  display: block;
+}
+.md li.task {
+  list-style: none;
+  margin-left: -20px;
+}
+.md li.task > .tp {
+  display: inline;
+}
+.md li.task input {
+  margin: 0 6px 0 0;
+  vertical-align: -1px;
+}
+.md blockquote {
+  margin: 4px 0 8px;
+  padding: 0 0 0 12px;
+  border-left: 1px solid var(--box-line);
+  color: var(--muted);
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 12px 0;
+}
+.md a {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md code {
+  --fs: 11px;
+  font-family: var(--f-mono);
+}
+.md .tablewrap {
+  overflow-x: auto;
+  margin: 4px 0 10px;
+  max-width: 100%;
+}
+.md table {
+  border-collapse: collapse;
+}
+.md th,
+.md td {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.md th {
+  background: var(--surface);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.md pre.code {
+  position: relative;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  max-width: 100%;
+  max-height: 420px;
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--code-bg);
+  --fs: 11px;
+  font-family: var(--f-mono);
+  line-height: 1.55;
+  tab-size: 4;
+}
+.md pre.code code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.md pre.code .code__lang {
+  position: sticky;
+  float: right;
+  top: 0;
+  margin: -4px -4px 0 8px;
+  --fs: 11px;
+  color: var(--muted);
+}
+.tk-kw {
+  color: var(--syn-kw);
+}
+.tk-cm {
+  color: var(--syn-cm);
+  font-style: italic;
+}
+.tk-ty,
+.tk-num {
+  color: var(--syn-ty);
+}
+.tk-fn,
+.tk-str {
+  color: var(--syn-fn);
+}
+
+/* tool calls */
+.toolbox {
+  max-width: var(--measure);
+  margin-top: 4px;
+}
+.toolbox .tool {
+  width: 100%;
+  margin: 0;
+  max-width: none;
+  text-align: left;
+  --fs: 13px;
+  min-width: 0;
+}
+.toolbox .tool:hover {
+  background: var(--hover);
+}
+.toolbox .tool[aria-expanded='true'] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.toolbox .tn {
+  flex: none;
+  white-space: nowrap;
+}
+.toolbox .tsum {
+  --fs: 11px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--f-mono);
+}
+.toolbox .tdiff {
+  flex: none;
+  --fs: 11px;
+  font-family: var(--f-mono);
+  white-space: nowrap;
+}
+.toolbox .tst {
+  flex: none;
+  --fs: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.toolbox .tst:empty {
+  display: none;
+}
+.toolbox .tst.error,
+.toolbox .tst.denied {
+  color: var(--err-text);
+}
+.toolbox .tchev {
+  flex: none;
+  display: inline-grid;
+}
+.toolbox .tchev svg.i {
+  width: 13px;
+  height: 13px;
+}
+.tchev.open svg {
+  transform: rotate(90deg);
+}
+.tstate {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.tstate svg.i {
+  width: 14px;
+  height: 14px;
+}
+.tstate.ok {
+  color: var(--ok);
+}
+.tstate.error,
+.tstate.denied {
+  color: var(--err-text);
+}
+.tstate.pending {
+  box-shadow: inset 0 0 0 1.5px var(--muted);
+  width: 10px;
+  height: 10px;
+  margin: 2px;
+}
+.tstate.running {
+  box-shadow: inset 0 0 0 2px var(--line);
+  border-top: 2px solid var(--busy);
+  width: 12px;
+  height: 12px;
+  margin: 1px;
+}
+.tstate.interrupted {
+  width: 9px;
+  height: 9px;
+  margin: 2px;
+  border-radius: 2px;
+  background: var(--muted);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tstate.running {
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+.tool-body {
+  padding: 8px 10px 4px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  background: var(--bg);
+  --fs: 11px;
+}
+.tool-body .tl {
+  margin: 0 0 3px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.tool-body .tnote {
+  margin: 0 0 6px;
+  color: var(--muted);
+}
+.tpre {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--code-bg);
+  font-family: var(--f-mono);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tpre.err {
+  color: var(--err-text);
+}
+.diffwrap {
+  margin: 0 0 8px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.diff-path {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--f-mono);
+  overflow-wrap: anywhere;
+}
+.diffwrap .diff {
+  --fs: 11px;
+  width: max-content;
+  min-width: 100%;
+}
+
+/* thinking, system lines, fallbacks */
+.think-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  --fs: 13px;
+  color: var(--muted);
+  border-radius: var(--r-sm);
+}
+.think-btn:disabled {
+  cursor: default;
+}
+.think-btn .tchev svg.i {
+  width: 13px;
+  height: 13px;
+}
+.think-text {
+  margin: 4px 0 4px 17px;
+  max-width: var(--measure);
+  --fs: 13px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sys-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  --fs: 11px;
+  color: var(--muted);
+}
+.sys-sub {
+  font-weight: 600;
+}
+.sys-text {
+  overflow-wrap: anywhere;
+}
+.fb-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  max-width: var(--measure);
+  padding: 4px 10px;
+  border: 1px dashed var(--box-line);
+  border-radius: var(--r-sm);
+  --fs: 11px;
+  color: var(--muted);
+}
+.fb-type {
+  font-family: var(--f-mono);
+  font-weight: 600;
+  color: var(--fg);
+}
+.fb-sum {
+  flex: 1 1 12ch;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fb-btn {
+  --fs: 11px;
+  color: var(--link);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* subagent thread summary */
+.chat button.thread {
+  width: 100%;
+  max-width: var(--measure);
+  margin-top: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  --fs: 13px;
+  min-width: 0;
+}
+.chat button.thread:hover {
+  background: var(--hover);
+}
+.chat .thread .stack .pg {
+  width: 12px;
+  height: 12px;
+}
+.thread-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.thread-name {
+  color: var(--link);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread .tx {
+  --fs: 11px;
+}
+.thread-open {
+  flex: none;
+  --fs: 11px;
+  color: var(--link);
+  font-weight: 600;
+}
+
+/* ask widget */
+.chat .ask {
+  max-width: 620px;
+  --fs: 13px;
+}
+.chat .ask[data-state='resolved'] {
+  border-color: var(--line);
+}
+.chat .ask[data-state='resolved'] .ask-h {
+  background: var(--chip);
+  color: var(--chip-fg);
+}
+.ask-h {
+  --fs: 13px;
+}
+.ask-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ask-h .needs-pill {
+  --fs: 11px;
+  flex: none;
+}
+.ask-done {
+  margin-left: auto;
+  flex: none;
+  --fs: 11px;
+  font-weight: 700;
+}
+.chat .ask-q {
+  --fs: 13px;
+  overflow-wrap: anywhere;
+}
+.qhead {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--chip);
+  color: var(--chip-fg);
+  --fs: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+.ask-pre {
+  margin: 0 14px 10px;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--code-bg);
+  --fs: 11px;
+  font-family: var(--f-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.qblock + .qblock {
+  border-top: 1px solid var(--line);
+}
+.chat .opts {
+  margin: 0;
+}
+.chat .opts li {
+  display: block;
+}
+.chat .opt {
+  position: relative;
+  --fs: 13px;
+}
+.chat .opt .od {
+  --fs: 13px;
+}
+.chat .opt .rec {
+  --fs: 11px;
+}
+.chat .opt:has(input:focus-visible) {
+  outline: 2px solid var(--link);
+  outline-offset: 0;
+}
+.chat .radio.check {
+  border-radius: 4px;
+}
+.chat .opt.sel .radio.check {
+  box-shadow: inset 0 0 0 5px var(--accent);
+}
+.chat .other {
+  --fs: 13px;
+  padding: 2px 8px 4px;
+}
+.chat .other.sel .radio {
+  box-shadow: inset 0 0 0 5px var(--accent);
+}
+.chat .other-pick {
+  position: relative;
+  display: inline-grid;
+}
+.chat .other .radio.check {
+  border-radius: 4px;
+}
+.chat .other input.f {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid var(--box-line);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  --fs: 13px;
+}
+.chat .other input.f::placeholder {
+  color: var(--muted);
+}
+.chat .ask-f {
+  flex-wrap: wrap;
+  --fs: 13px;
+}
+.chat .ask-f .hint {
+  flex: 1 1 18ch;
+  min-width: 0;
+  --fs: 11px;
+  /* Plain footer text, not the first-time hint box that shares the class name. */
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.ask-err {
+  padding: 4px 14px;
+  --fs: 13px;
+  color: var(--err-text);
+}
+.ask-plan {
+  padding: 4px 14px 10px;
+  max-height: 360px;
+  overflow: auto;
+}
+.ask-note {
+  display: flex;
+  gap: 8px;
+  padding: 0 14px 10px;
+}
+.ask-note input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  --fs: 13px;
+}
+.qdone {
+  list-style: none;
+  margin: 0;
+  padding: 8px 14px 10px;
+  display: grid;
+  gap: 4px;
+}
+.qdone li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  --fs: 13px;
+}
+.qdone-q {
+  color: var(--muted);
+}
+.qdone-a {
+  font-weight: 700;
+}
+
+/* composer */
+.chat .composer {
+  flex: none;
+  padding-top: 8px;
+  --fs: 13px;
+}
+.chat .box {
+  position: relative;
+  max-width: var(--chat-max);
+}
+/* The hidden twin the composer measures. Same box as the real field, out of the flow. */
+.chat .box textarea.input.mirror {
+  position: absolute;
+  inset: 0 auto auto 0;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+.chat .box:focus-within {
+  border-color: var(--link);
+}
+.chat .box textarea.input {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  max-height: 200px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  line-height: 1.45;
+  padding: 10px 12px 6px;
+}
+.chat .box .input-wrap {
+  position: relative;
+}
+.chat .box .input-ph {
+  position: absolute;
+  inset: 0 12px auto;
+  padding-top: 10px;
+  overflow: hidden;
+  color: var(--muted);
+  line-height: 1.45;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.chat .box textarea.input::placeholder {
+  color: var(--muted);
+}
+.chat .bar {
+  --fs: 11px;
+}
+.chat .bar .ib:disabled,
+.chat .send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.hint-keys {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  padding-left: 6px;
+}
+@container chat (max-width: 620px) {
+  .hint-keys {
+    display: none;
+  }
+}
+.chat .stop {
+  --fs: 13px;
+}
+.chat .queued {
+  --fs: 13px;
+}
+
+/* status strip */
+.strip-wrap {
+  flex: none;
+  /* Same right edge as the composer box: the strip's children carry the gutter as margin. */
+  max-width: calc(var(--chat-max) + 2 * var(--gutter));
+  padding: 0 0 8px;
+  --fs: 11px;
+}
+.chat .strip {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding: 7px var(--gutter) 4px;
+}
+.chat .strip .sc {
+  min-width: 0;
+}
+.chat .strip button.sc {
+  cursor: pointer;
+}
+.chat .strip button.sc:hover {
+  filter: brightness(0.95);
+}
+.chat .strip .meter::after {
+  inset: 0 calc(100% - var(--pct, 0%)) 0 0;
+}
+.chat .strip a.sc {
+  text-decoration: none;
+}
+/* The user's statusLine sits on the pane itself, no terminal box: plain text takes the theme's
+   ink, and its own ANSI colors still show. */
+.sl {
+  margin: 0 var(--gutter);
+  padding: 4px 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--f-mono);
+  line-height: 1.5;
+  overflow: hidden;
+}
+.sl-line {
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* subagent thread drawer */
+.thr {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: min(420px, calc(100% - 56px));
+  display: flex;
+  flex-direction: column;
+  background: var(--art-bg);
+  border-left: 1px solid var(--line);
+  --fs: 13px;
+}
+@container chat (min-width: 900px) {
+  .chat:has(.thr) .chat-main {
+    right: 420px;
+  }
+}
+.thr-h {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 10px 6px var(--gutter);
+  border-bottom: 1px solid var(--line);
+}
+.thr-t {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.thr-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.thr .ib {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+}
+.thr .ib:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+.thr .logwrap {
+  flex: 1;
+}
+.thr .vlog {
+  padding: 0 var(--gutter);
+}
+.thr .msg {
+  --fs: 13px;
+}
+
+/* The real input covers its option, invisible: clicks and keys hit it directly. */
+.chat .opt-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
   height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.chat .opt-input:disabled {
+  cursor: default;
+}
+
+/* Hints and system lines are sentences, so they read at text size too. */
+.hint-keys,
+.chat .ask-f .hint,
+.sys-text,
+.fb-sum {
+  --fs: 13px;
+}
+
+/* Code, diffs and tool output read at text size; labels and notes stay captions. */
+.md code,
+.md pre.code,
+.tpre,
+.diffwrap .diff,
+.ask-pre,
+.toolbox .tsum,
+.toolbox .tdiff,
+.sl,
+.tool-body {
+  --fs: 13px;
+}
+.tool-body .tl,
+.tool-body .tnote,
+.diff-path {
+  --fs: 11px;
+}
+
+/* Hidden chrome under the chat: out of the accessibility tree and out of hit tests. */
+.termbar--off {
+  visibility: hidden;
+}
+.termbar {
+  padding-block: 4px;
+}
+/* Syntax and link colors, softened toward the text color on dark grounds so code and links do
+   not glow. Same theme tokens, mixed; contrast against the ground goes up, not down. */
+.chat {
+  --c-link: var(--link);
+  --c-accent: var(--accent-text);
+  --c-kw: var(--syn-kw);
+  --c-ty: var(--syn-ty);
+  --c-fn: var(--syn-fn);
+}
+.pr-app[data-mode='dark'] .chat {
+  --c-link: color-mix(in srgb, var(--link) 55%, var(--fg));
+  --c-accent: color-mix(in srgb, var(--accent-text) 55%, var(--fg));
+  --c-kw: color-mix(in srgb, var(--syn-kw) 55%, var(--fg));
+  --c-ty: color-mix(in srgb, var(--syn-ty) 55%, var(--fg));
+  --c-fn: color-mix(in srgb, var(--syn-fn) 60%, var(--fg));
+}
+.tk-kw {
+  color: var(--c-kw);
+}
+.tk-ty,
+.tk-num {
+  color: var(--c-ty);
+}
+.tk-fn,
+.tk-str {
+  color: var(--c-fn);
+}
+.md a,
+.thread-name,
+.thread-open,
+.fb-btn {
+  color: var(--c-link);
+}
+.chat .opt .rec {
+  color: var(--c-accent);
+}
+
+/* Narrow panes: the thread takes the whole pane and the chat under it steps out, so no text
+   sits half-covered. Wide panes dock it beside the chat. */
+@container chat (max-width: 899px) {
+  .thr {
+    width: 100%;
+    border-left: 0;
+  }
+  .chat:has(.thr) .chat-main {
+    visibility: hidden;
+  }
+}
+
+/* Title bar, header, composer and strip are pinned chrome around the scrolling log: the log
+   scrolls under them by design, so they are marked sticky. */
+.pr-app .tb,
+.pr-app .ch {
+  position: sticky;
+  top: 0;
+}
+.chat .composer,
+.chat .strip-wrap {
+  position: sticky;
+  bottom: 0;
+}
+
+/* View switch: chat and terminal as one segmented control. The pressed segment is the view. */
+.pr-app .ch .tools .viewseg {
+  display: inline-flex;
+  flex: none;
+}
+.pr-app .ch .tools .viewseg button {
+  border-radius: 0;
+  padding: 0 8px;
+}
+.pr-app .ch .tools .viewseg button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.pr-app .ch .tools .viewseg button:last-child {
+  border-radius: 0 6px 6px 0;
+  margin-left: -1px;
+}
+.pr-app .ch .tools .viewseg button[aria-pressed='true'] {
+  background: var(--chip);
+  color: var(--chip-fg);
+}
+.chat .jumpbar {
+  position: sticky;
+  bottom: 0;
+}
+
+/* xterm parks its zero-size input textarea 9999em off to the left. That is a positioned child
+   outside every clipping ancestor; at the corner of the terminal it is the same invisible box
+   without being clipped. xterm still moves it to the cursor while composing text. */
+.pr-app .xterm .xterm-helper-textarea {
+  left: 0;
+}
+
+/* Narrow chat: the hint takes its own line so the buttons stay together on the next one. */
+@container chat (max-width: 760px) {
+  .chat .ask-f .hint {
+    flex-basis: 100%;
+  }
+}
+
+/* ===== P3 Slack layer: tokens only ===================================================== */
+.pr-app .conv {
+  position: relative;
+}
+body.dragging,
+body.dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+/* title bar jump field */
+.pr-app .tb-search {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.pr-app .tb-search:hover {
+  color: var(--tb-fg);
+}
+.pr-app .tb-search:focus-visible,
+.pr-app .navrow:focus-visible,
+.pr-app .sec-h:focus-visible,
+.pr-app .chatbar :focus-visible,
+.pr-app .panelview :focus-visible,
+.pr-app .floating :focus-visible,
+.pr-app .palette :focus-visible,
+.pr-app .hbar :focus-visible,
+.pr-app .mrk :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+/* sidebar: views, sections, rows */
+.pr-app .navs {
+  display: grid;
+  gap: 1px;
+  padding: 6px 8px 0;
+}
+.pr-app .navrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--row-h);
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--side-fg);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.pr-app .navrow:hover {
+  background: var(--side-hover);
+}
+.pr-app .navrow[aria-pressed='true'] {
+  background: var(--side-active);
+  color: var(--side-active-fg);
+}
+.pr-app .navrow .nm {
+  flex: 1;
+  min-width: 0;
+}
+.pr-app .navrow .ct {
+  color: var(--side-muted);
+  font-size: 12px;
+}
+.pr-app .navrow kbd {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: inherit;
+}
+.pr-app .navrow[aria-pressed='true'] .ct {
+  color: inherit;
+}
+.pr-app .navrow .bdg {
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--needs);
+  color: var(--needs-fg);
+}
+.pr-app .sec-hint {
+  margin: 2px 8px 4px 26px;
+  color: var(--side-muted);
+  font-size: 12px;
+}
+.pr-app .sec-h svg.i {
+  flex: none;
+}
+.pr-app .sec-edit {
+  padding-right: 4px;
+}
+.pr-app .sec-edit input {
+  width: 100%;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--side-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.pr-app .side .row .nm {
+  flex: 0 1 auto;
+}
+.pr-app .side .row .sub {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--side-muted);
+  font-size: 12px;
+}
+.pr-app .side .row.active .sub {
+  color: inherit;
+  opacity: 0.8;
+}
+.pr-app .side .row .nm + .bdg,
+.pr-app .side .row .nm + .draft {
+  margin-left: auto;
+}
+.pr-app .side .row .draft {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--side-muted);
+}
+.pr-app .side .row.active .draft {
+  color: inherit;
+}
+.pr-app .side .row .draft svg.i {
+  width: 13px;
+  height: 13px;
+}
+.pr-app .side .row.dragging,
+.pr-app .sec.dragging {
+  opacity: 0.45;
+}
+.pr-app .side .row.drop-before {
+  box-shadow: 0 -2px 0 0 var(--link);
+}
+.pr-app .sec.drop {
+  border-radius: var(--r-sm);
+  background: var(--side-hover);
+}
+.pr-app .sec.drop-before {
+  box-shadow: 0 -2px 0 0 var(--link);
+}
+.pr-app .sec.drop-after {
+  box-shadow: 0 2px 0 0 var(--link);
+}
+.pr-app .drop-end {
+  height: 2px;
+  margin: 2px 8px;
+  border-radius: 1px;
+  background: var(--link);
+}
+.drag-ghost {
+  position: fixed;
+  z-index: 80;
+  max-width: 220px;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  background: var(--side-active);
+  color: var(--side-active-fg);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-shadow: 0 6px 18px -6px rgb(0 0 0 / 0.5);
+}
+
+/* floating surfaces: context menu, emoji picker, popovers */
+.floating {
+  position: fixed;
+  z-index: 60;
+  min-width: 180px;
+  max-width: min(360px, 94vw);
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+  box-shadow: 0 10px 30px -8px rgb(0 0 0 / 0.45);
+}
+.ctxmenu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ctxmenu__item:hover,
+.ctxmenu__item:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+.ctxmenu__item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--link);
+}
+.ctxmenu__item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ctxmenu__item.sep {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  padding-top: 8px;
+}
+.ctxmenu__item.danger {
+  color: var(--err-text);
+}
+.ctxmenu__item .ct {
+  margin-left: auto;
+  color: var(--muted);
+}
+.pop {
+  width: 340px;
+  padding: 8px;
+}
+.pop__h {
+  margin: 2px 4px 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.picker {
+  width: 312px;
+  padding: 8px;
+}
+.picker__q {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+}
+.picker__sec h3 {
+  margin: 10px 2px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.picker__grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+}
+.picker .emoji {
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.picker .emoji:hover,
+.picker .emoji:focus-visible {
+  background: var(--hover);
+}
+.picker__none {
+  margin: 8px 2px;
+  color: var(--muted);
+}
+
+/* palette: Cmd+K and search */
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgb(0 0 0 / 0.38);
+}
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 92vw);
+  max-height: 68vh;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 24px 60px -16px rgb(0 0 0 / 0.55);
+  overflow: hidden;
+}
+.palette__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.palette__head .palette__q {
+  border-bottom: 0;
+  padding-left: 0;
+}
+.palette > .palette__q {
+  flex: none;
+}
+.palette__head .palette__q {
+  flex: 1;
+}
+.palette__q {
+  min-width: 0;
+  height: 48px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+}
+.pr-app .palette .palette__q:focus-visible {
+  outline: none;
+}
+.palette__list {
+  flex: 1;
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  list-style: none;
+}
+.palette__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.palette__item.sel {
+  background: var(--opt-sel);
+  border-color: var(--opt-sel-line);
+}
+.palette__name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.palette__name mark,
+.hit__snip mark {
+  background: var(--mark);
+  color: inherit;
+  border-radius: 2px;
+  box-shadow: 0 1.5px 0 var(--mark-line);
+}
+.palette__path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette__tags {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.palette__none {
+  padding: 16px;
+  color: var(--muted);
+  list-style: none;
+}
+.palette__foot {
+  margin: 0;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+.palette__foot kbd {
+  margin: 0 2px;
+}
+.palette__item.hit {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.hit__meta {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.hit__meta time {
+  color: var(--muted);
+  font-size: 12px;
+}
+.hit__snip {
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.tag {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--chip);
+  color: var(--chip-fg);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.tag.needs {
+  background: var(--needs);
+  color: var(--needs-fg);
+}
+.scope {
+  display: flex;
+  margin-right: 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.scope button {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.scope button[aria-pressed='true'] {
+  background: var(--chip);
+  color: var(--chip-fg);
+  font-weight: 600;
+}
+.scope button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* conversation: toolbar, hover bar, marks, hit highlight */
+/* A floating toolbar: it never takes height from the log, so scroll positions stay put. */
+/* The chat tools sit in the conversation header, in flow: they never cover the log. */
+.pr-app .ch__chat {
+  display: contents;
+}
+.pr-app .chatbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.pr-app .ch .tools .chatbar__btn {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  border-color: transparent;
+}
+.pr-app .chatbar__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  min-width: 26px;
+  justify-content: center;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.pr-app .chatbar__btn:hover:not(:disabled),
+.pr-app .chatbar__btn[aria-pressed='true'] {
+  background: var(--hover);
+  color: var(--fg);
+}
+.pr-app .chatbar__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pr-app .chatbar__btn .ct {
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--chip);
+  color: var(--chip-fg);
+  font-size: 11px;
+  font-weight: 700;
+}
+.pr-app .chatbar__filter {
+  min-width: 0;
+  max-width: 22ch;
+  overflow: hidden;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px;
+  padding: 0 4px 0 10px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--opt-sel);
+  border: 1px solid var(--opt-sel-line);
+  color: var(--fg);
+}
+.pr-app .chatbar__filter button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.pr-app .msg {
+  position: relative;
+}
+.pr-app .msg[data-hit] {
+  background: color-mix(in srgb, var(--mark) 40%, transparent);
+  box-shadow: inset 3px 0 0 var(--mark-line);
+  border-radius: var(--r-sm);
+}
+/* The hover bar never covers content (DESIGN.md, Overlap rule). A named row reserves room at
+   the right end of its name line and the bar sits there; a continuation row gets one button in
+   its empty avatar gutter. */
+.pr-app .msg.head > .who {
+  min-height: 26px;
+  padding-right: 120px;
+  align-items: center;
+}
+.pr-app .hbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  gap: 1px;
+  padding: 1px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  opacity: 0;
+  pointer-events: none;
+}
+.pr-app .hbar--gutter {
+  right: auto;
+  left: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.pr-app .hbar-pop {
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+}
+.pr-app .hbar-pop button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pr-app .hbar-pop button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+.pr-app .hbar-pop button[aria-pressed='true'] {
+  color: var(--accent-text);
+}
+.pr-app .msg:hover > .hbar,
+.pr-app .msg:focus-within > .hbar,
+.pr-app .hbar:has([aria-expanded='true']) {
+  opacity: 1;
+  pointer-events: auto;
+}
+.pr-app .hbar button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pr-app .hbar button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+.pr-app .hbar button[aria-pressed='true'] {
+  color: var(--accent-text);
+}
+.pr-app .msg .mrk {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.pr-app .mtag,
+.pr-app .rchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--box-line);
+  border-radius: 11px;
+  background: var(--box-bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+}
+.pr-app .mtag svg.i {
+  width: 12px;
+  height: 12px;
+}
+.pr-app .rchip {
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 14px;
+}
+.pr-app .rchip:hover {
+  border-color: var(--stop-line);
+}
+
+/* panel views: Activity, Saved items */
+.pr-app .panelview {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.pr-app .panelview__h {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px var(--gutter);
+  border-bottom: 1px solid var(--line);
+}
+.pr-app .panelview__h h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.pr-app .panelview__h p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.pr-app .panelview .ib {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pr-app .panelview .ib:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+.pr-app .panelview__body {
+  flex: 1;
+  overflow: auto;
+  padding: 8px var(--gutter) 18px;
+}
+.listempty {
+  margin: 24px 4px;
+  color: var(--muted);
+}
+.actlist,
+.marklist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.actrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.actrow:hover {
+  background: var(--hover);
+}
+.actrow__main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.actrow__sum {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.actrow time,
+.markrow time {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.markrow {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+}
+.markrow__main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.markrow__main:hover {
+  background: var(--hover);
+}
+.markrow__meta {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 12.5px;
+}
+.markrow__text {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.markrow__x {
+  width: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.markrow__x:hover {
+  color: var(--err-text);
+}
+.markrow__x svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+/* The markdown "tight paragraph" span shares the class name `.tp` with the theme mini preview in
+   prefs.css. Undo the preview box inside chat text. */
+.pr-app .md .tp {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  aspect-ratio: auto;
+  grid-template-rows: none;
+}
+
+/* folder sections: discovered session rows, hover card, confirm, Older dropdown */
+.pr-app .side .fs-item {
+  display: block;
+}
+.pr-app .side .row.fs-row {
+  padding-block: 4px;
+}
+.pr-app .side .fs-row--hidden {
+  opacity: 0.65;
+}
+.pr-app .fs-age {
+  --fs: 11px;
+  flex: none;
+  margin-left: auto;
+  color: var(--side-muted);
+  font-variant-numeric: tabular-nums;
+}
+.pr-app .side .row.active .fs-age {
+  color: inherit;
+}
+.pr-app .fs-wt {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--side-muted);
+}
+.pr-app .fs-wt svg.i {
+  width: 13px;
+  height: 13px;
+}
+.pr-app .side .row.active .fs-wt {
+  color: inherit;
+}
+.pr-app .fs-chip {
+  --fs: 11px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  max-width: 112px;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border: 1px solid var(--side-line);
+  border-radius: var(--r-sm);
+  color: var(--side-muted);
+  line-height: 14px;
+}
+.pr-app .fs-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-app .fs-chip svg.i {
+  flex: none;
+  width: 11px;
+  height: 11px;
+}
+.pr-app .fs-chip--away {
+  color: var(--side-strong);
+  border-style: dashed;
+}
+.pr-app .fs-chip--live {
+  color: var(--side-strong);
+  border-color: var(--busy);
+}
+.pr-app .fs-chip--live::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 1px;
+  border-radius: 50%;
+  background: var(--busy);
+}
+.pr-app .side .row.active .fs-chip {
+  color: inherit;
+  border-color: currentcolor;
+}
+.pr-app .side .row .nm + .bdg,
+.pr-app .side .row .fs-chip + .bdg,
+.pr-app .side .row .fs-chip + .draft,
+.pr-app .side .row .fs-wt + .bdg,
+.pr-app .side .row .fs-wt + .draft {
+  margin-left: auto;
+}
+.pr-app .fs-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 24px;
+  margin: 2px 0;
+  padding: 2px 8px 2px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--side-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pr-app .fs-toggle:hover {
+  background: var(--side-hover);
+  color: var(--side-strong);
+}
+.pr-app .fs-older svg.i {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.pr-app .fs-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.pr-app .fs-error {
+  color: var(--side-strong);
+}
+.pr-app .fs-confirm {
+  margin: 2px 6px 6px 26px;
+  padding: 8px;
+  border: 1px solid var(--side-line);
+  border-radius: var(--r-sm);
+  background: var(--side-hover);
+  color: var(--side-fg);
+}
+.pr-app .fs-confirm p {
+  margin: 0 0 8px;
+}
+.pr-app .fs-confirm__acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.pr-app .fs-btn {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--side-line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--side-fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pr-app .fs-btn:hover {
+  background: var(--side-hover);
+}
+.pr-app .fs-btn--pri {
+  border-color: transparent;
+  background: var(--side-active);
+  color: var(--side-active-fg);
+}
+.pr-app .fs-btn--pri:hover {
+  background: var(--side-active);
+  filter: brightness(1.08);
+}
+.pr-app .fs-tip {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 300px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 4px 10px -4px rgb(0 0 0 / 0.45);
+  pointer-events: none;
+}
+.pr-app .fs-tip__src,
+.pr-app .fs-tip__meta,
+.pr-app .fs-tip__path {
+  --fs: 12px;
+  color: var(--muted);
+}
+.pr-app .fs-tip__prompt {
+  margin: 4px 0 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.pr-app .fs-tip__prompt span {
+  --fs: 12px;
+  display: block;
+  color: var(--muted);
+  font-weight: 600;
+}
+.pr-app .fs-tip__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--f-mono);
+}
+.pr-app .fs-pop {
+  padding: 10px;
+}
+.pr-app .fs-days {
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+}
+.pr-app .fs-days label {
+  display: grid;
+  gap: 4px;
+  font-weight: 600;
+}
+.pr-app .fs-days__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+.pr-app .fs-days input {
+  width: 80px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+}
+.pr-app .fs-days .btn {
+  justify-self: end;
+}
+.pr-app .palette__confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--hover);
+}
+.pr-app .palette__confirm p {
+  margin: 0;
+}
+.pr-app .palette__confirm div {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+.field select {
+  height: 30px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: 13px var(--f-mono);
+}
+.field select:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 0;
+}
+
+/* Preferences opened from a DM's "Terminal look..." item: the DM's row wears a ring. */
+.prefs [data-target='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r);
+}
+
+/* sidebar organization: dividers, emoji, needs-you rows under a collapsed header */
+.pr-app .sec-emoji {
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
+}
+.pr-app .sec-h--divider {
+  min-height: 20px;
+  padding-block: 2px;
+}
+.pr-app .sec-h--divider .sec-name {
+  flex: 0 1 auto;
+  color: var(--side-fg);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pr-app .sec-rule {
+  flex: 1 1 24px;
+  min-width: 24px;
+  height: 0;
+  border-top: 1px solid var(--side-line);
+}
+.pr-app .sec--divider {
+  margin-top: 10px;
+}
+.pr-app .side-scroll > .sec--divider + .sec {
+  margin-top: 2px;
+  padding-top: 0;
+  border-top: 0;
+}
+.pr-app .sec-peek {
+  display: grid;
+  gap: 1px;
+}
+.pr-app .sec-emoji-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--side-line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--side-fg);
+  font-size: 14px;
+  cursor: pointer;
+}
+.pr-app .sec-emoji-btn:hover {
+  background: var(--side-hover);
+}
+.pr-app .sec-edit .sec-emoji-btn {
+  width: 24px;
+  height: 24px;
+}
+.pr-app .sec-edit {
+  gap: 4px;
+}
+.pr-app .fs-tip__branch {
+  --fs: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--f-mono);
+}
+.pr-app .fs-tip__branch svg.i {
+  flex: none;
+  width: 11px;
+  height: 11px;
+}
+.pr-app .picker__clear {
+  margin: 0 0 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.pr-app .picker__clear:hover {
+  background: var(--hover);
+}
+/* The create row sits on the sidebar band: its button takes the sidebar tokens, not the main pane's. */
+.pr-app .side-add .btn.sec {
+  height: 28px;
+  border-color: var(--side-line);
+  color: var(--side-fg);
+}
+.pr-app .side-add .btn.sec:hover:not(:disabled) {
+  background: var(--side-hover);
+}
+
+/* sidebar resizer: a 6px strip just outside the sidebar's right edge, clear of the cable gutter */
+.pr-app .side {
+  position: relative;
+}
+.pr-app .side-resizer {
+  position: absolute;
+  /* Starts below the conversation header (54px): the Patch Bay cable crosses there to its jack. */
+  top: 54px;
+  bottom: 0;
+  /* Past the 1px border, so the strip starts at the sidebar's outer edge. */
+  right: -7px;
+  width: 6px;
+  z-index: 7;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+.pr-app .side-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: transparent;
+}
+.pr-app .side-resizer:hover::after,
+.pr-app .side-resizer:focus-visible::after,
+.pr-app .side-resizer:active::after {
+  background: var(--link);
+}
+.pr-app .side :focus-visible.side-resizer {
+  outline: none;
+}
+
+/* =========================================================================================
+   Session parity: mirror banner, terminal-wait banner, send notice, fallback note, and the
+   modular status strip. Theme tokens only.
+   ========================================================================================= */
+.chat .mbanner,
+.chat .tbanner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* The floating conversation toolbar sits top right: the banner stops short of it. */
+  margin: 8px calc(var(--gutter) + 120px) 0 var(--gutter);
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg);
+  --fs: 13px;
+}
+.chat .mbanner > svg.i {
+  color: var(--busy);
+}
+.chat .tbanner {
+  border-color: var(--needs);
+}
+.chat .tbanner > svg.i {
+  color: var(--needs);
+}
+.chat .mbanner > svg.i,
+.chat .tbanner > svg.i {
+  flex: none;
+}
+.chat .mbanner__text,
+.chat .tbanner__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.chat .mbanner__text span,
+.chat .tbanner__text span {
+  color: var(--muted);
+  --fs: 11px;
+}
+.chat .mbanner__btn,
+.chat .tbanner__btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.chat .mbanner__btn:hover,
+.chat .tbanner__btn:hover {
+  background: var(--hover);
+}
+.chat .mbanner__btn--quiet {
+  border-color: transparent;
+  background: none;
+}
+.chat .mbanner__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.chat .mbanner__btn[aria-pressed='true'] {
+  border-color: var(--link);
+}
+.chat .mbanner__actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.chat .mbanner__text code {
+  font-family: var(--f-mono);
+}
+.chat .mbanner__text span.mbanner__note {
+  color: var(--err-text);
+}
+.chat .mbanner__btn--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.chat .mbanner__btn--primary:hover {
+  background: var(--accent-hover);
+}
+/* Ending the other copy is the one destructive action here: red, and confirmed first. */
+.chat .mbanner__btn--danger {
+  border-color: color-mix(in srgb, var(--err) 55%, transparent);
+  background: none;
+  color: var(--err-text);
+}
+.chat .mbanner__btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--err) 12%, transparent);
+}
+.chat .mbanner__btn--danger-solid {
+  border-color: var(--err-text);
+  background: var(--err-text);
+  color: var(--surface);
+  font-weight: 600;
+}
+.chat .mbanner__btn--danger-solid:hover {
+  background: color-mix(in srgb, var(--err-text) 88%, var(--fg));
+}
+.chat .mbanner--confirm {
+  border-color: var(--err);
+}
+.chat .mbanner--confirm > svg.i {
+  color: var(--err-text);
+}
+.chat .tbanner__btn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.chat .tbanner__btn:hover {
+  background: var(--accent-hover);
+}
+.chat .tbanner__btn kbd {
+  --fs: 11px;
+}
+/* A hint inside a button reads as the button's own text, never muted: AA on the button fill. */
+.pr-app button kbd,
+.pr-app .btn kbd {
+  color: inherit;
+  opacity: 1;
+  border-color: currentColor;
+}
+@container chat (max-width: 720px) {
+  .chat .mbanner,
+  .chat .tbanner {
+    flex-wrap: wrap;
+    margin: 44px var(--gutter) 0;
+  }
+  .chat .mbanner__text,
+  .chat .tbanner__text {
+    flex-basis: calc(100% - 40px);
+  }
+}
+
+/* Why the last send did not go through, right above the box. */
+.chat .cnotice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(var(--chat-max) + 2 * var(--gutter));
+  margin: 0 var(--gutter) 6px;
+  padding: 2px 4px;
+  color: var(--fg);
+  --fs: 11px;
+}
+.chat .cnotice::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.chat .cnotice[data-kind='blocked']::before,
+.chat .cnotice[data-kind='mirror']::before,
+.chat .cnotice[data-kind='no-echo']::before {
+  background: var(--needs);
+}
+.chat .cnotice span {
+  flex: 1;
+  min-width: 0;
+}
+.chat .cnotice--reason::before {
+  background: var(--needs);
+}
+.chat .cnotice__btn {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.chat .box[data-readonly='true'] {
+  background: var(--surface);
+}
+/* An ended DM: the whole message box is one Resume target. */
+.chat .box__resume {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat .box__resume:hover {
+  background: var(--hover);
+}
+.chat .box__resume svg.i {
+  color: var(--link);
+}
+.chat .box__resume span {
+  color: var(--muted);
+}
+
+/* A terminal shown because the chat cannot render what claude is doing. */
+.pane .tnote {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px var(--gutter);
+  border-bottom: 1px solid var(--needs);
+  background: var(--surface);
+  color: var(--fg);
+  --fs: 13px;
+}
+.pane .tnote span {
+  flex: 1;
+  min-width: 0;
+}
+.pane .tnote button {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.pane .tnote :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+/* Status strip modules. The user's statusLine is one more module, a full row of its own. */
+.chat .strip > .sl {
+  flex: 1 0 100%;
+  margin: 0;
+  min-width: 0;
+}
+/* The gear sits in the strip's top-right corner, out of the module flow, so it never takes a
+   row of its own and the user's module order stays exactly as chosen. */
+.chat .strip:has(> .strip__edit) {
+  position: relative;
+  padding-right: calc(var(--gutter) + 28px);
+}
+.chat .strip .strip__edit {
+  position: absolute;
+  top: 5px;
+  right: var(--gutter);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.55;
+}
+.chat .strip-wrap:hover .strip__edit,
+.chat .strip .strip__edit:focus-visible,
+.chat .strip .strip__edit[aria-expanded='true'] {
+  opacity: 1;
+}
+.chat .strip .strip__edit:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+/* Customize menu and the Preferences editor share these rules. */
+.sbmenu {
+  width: 320px;
+}
+.sbmenu__scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 8px;
+}
+.sbmenu__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 4px 2px;
+}
+.sbmenu__note {
+  flex: 1;
+  color: var(--muted);
+  --fs: 11px;
+}
+.sbmenu__reset {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.sbmenu__reset:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sbe {
+  --fs: 13px;
+  color: var(--fg);
+}
+.sbe__list,
+.sbe__tray {
+  margin: 0;
+  /* Ring rule: half the pad here, half on each row, so content clears the frame. */
+  padding: calc(var(--ring-pad) / 2) 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.sbe__tray[data-drop='tray'] {
+  border-color: var(--link);
+}
+.sbe__h {
+  margin: 10px 4px 4px;
+  color: var(--muted);
+  font-weight: 700;
+  --fs: 11px;
+}
+.sbe__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: calc(var(--ring-pad) / 2) var(--ring-pad);
+}
+.sbe__row + .sbe__row {
+  border-top: 1px solid var(--line);
+}
+.sbe__row[data-lifted='true'] {
+  opacity: 0.5;
+}
+.sbe__row[data-drop='before']::before,
+.sbe__row[data-drop='after']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--link);
+}
+.sbe__row[data-drop='before']::before {
+  top: -1px;
+}
+.sbe__row[data-drop='after']::after {
+  bottom: -1px;
+}
+.sbe__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbe__row--tray .sbe__name {
+  flex: 0 1 auto;
+}
+.sbe__tag {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  --fs: 11px;
+}
+.sbe__row[data-idle='true'] .sbe__name {
+  flex: 0 1 auto;
+  color: var(--muted);
+}
+.sbe__none {
+  padding: 8px;
+  color: var(--muted);
+  --fs: 11px;
+}
+.sbe__grip,
+.sbe__x,
+.sbe__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.sbe__grip {
+  width: 22px;
+  height: 26px;
+  cursor: grab;
+  touch-action: none;
+}
+.sbe__x {
+  width: 24px;
+  height: 24px;
+}
+.sbe__add {
+  height: 24px;
+  margin-left: auto;
+  padding: 0 8px;
+  color: var(--fg);
+}
+.sbe__grip:hover,
+.sbe__x:hover,
+.sbe__add:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+.sbe :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+body.dragging .sbe__grip {
+  cursor: grabbing;
+}
+
+/* Check failed: the live check could not finish. Opening anyway may start a second process. */
+.cfbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px var(--gutter);
+  border-bottom: 1px solid var(--err);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+}
+.cfbar > svg.i {
+  flex: none;
+  color: var(--err-text);
+}
+.cfbar__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cfbar__text span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.cfbar__text .cfbar__warn {
+  color: var(--err-text);
+}
+.cfbar__btn {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.cfbar__btn:hover {
+  background: var(--hover);
+}
+.cfbar__btn--warn {
+  border-color: var(--err);
+  color: var(--err-text);
+}
+.cfbar :focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+@media (max-width: 720px) {
+  .cfbar {
+    flex-wrap: wrap;
+  }
+}
+
+/* highlight-to-comment: the lines in the composer, the marked source rows, the selection chip */
+.chat .clines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ring-gap);
+  margin: 0;
+  padding: 8px 8px 0;
+  list-style: none;
+}
+.chat .cline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px var(--ring-pad) 4px 0;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--mark) 35%, transparent);
+  box-shadow: inset 3px 0 0 var(--mark-line);
+}
+.chat .cline__quote {
+  flex: 0 1 auto;
+  max-width: 45%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 6px 3px 10px;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  --fs: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.chat .cline__quote:disabled {
+  cursor: default;
+}
+.chat .cline__quote:hover:not(:disabled) span {
+  text-decoration: underline;
+}
+.chat .cline__quote span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-style: italic;
+}
+.chat .cline__shot {
+  flex: none;
+  display: block;
+  margin-left: 10px;
+  line-height: 0;
+}
+.chat .cline__shot img {
+  width: 64px;
+  height: 36px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  object-fit: cover;
+}
+.chat .cline__quote svg.i {
+  flex: none;
+  color: var(--muted);
+}
+.chat .cline__note {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  outline: 0;
+}
+.chat .cline__note:focus {
+  border-color: var(--link);
+}
+.chat .cline__note::placeholder {
+  color: var(--muted);
+}
+.chat .cline__x {
+  flex: none;
+}
+.pr-app .msg[data-commented]:not([data-hit]) {
+  box-shadow: inset 3px 0 0 var(--mark-line);
+  border-radius: var(--r-sm);
+}
+.selchip {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  transform: translate(-50%, calc(-100% - 6px));
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+  --fs: 12px;
+}
+.selchip button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: calc(var(--r-sm) - 2px);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.selchip button:hover,
+.selchip button:focus-visible {
+  background: var(--hover);
+}
+.selchip svg.i {
+  color: var(--muted);
+}
+
+/* The exact words a pending comment quotes. Stronger while its note is being edited. */
+::highlight(pr-comment) {
+  background-color: color-mix(in srgb, var(--mark-line) 30%, transparent);
+}
+::highlight(pr-comment-active) {
+  background-color: color-mix(in srgb, var(--mark-line) 62%, transparent);
+  color: var(--fg);
+}
+.chat .usertext > p {
+  margin: 0;
+}
+.chat .usertext > p:empty {
+  display: none;
+}
+.chat .usertext .uq {
+  margin: 4px 0 2px;
+  padding: 1px 0 1px 10px;
+  border-left: 3px solid var(--mark-line);
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* The live working line under the log, like the terminal's spinner line. */
+.chat .working {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: var(--chat-max, 980px);
+  margin: 2px var(--gutter) 0;
+  padding: 4px 2px;
+  min-width: 0;
+  --fs: 13px;
+}
+.chat .working__spin {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--line);
+  border-top: 2px solid var(--busy);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chat .working__spin {
+    animation: spin 0.9s linear infinite;
+  }
+}
+.chat .working__verb {
+  flex: none;
+  color: var(--accent-text, var(--fg));
+  font-weight: 600;
+}
+.chat .working__detail {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The in-app link viewer: a right-hand pane. The page is a native webview over .viewer__page. */
+.pr-app.shell[data-viewer='open'] {
+  /* The pane gives way before the conversation drops under 320px, so nothing spills sideways. */
+  grid-template-columns:
+    var(--side-w) minmax(320px, 1fr)
+    minmax(0, var(--viewer-w, clamp(300px, 38vw, 960px)));
+}
+/* A narrow conversation (side pane open, small window) collapses its header from the edges:
+   the section picker and parent path go first, then the folder, then the status text. The
+   sidebar keeps the section move (right-click a session) and the presence mark. */
+.pr-app .conv {
+  container: conv / inline-size;
+}
+@container conv (max-width: 560px) {
+  .pr-app .ch .tools .sel,
+  .ch .meta span.ch__cwd-dir {
+    display: none;
+  }
+}
+@container conv (max-width: 440px) {
+  .pr-app .ch .meta > .ch__cwd,
+  .pr-app .ch .ch__status-more {
+    display: none;
+  }
+  .pr-app .ch .meta {
+    min-width: min-content;
+  }
+}
+@container conv (max-width: 380px) {
+  .pr-app .ch .meta {
+    min-width: 0;
+  }
+  .pr-app .ch .meta > .ch__status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+.viewer {
+  grid-row: 2;
+  grid-column: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+.viewer__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--line);
+  --fs: 13px;
+}
+.viewer__bar .flip {
+  display: inline-flex;
+  transform: scaleX(-1);
+}
+.viewer__title {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  margin: 0 6px;
+  line-height: 1.25;
+}
+.viewer__title b,
+.viewer__title span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.viewer__title span {
+  color: var(--muted);
+  --fs: 11px;
+}
+.viewer__ext {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.viewer__ext:hover {
+  background: var(--hover);
+}
+.viewer__page {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+}
+.viewer__wait {
+  color: var(--muted);
+  --fs: 13px;
+}
+/* The frozen page, shown while an overlay is open and the native view is hidden. */
+.viewer__still {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+}
+/* claude.ai asked to sign in: one line above the page, in flow, so it covers nothing. */
+.viewer__signin {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px var(--group-gap);
+  padding: var(--ring-pad) 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  --fs: 13px;
+}
+.viewer__signin span {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+/* A narrow pane folds its bar from the middle: the button keeps only its icon, then forward
+   and reload step out. Back, the title, comment and close always stay. */
+.viewer {
+  container: viewer / inline-size;
+}
+@container viewer (max-width: 460px) {
+  .viewer__ext {
+    padding: 0 7px;
+  }
+  .viewer__ext-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@container viewer (max-width: 340px) {
+  .viewer__bar .viewer__opt {
+    display: none;
+  }
+}
+
+/* An artifact pin: a tag and an Open button next to the unpin control. */
+.markrow__tag {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--link) 14%, transparent);
+  color: var(--link);
+  --fs: 11px;
+  font-weight: 600;
+}
+.markrow__open {
+  flex: none;
+  align-self: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  --fs: 13px;
+  cursor: pointer;
+}
+.markrow__open:hover {
+  background: var(--hover);
+}
+
+/* Screenshot-to-steer: the frozen window, the box, and the note pinned to it. */
+.shot {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  background: rgb(0 0 0 / 0.18);
+}
+.shot[data-step='note'] {
+  cursor: default;
+}
+.shot__frame {
+  position: absolute;
+  inset: 0 auto auto 0;
+  pointer-events: none;
+  filter: brightness(0.82);
+}
+.shot__help {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: var(--ring-pad) 14px;
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.08),
+    0 12px 28px -12px rgb(0 0 0 / 0.4);
+  --fs: 13px;
+  pointer-events: none;
+}
+.shot__box {
+  position: absolute;
+  outline: 2px solid var(--link);
+  outline-offset: 0;
+  /* The box shows the live pixels: everything outside it dims. */
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.28);
+  pointer-events: none;
+}
+.shot__note {
+  position: absolute;
+  display: grid;
+  gap: var(--ring-pad);
+  padding: var(--ring-pad);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.08),
+    0 18px 40px -18px rgb(0 0 0 / 0.45);
+  cursor: default;
+}
+.shot__input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: 6px 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  --fs: 13px;
+  resize: none;
+}
+.shot__input:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+.shot__btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.shot__hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  --fs: 11px;
+}
+.shot__btns .ib {
+  width: 30px;
+  height: 30px;
+}
+.shot__ok {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.shot__ok:hover {
+  background: var(--accent-hover);
+}
+
+/* First-time hint: one line in flow under the header. Never covers or blocks anything. */
+.hint {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px var(--group-gap);
+  margin: var(--ring-pad) var(--gutter) 0;
+  padding: var(--ring-pad) var(--ring-pad) var(--ring-pad) 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  --fs: 13px;
+}
+.hint > svg.i {
+  flex: none;
+  color: var(--accent-text);
+}
+.hint__text {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.hint__btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* Small icon buttons in steering surfaces keep a mouse-sized target. */
+.chat .cline .cline__x,
+.hint .ib,
+.pr-app .hbar--gutter button {
+  width: 26px;
+  height: 26px;
+}
+
+/* Font family field (Settings > Themes > Fonts, the sidebar's Chat font popover). The button
+   and every list entry draw in their own face. */
+.fpick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 260px;
+  max-width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fpick:hover {
+  border-color: var(--muted);
+}
+.fpick__face {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fpick:not([data-set]) .fpick__face {
+  color: var(--muted);
+}
+.fpick__from {
+  --fs: 11px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.fpick__chev {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+}
+.floating.flist {
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  /* A fixed height, so the list is placed right before the installed fonts arrive. */
+  height: min(60vh, 420px);
+  padding: 0;
+  overflow: hidden;
+}
+.flist__q {
+  flex: none;
+  height: 30px;
+  margin: var(--ring-pad);
+  padding: 0 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+}
+.flist__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 4px 4px;
+}
+.flist__h {
+  --fs: 11px;
+  padding: 8px 10px 4px;
+  color: var(--muted);
+  font: 600 11px var(--f-ui);
+}
+.flist__opt {
+  min-height: 32px;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 32px;
+}
+.flist__opt[aria-selected='true'] {
+  background: var(--sel);
+}
+.flist__opt[data-active] {
+  background: var(--hover);
+}
+.flist__empty {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--muted);
+}
+/* Chat font popover (sidebar menu, Chat font...): size and Reset above the family list. */
+.floating.cfont {
+  width: 320px;
+  height: min(70vh, 480px);
+}
+.cfont__head {
+  display: grid;
+  gap: 8px;
+  padding: var(--ring-pad) var(--ring-pad) 0;
+}
+.cfont__title {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cfont__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cfont__row select {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--box-line);
+  border-radius: var(--r-sm);
+  background: var(--box-bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+/* A message Claude has queued (sent while busy): muted until its transcript entry replaces it. */
+.chat .msg.qmsg .usertext {
+  color: var(--muted);
+}
+.qmsg__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.qmsg__bar > * {
+  --fs: 11px;
+}
+.qmsg__tag {
+  font-weight: 700;
+  color: var(--muted);
+}
+/* A prompt cancelled (Esc) before Claude replied: muted and struck through, with a tag next to
+   the time like the queued row's "Not sent". Still selectable. */
+.chat .who .msg-tag {
+  --fs: 11px;
+  font-weight: 700;
+  color: var(--err-text);
+}
+.chat .body[data-cancelled='true'] .usertext {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.msg.qmsg:not([data-state='queued']) .qmsg__tag {
+  color: var(--err-text);
+}
+.qmsg__why {
+  min-width: 0;
+  color: var(--muted);
+}
+.qmsg__bar {
+  margin-top: 2px;
+}
+/* Small but real buttons: a 24px target, apart from each other. */
+.qmsg__act {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.qmsg__act:hover {
+  background: var(--hover);
+}
+.qmsg__act[data-testid='queued-remove'] {
+  color: var(--err-text);
+}
+
+/* Dictation: the mic button turns into a Listening pill, like Stop, while the mic is open. */
+.chat .bar .ib.dict--on {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--stop-line);
+  color: var(--stop);
+  font-weight: 600;
+  --fs: 12.5px;
+  white-space: nowrap;
+  /* Starting, Listening and Finishing keep one width, so the bar never shifts. */
+  min-width: 9.5em;
+  justify-content: center;
+}
+.chat .bar .ib.dict--on i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dict-pulse 1.2s ease-in-out infinite;
+}
+.chat .bar .ib.dict--on[data-phase='starting'] i,
+.chat .bar .ib.dict--on[data-phase='stopping'] i {
+  animation: none;
+  opacity: 0.5;
+}
+@keyframes dict-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat .bar .ib.dict--on i {
+    animation: none;
+  }
+}
+.chat .cnotice[data-kind='dict-error']::before {
+  background: var(--err);
+}
+/* A dictation problem is the person's to fix: readable text, a real button, the group gap. */
+.chat .cnotice--dict {
+  --fs: 12.5px;
+  flex-wrap: wrap;
+  gap: var(--group-gap);
+  margin-bottom: var(--group-gap);
+}
+/* A narrow conversation puts the buttons on their own row under the text. */
+.chat .cnotice--dict span {
+  flex: 1 1 14em;
+}
+.chat .cnotice--dict .btn {
+  flex: none;
+  white-space: nowrap;
+}
+.chat .cnotice--dict .ib {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+}
+.chat .cnotice--dict .ib:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+/* Status bar editor: inline module options and the suggest link */
+.sbe__row:has(.sbe__opts) {
+  flex-wrap: wrap;
+}
+.sbe__opts {
+  display: grid;
+  flex-basis: 100%;
+  gap: var(--ring-gap);
+  padding: var(--ring-gap) 0 var(--ring-gap) 30px;
+}
+.sbe__opt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--group-gap);
+}
+.sbe__optname {
+  color: var(--muted);
+  --fs: 12px;
+}
+.sbe__opts .scope {
+  margin-right: 0;
+}
+.sbe__suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--group-gap);
+  margin-top: var(--group-gap);
+}
+.sbe__suggest .sbe__add {
+  margin-left: 0;
+  border: 1px solid var(--line);
+}
+.sbe__suggestnote {
+  flex: 1 1 200px;
+  color: var(--muted);
+  --fs: 11.5px;
+}
+/* A full-path folder chip shortens with an ellipsis instead of pushing the strip wide. */
+.chat .strip .sc[data-chip='folder'] {
+  max-width: 48ch;
+}
+.sc__txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -1,0 +1,20 @@
+[package]
+name = "patchroom-prefs"
+description = "Patchroom preferences, Do Not Disturb math, sound-hook detection and the notification decision."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+chrono-tz = "0.10"
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

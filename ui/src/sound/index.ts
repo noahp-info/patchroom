@@ -1,0 +1,112 @@
+import {
+  DEFAULT_PACK,
+  type HookDetect,
+  type MixChoice,
+  type SoundEvent,
+} from '../components/prefs/ipc.ts';
+import { getPrefsStore } from '../components/prefs/store.ts';
+import { decideSound, type SoundDecision } from './decide.ts';
+import { playFile } from './files.ts';
+import { choiceGain, isCustom, isOff, resolveChoice } from './mix.ts';
+import { isGenerated, synth } from './pack.ts';
+
+export { dndActive, dndSummary, scheduleActive } from './dnd.ts';
+export { decideSound, eventsForHook, hookKeepsEvent } from './decide.ts';
+export type { SoundDecision, SoundSkip } from './decide.ts';
+export { EVENT_INFO, GENERATED, PACK } from './pack.ts';
+export { resolveChoice } from './mix.ts';
+
+export interface PlaySoundOpts {
+  /** The DM the event belongs to, for the per-DM mute. */
+  dmId?: string;
+  /** A test button: always play, ignoring DND, mutes and hook policy. */
+  force?: boolean;
+  /** Override the clock (tests). */
+  now?: Date;
+  /** Override the detected hooks (tests). Defaults to the last `sound_hooks_detect`. */
+  detected?: readonly HookDetect[];
+}
+
+export interface SoundLogEntry {
+  event: SoundEvent;
+  dmId?: string;
+  decision: SoundDecision;
+  /** What the mix resolved to, whether or not it played. */
+  choice: MixChoice;
+  /** The event gain that choice carried (0 to 1.5). The play then multiplies it by the master. */
+  gain: number;
+  at: number;
+}
+
+/** Every decision, newest last. Read by tests and by the judge when the screen is locked. */
+export const soundLog: SoundLogEntry[] = [];
+
+/**
+ * Play the pack sound for an event if prefs, Do Not Disturb, the DM mute and the user's own
+ * sound hooks allow it. Returns the decision either way.
+ */
+export function playSound(event: SoundEvent, opts: PlaySoundOpts = {}): SoundDecision {
+  const store = getPrefsStore();
+  const prefs = store.getPrefs();
+  const decision = decideSound(event, prefs, opts.detected ?? store.getDetected(), {
+    dmId: opts.dmId,
+    now: opts.now,
+    force: opts.force,
+  });
+  const choice = resolveChoice(event, prefs.sound, opts.dmId);
+  soundLog.push({
+    event,
+    dmId: opts.dmId,
+    decision,
+    choice,
+    gain: choiceGain(choice),
+    at: Date.now(),
+  });
+  if (soundLog.length > 200) soundLog.shift();
+  if (decision.play) {
+    const volume = opts.force && prefs.sound.volume <= 0 ? 0.6 : prefs.sound.volume;
+    playChoice(choice, event, volume);
+  }
+  return decision;
+}
+
+/**
+ * Fires a choice's sound once at the master `volume` and the choice's own gain. Generated packs
+ * use the oscillators, everything else a file. Both paths clamp the product below clipping.
+ */
+export function playChoice(choice: MixChoice, event: SoundEvent, volume: number): void {
+  if (isOff(choice)) return;
+  const gain = choiceGain(choice);
+  if (isCustom(choice)) {
+    // A custom file that is gone falls back to the default pack's sound for the event.
+    void playFile(`custom:${choice.custom}`, event, volume, gain).then((ok) => {
+      if (!ok) synth(event, volume, DEFAULT_PACK, gain);
+    });
+    return;
+  }
+  if (isGenerated(choice.pack)) {
+    synth(event, volume, choice.pack, gain);
+    return;
+  }
+  void playFile(choice.pack, event, volume, gain).then((ok) => {
+    if (!ok) synth(event, volume, DEFAULT_PACK, gain);
+  });
+}
+
+/**
+ * Preview one choice from the Sounds pane (a pack card button, a picker test). It ignores every
+ * mute and is logged like a forced play.
+ */
+export function previewChoice(choice: MixChoice, event: SoundEvent): void {
+  const prefs = getPrefsStore().getPrefs();
+  soundLog.push({
+    event,
+    decision: { play: true },
+    choice,
+    gain: choiceGain(choice),
+    at: Date.now(),
+  });
+  if (soundLog.length > 200) soundLog.shift();
+  playChoice(choice, event, prefs.sound.volume <= 0 ? 0.6 : prefs.sound.volume);
+}
+export { effectiveGain, FILE_BASE, SYNTH_BASE } from './gain.ts';

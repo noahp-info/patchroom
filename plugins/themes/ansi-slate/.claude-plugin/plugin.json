@@ -1,0 +1,23 @@
+{
+  "name": "patchroom-theme-ansi-slate",
+  "version": "0.1.0",
+  "description": "Ansi Slate color theme for Patchroom. Cool slate with ANSI cyan, red and amber. Made for people who live in a terminal.",
+  "author": {
+    "name": "Patchroom"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "patchroom",
+    "theme"
+  ],
+  "patchroom": {
+    "kind": "data",
+    "themes": [
+      {
+        "id": "ansi-slate",
+        "name": "Ansi Slate",
+        "file": "themes/ansi-slate.json"
+      }
+    ]
+  }
+}

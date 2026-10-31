@@ -18,5 +18,38 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["unstable"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 patchroom-core = { path = "../crates/patchroom-core" }
+patchroom-pty = { path = "../crates/patchroom-pty" }
+patchroom-bridge = { path = "../crates/patchroom-bridge" }
+patchroom-store = { path = "../crates/patchroom-store" }
+patchroom-claude = { path = "../crates/patchroom-claude" }
+patchroom-search = { path = "../crates/patchroom-search" }
+patchroom-prefs = { path = "../crates/patchroom-prefs" }
+patchroom-catalog = { path = "../crates/patchroom-catalog" }
+patchroom-folders = { path = "../crates/patchroom-folders" }
+patchroom-sounds = { path = "../crates/patchroom-sounds" }
+patchroom-themeimport = { path = "../crates/patchroom-themeimport" }
+patchroom-dictation = { path = "../crates/patchroom-dictation" }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+base64 = "0.22"
+vt100 = "0.16"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+thiserror = "2"
+ulid = "3.0.0"
+png = "0.17"
+
+# Window capture of our own window (screenshot-to-steer, frozen viewer). Safe APIs only.
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.25"
+core-text = { version = "22", default-features = false, features = ["link"] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSGeometry"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

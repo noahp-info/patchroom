@@ -1,0 +1,19 @@
+[package]
+name = "patchroom-themeimport"
+description = "Read-only import of terminal themes (palette, font, size) from iTerm2, Ghostty, Warp, VS Code, Cursor and Terminal.app."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+plist = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

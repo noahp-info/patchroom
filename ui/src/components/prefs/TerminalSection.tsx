@@ -1,0 +1,186 @@
+import { allThemes } from '../../theme/active.ts';
+import {
+  DEFAULT_FONT,
+  DEFAULT_FONT_SIZE,
+  DEFAULT_PALETTE,
+  FIXED_PALETTES,
+  FONT_SIZES,
+  TERM_FONTS,
+  termStyleFor,
+} from '../../theme/terminal.ts';
+import { TERM_DEFAULT_KEY, type Prefs, type TermStyle } from './ipc.ts';
+import { getPrefsStore, usePrefs } from './store.ts';
+import { TermPreview } from './TermPreview.tsx';
+import { ImportFrom } from './ImportFrom.tsx';
+import { IMPORT_PREFIX } from '../../theme/themeImport.ts';
+import type { PrefsDm } from './types.ts';
+import { setArea } from '../../theme/typeface.ts';
+
+const INHERIT = '';
+
+function TermRow({
+  rowId,
+  label,
+  prefs,
+  dmId,
+  inherit,
+}: {
+  rowId: string;
+  label: string;
+  prefs: Prefs;
+  dmId: string | null;
+  inherit: boolean;
+}) {
+  const store = getPrefsStore();
+  const isDefault = rowId === TERM_DEFAULT_KEY;
+  const code = prefs.fonts?.code ?? {};
+  // The default row's font and size are Settings > Themes > Fonts > Code and terminal.
+  const own: TermStyle = isDefault
+    ? { ...prefs.termPerDm[rowId], font: code.family, fontSize: code.size }
+    : (prefs.termPerDm[rowId] ?? {});
+  const def: TermStyle = {
+    ...prefs.termPerDm[TERM_DEFAULT_KEY],
+    font: code.family,
+    fontSize: code.size,
+  };
+  const style = termStyleFor(prefs, dmId);
+
+  function set(next: TermStyle) {
+    if (isDefault) {
+      const rest = { ...prefs.termPerDm };
+      if (next.themeId) rest[rowId] = { themeId: next.themeId };
+      else delete rest[rowId];
+      const fonts = setArea(prefs.fonts ?? {}, 'code', {
+        family: next.font,
+        size: next.fontSize,
+      });
+      void store.update({ termPerDm: rest, fonts });
+      return;
+    }
+    const rest = { ...prefs.termPerDm };
+    const clean: TermStyle = {};
+    if (next.themeId) clean.themeId = next.themeId;
+    if (next.font) clean.font = next.font;
+    if (next.fontSize) clean.fontSize = next.fontSize;
+    if (Object.keys(clean).length) rest[rowId] = clean;
+    else delete rest[rowId];
+    void store.update({ termPerDm: rest });
+  }
+
+  const themes = allThemes(prefs);
+  const defaultPalette = def.themeId ?? DEFAULT_PALETTE;
+  return (
+    <li
+      className="trow"
+      data-testid={`term-row-${rowId === TERM_DEFAULT_KEY ? 'default' : rowId}`}
+      data-setting={rowId === TERM_DEFAULT_KEY ? 'terminal.default' : 'terminal.session'}
+    >
+      <div className="trow__head">
+        <span className="trow__name">{label}</span>
+      </div>
+      <div className="trow__ctl">
+        <label className="pf pf--inline">
+          <span>Palette</span>
+          <select
+            aria-label={`${label} palette`}
+            value={own.themeId ?? (inherit ? INHERIT : defaultPalette)}
+            onChange={(e) => set({ ...own, themeId: e.target.value || undefined })}
+          >
+            {inherit && <option value={INHERIT}>Use default</option>}
+            {FIXED_PALETTES.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+            {(prefs.termPalettes ?? []).length > 0 && (
+              <optgroup label="Imported">
+                {(prefs.termPalettes ?? []).map((p) => (
+                  <option key={p.id} value={IMPORT_PREFIX + p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label="Match a theme">
+              {themes.map((t) => (
+                <option key={t.id} value={`theme:${t.id}`}>
+                  {t.name}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+        </label>
+        <label className="pf pf--inline">
+          <span>Font</span>
+          <select
+            aria-label={`${label} font`}
+            value={own.font ?? (inherit ? INHERIT : (def.font ?? DEFAULT_FONT))}
+            onChange={(e) => set({ ...own, font: e.target.value || undefined })}
+          >
+            {inherit && <option value={INHERIT}>Use default</option>}
+            {[...new Set([...TERM_FONTS, ...[own.font, def.font].filter((f) => !!f)])].map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="pf pf--inline">
+          <span>Size</span>
+          <select
+            aria-label={`${label} font size`}
+            value={String(
+              own.fontSize ?? (inherit ? INHERIT : (def.fontSize ?? DEFAULT_FONT_SIZE)),
+            )}
+            onChange={(e) => set({ ...own, fontSize: Number(e.target.value) || undefined })}
+          >
+            {inherit && <option value={INHERIT}>Use default</option>}
+            {[
+              ...new Set<number>([
+                ...FONT_SIZES,
+                ...[own.fontSize, def.fontSize].filter((s): s is number => !!s),
+              ]),
+            ]
+              .sort((a, b) => a - b)
+              .map((s) => (
+                <option key={s} value={s}>
+                  {s} px
+                </option>
+              ))}
+          </select>
+        </label>
+      </div>
+      <TermPreview style={style} />
+    </li>
+  );
+}
+
+export function TerminalSection({ dms }: { dms: PrefsDm[] }) {
+  const prefs = usePrefs();
+  return (
+    <div className="pf-section" data-testid="prefs-terminal">
+      <h2>Terminal</h2>
+      <p className="pf-hint">
+        Open terminals restyle as you choose. Nothing restarts. Match app theme follows the theme
+        and light or dark choice. The All sessions font is the Code and terminal font in Themes &gt;
+        Fonts.
+      </p>
+      <ul className="tlist">
+        <TermRow
+          rowId={TERM_DEFAULT_KEY}
+          label="All sessions"
+          prefs={prefs}
+          dmId={null}
+          inherit={false}
+        />
+        {dms.map((d) => (
+          <TermRow key={d.id} rowId={d.id} label={d.name} prefs={prefs} dmId={d.id} inherit />
+        ))}
+      </ul>
+      {dms.length === 0 && (
+        <p className="pf-hint">Start a session to give it its own terminal style.</p>
+      )}
+      <ImportFrom target="terminal" />
+    </div>
+  );
+}

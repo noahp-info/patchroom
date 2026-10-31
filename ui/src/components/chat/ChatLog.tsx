@@ -1,0 +1,600 @@
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import type { Row } from '../../lib/rows';
+import { Icon } from '../Icon';
+import { RowView, type Decor, type RowActions } from './RowView';
+
+const OVERSCAN = 500;
+const NEAR_BOTTOM = 24;
+const LOAD_OLDER_AT = 800;
+const BOTTOM_PAD = 12;
+
+/** Measured row heights by key. A class, so the hook rules see method calls, not mutation. */
+class HeightCache {
+  private readonly map = new Map<string, number>();
+  get(key: string): number | undefined {
+    return this.map.get(key);
+  }
+  /** True when the stored height changed. */
+  set(key: string, h: number): boolean {
+    const prev = this.map.get(key);
+    if (prev !== undefined && Math.abs(prev - h) < 0.5) return false;
+    this.map.set(key, h);
+    return true;
+  }
+}
+
+/** Height guess for a row that has not been measured yet. Rows are measured once on screen. */
+function estimate(row: Row): number {
+  if (row.type === 'day') return 36;
+  if (row.type === 'prompt') return 200;
+  if (row.type === 'queued') return 96;
+  const it = row.item;
+  const head = row.head ? 42 : 4;
+  switch (it.kind) {
+    case 'user':
+      return (
+        head +
+        22 *
+          Math.min(12, 1 + Math.floor(it.text.length / 90) + (it.text.match(/\n/g)?.length ?? 0)) +
+        12 +
+        (it.images.length ? 110 : 0)
+      );
+    case 'assistant':
+      return head + 22 * Math.min(40, 1 + Math.ceil(it.text.length / 85)) + 14;
+    case 'thinking':
+      return head + 30;
+    case 'tool':
+      return head + 44;
+    case 'subagent':
+      return head + 62;
+    case 'question':
+    case 'plan':
+      return head + 160;
+    case 'system':
+    case 'fallback':
+      return 34;
+  }
+}
+
+export interface ScrollState {
+  top: number;
+  atBottom: boolean;
+}
+
+export interface ChatLogProps {
+  rows: Row[];
+  actions: RowActions;
+  expanded: ReadonlySet<string>;
+  initial: ScrollState;
+  onScrollState(s: ScrollState): void;
+  hasMore: boolean;
+  loading: boolean;
+  onLoadOlder(): void;
+  label: string;
+  testId?: string;
+  /** Shown instead of rows when there are none. */
+  empty?: ReactNode;
+  /** Pending prompts below the viewport, for the jump pill. */
+  waiting?: number;
+  /** Marks and highlights by row key. */
+  decor?: Record<string, Decor>;
+  /** Scroll to this row once, then call `onFocusDone` with the nonce. */
+  focus?: { key: string; nonce: number } | null;
+  onFocusDone?(nonce: number): void;
+  /** The window shows an old page: the pill says so and `onJumpLatest` reloads the newest. */
+  detached?: boolean;
+  onJumpLatest?(): Promise<void> | void;
+  /** Follow new rows from the start (Settings: auto-scroll). False starts the log paused. */
+  autoScroll?: boolean;
+  /** The user paused auto-scroll by scrolling up (not by the toggle). For the first-time hint. */
+  onPause?(): void;
+}
+
+function lowerBound(offs: Float64Array, n: number, target: number): number {
+  let lo = 0;
+  let hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (offs[mid + 1] > target) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
+}
+
+/**
+ * The row that pins the scroll position: the first row at or below the top edge, skipping day
+ * dividers (their keys move when older rows arrive above them).
+ */
+function pickAnchor(
+  rows: readonly Row[],
+  offs: Float64Array,
+  st: number,
+): { key: string; top: number } | null {
+  const n = rows.length;
+  let i = lowerBound(offs, n, st);
+  while (i < n && rows[i].type === 'day') i++;
+  return i < n ? { key: rows[i].key, top: offs[i] - st } : null;
+}
+
+interface VRowProps {
+  row: Row;
+  expanded: boolean;
+  actions: RowActions;
+  decor?: Decor;
+}
+
+/** One positioned row. Memoized so a scroll frame only builds elements for rows that entered. */
+const VRow = memo(function VRow({ row, expanded, actions, decor }: VRowProps) {
+  const head = row.type !== 'day' && row.head;
+  return (
+    <div
+      className={`vrow${head ? ' head' : ''}${row.type === 'day' ? ' dayrow' : ''}`}
+      data-rk={row.key}
+    >
+      <RowView row={row} expanded={expanded} actions={actions} decor={decor} />
+    </div>
+  );
+});
+
+/**
+ * Built row elements by key. Reusing the element lets React skip the row, and skips the cost of
+ * creating it, which is large in dev builds. The cache keeps only the rows of the last render.
+ * A class, so the hook rules see method calls, not mutation.
+ */
+class RowElements {
+  private prev = new Map<string, { props: VRowProps; el: ReactNode }>();
+  private next = new Map<string, { props: VRowProps; el: ReactNode }>();
+  get(props: VRowProps): ReactNode {
+    const key = props.row.key;
+    const hit = this.prev.get(key) ?? this.next.get(key);
+    let ent = hit;
+    if (
+      !ent ||
+      ent.props.row !== props.row ||
+      ent.props.expanded !== props.expanded ||
+      ent.props.actions !== props.actions ||
+      ent.props.decor !== props.decor
+    ) {
+      ent = { props, el: <VRow key={key} {...props} /> };
+    }
+    this.next.set(key, ent);
+    return ent.el;
+  }
+  /** Call once per render, after the last `get`: drop rows that left the window. */
+  sweep(): void {
+    this.prev = this.next;
+    this.next = new Map();
+  }
+}
+
+/**
+ * Virtualized message log. Only rows near the viewport are in the DOM. Heights are measured on
+ * screen and cached by row key. It sticks to the bottom only while the user is at the bottom,
+ * and keeps the first visible row fixed when rows above change height or older pages arrive.
+ */
+export function ChatLog(props: ChatLogProps) {
+  const { rows, actions, expanded, initial, onScrollState, hasMore, loading, onLoadOlder } = props;
+  const scroller = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
+  const [heights] = useState(() => new HeightCache());
+  const [elements] = useState(() => new RowElements());
+  const [tick, setTick] = useState(0);
+  const [view, setView] = useState({
+    top: initial.atBottom ? Number.MAX_SAFE_INTEGER : initial.top,
+    h: 700,
+  });
+  const [atBottom, setAtBottom] = useState(initial.atBottom);
+  /**
+   * Auto-scroll: follow new rows. Scrolling up pauses it; Jump to latest, the toggle, or
+   * scrolling back to the bottom turns it on again. A pause from the toggle holds even at the
+   * bottom until the user scrolls.
+   */
+  const [follow, setFollow] = useState(initial.atBottom && props.autoScroll !== false);
+  const manual = useRef(false);
+  const pausedTop = useRef(0);
+  const movedSincePause = useRef(false);
+  const followShown = useRef(follow);
+  const onPauseRef = useRef(props.onPause);
+  // Every pending widget is fully on screen: the "Needs you below" pill would point at nothing.
+  const [pendingShown, setPendingShown] = useState(false);
+  const stick = useRef(initial.atBottom);
+  const anchor = useRef<{ key: string; top: number } | null>(null);
+  /** The scrollTop at which `anchor` was recorded. The anchor is only trusted while it matches. */
+  const anchorAt = useRef(0);
+  const restored = useRef(false);
+  /** scrollTop after the last layout pass, to tell a user scroll from content growth. */
+  const lastTop = useRef(0);
+  /** scrollHeight after the last layout pass: a log that got shorter clamps scrollTop by itself. */
+  const lastHeight = useRef(0);
+
+  const offs = useMemo(() => {
+    const o = new Float64Array(rows.length + 1);
+    for (let i = 0; i < rows.length; i++)
+      o[i + 1] = o[i] + (heights.get(rows[i].key) ?? estimate(rows[i]));
+    return o;
+    // `tick` bumps when a measured height changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, heights, tick]);
+  const total = offs[rows.length];
+  const offsRef = useRef(offs);
+  const rowsRef = useRef(rows);
+
+  const top = Math.min(view.top, Math.max(0, total - view.h));
+  const first = Math.max(0, lowerBound(offs, rows.length, top - OVERSCAN));
+  let last = first;
+  while (last < rows.length && offs[last] < top + view.h + OVERSCAN) last++;
+
+  // ---- scroll handling ------------------------------------------------------------------
+  const raf = useRef(0);
+  const loadingRef = useRef(loading);
+  const hasMoreRef = useRef(hasMore);
+  // Event handlers read these; they are written after commit, never during render.
+  useLayoutEffect(() => {
+    offsRef.current = offs;
+    rowsRef.current = rows;
+    loadingRef.current = loading;
+    hasMoreRef.current = hasMore;
+    onPauseRef.current = props.onPause;
+  });
+
+  /** Whether to follow, given that the view is (or is not) at the bottom at `st`. */
+  const resolveFollow = useCallback((near: boolean, st: number): boolean => {
+    if (manual.current) {
+      if (Math.abs(st - pausedTop.current) > 2) movedSincePause.current = true;
+      if (!near || !movedSincePause.current) return false;
+      manual.current = false;
+    }
+    return near;
+  }, []);
+
+  const sync = useCallback(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const o = offsRef.current;
+    const st = el.scrollTop;
+    const near = el.scrollHeight - st - el.clientHeight <= NEAR_BOTTOM;
+    stick.current = resolveFollow(near, st);
+    setAtBottom((prev) => (prev === near ? prev : near));
+    const on = stick.current;
+    if (followShown.current && !on && !manual.current) onPauseRef.current?.();
+    followShown.current = on;
+    setFollow((prev) => (prev === on ? prev : on));
+    // Anchor: the first row whose bottom is below the top edge.
+    const a = pickAnchor(rowsRef.current, o, st);
+    if (a) {
+      anchor.current = a;
+      anchorAt.current = st;
+    }
+    onScrollState({ top: st, atBottom: near && stick.current });
+    if (st < LOAD_OLDER_AT && hasMoreRef.current && !loadingRef.current) onLoadOlder();
+    setView((v) =>
+      Math.abs(v.top - st) < 1 && v.h === el.clientHeight ? v : { top: st, h: el.clientHeight },
+    );
+  }, [onScrollState, onLoadOlder, resolveFollow]);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const onScroll = () => {
+      // Anchor and stick state update at once; the render waits for the next frame.
+      const o = offsRef.current;
+      const st = el.scrollTop;
+      stick.current = resolveFollow(el.scrollHeight - st - el.clientHeight <= NEAR_BOTTOM, st);
+      const a = pickAnchor(rowsRef.current, o, st);
+      if (a) {
+        anchor.current = a;
+        anchorAt.current = st;
+      }
+      if (raf.current) return;
+      raf.current = requestAnimationFrame(() => {
+        raf.current = 0;
+        sync();
+      });
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    // The viewport changed size (the status strip grew, the composer wrapped, the window
+    // resized). A view that was pinned to the bottom stays pinned: re-pin before measuring, or
+    // the smaller viewport would read as "scrolled up" and stop following new rows.
+    const ro = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight;
+      sync();
+    });
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      ro.disconnect();
+      if (raf.current) cancelAnimationFrame(raf.current);
+      raf.current = 0;
+    };
+  }, [sync, resolveFollow]);
+
+  // ---- measurement ----------------------------------------------------------------------
+  const rowObserver = useRef<ResizeObserver | null>(null);
+  const observed = useRef(new Set<Element>());
+  const pendingTick = useRef(0);
+
+  const measure = useCallback(
+    (el: HTMLElement): boolean => {
+      const key = el.dataset.rk;
+      if (!key) return false;
+      const h = el.offsetHeight;
+      if (h === 0) return false;
+      return heights.set(key, h);
+    },
+    [heights],
+  );
+
+  useEffect(() => {
+    rowObserver.current = new ResizeObserver((entries) => {
+      let changed = false;
+      for (const e of entries) if (measure(e.target as HTMLElement)) changed = true;
+      if (changed && !pendingTick.current) {
+        pendingTick.current = requestAnimationFrame(() => {
+          pendingTick.current = 0;
+          setTick((t) => t + 1);
+        });
+      }
+    });
+    const seen = observed.current;
+    return () => {
+      rowObserver.current?.disconnect();
+      rowObserver.current = null;
+      seen.clear();
+      if (pendingTick.current) cancelAnimationFrame(pendingTick.current);
+    };
+  }, [measure]);
+
+  // Runs after every render on purpose: it measures, then places the scroll position.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const host = inner.current;
+    const el = scroller.current;
+    if (!host || !el) return;
+    // Measure what rendered, observe it, forget what left.
+    let changed = false;
+    const now = new Set<Element>();
+    for (const child of Array.from(host.children)) {
+      now.add(child);
+      if (measure(child as HTMLElement)) changed = true;
+      if (!observed.current.has(child)) {
+        rowObserver.current?.observe(child);
+        observed.current.add(child);
+      }
+    }
+    for (const old of Array.from(observed.current)) {
+      if (!now.has(old)) {
+        rowObserver.current?.unobserve(old);
+        observed.current.delete(old);
+      }
+    }
+    if (changed) {
+      setTick((t) => t + 1);
+      return;
+    }
+    // Layout is settled for this render: place the scroll position.
+    if (!restored.current) {
+      restored.current = true;
+      if (initial.atBottom) el.scrollTop = el.scrollHeight;
+      else el.scrollTop = initial.top;
+      if (props.autoScroll === false) {
+        // Settings: logs start paused. The view opens at the bottom and stays put.
+        manual.current = true;
+        movedSincePause.current = false;
+        pausedTop.current = el.scrollTop;
+        stick.current = false;
+        followShown.current = false;
+      }
+      lastTop.current = el.scrollTop;
+      lastHeight.current = el.scrollHeight;
+      sync();
+      return;
+    }
+    // The scroll event may not have fired yet, so the stick flag and the anchor can be stale.
+    // Compare against where this component left the view, and where the anchor was taken.
+    const maxTop = el.scrollHeight - el.clientHeight;
+    if (stick.current) {
+      // A log that got shorter makes the browser clamp scrollTop. That is not the user scrolling.
+      const shrank = el.scrollHeight < lastHeight.current - 1;
+      if (!shrank && el.scrollTop < Math.min(lastTop.current, maxTop) - 2) {
+        // The user scrolled up before the event landed: stop following the bottom.
+        stick.current = false;
+        sync();
+      } else if (el.scrollHeight - el.scrollTop - el.clientHeight > 1) {
+        el.scrollTop = el.scrollHeight;
+        sync();
+      }
+    } else if (anchor.current) {
+      if (Math.abs(el.scrollTop - anchorAt.current) > 2) {
+        // Moved without an event yet: take the anchor where the view is now.
+        stick.current = maxTop - el.scrollTop <= NEAR_BOTTOM;
+        sync();
+      } else {
+        const idx = rows.findIndex((r) => r.key === anchor.current!.key);
+        if (idx >= 0) {
+          const want = offs[idx] - anchor.current.top;
+          if (Math.abs(el.scrollTop - want) > 1) {
+            el.scrollTop = want;
+            sync();
+          }
+        }
+      }
+    }
+    lastTop.current = el.scrollTop;
+    lastHeight.current = el.scrollHeight;
+  });
+
+  // A short log with more history above: fetch until the viewport is full.
+  useEffect(() => {
+    if (hasMore && !loading && total < view.h + LOAD_OLDER_AT) onLoadOlder();
+  }, [hasMore, loading, total, view.h, onLoadOlder]);
+
+  const waitingCount = props.waiting ?? 0;
+  // Runs after every commit on purpose: row layout moves the widgets. setState bails when equal.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || waitingCount === 0) {
+      setPendingShown(false);
+      return;
+    }
+    const box = el.getBoundingClientRect();
+    const widgets = Array.from(el.querySelectorAll('.ask[data-state="pending"]'));
+    const shown =
+      widgets.length >= waitingCount &&
+      widgets.every((w) => {
+        const r = w.getBoundingClientRect();
+        return r.top >= box.top - 1 && r.bottom <= box.bottom + 1;
+      });
+    setPendingShown((prev) => (prev === shown ? prev : shown));
+  });
+
+  // A scroll request (search hit, Activity row): put the row a third of the way down the view.
+  // Rows are measured as they render, so the position is corrected over a few frames.
+  const focusDone = useRef(0);
+  const focusRaf = useRef(0);
+  const { focus, onFocusDone } = props;
+  useEffect(() => {
+    const el = scroller.current;
+    if (!focus || !el || focusDone.current === focus.nonce) return;
+    const idx = rows.findIndex((r) => r.key === focus.key);
+    if (idx < 0) return;
+    focusDone.current = focus.nonce;
+    stick.current = false;
+    el.scrollTop = Math.max(0, offsRef.current[idx] - el.clientHeight / 3);
+    let frames = 0;
+    const settle = () => {
+      const node = Array.from(el.querySelectorAll<HTMLElement>('.vrow')).find(
+        (n) => n.dataset.rk === focus.key,
+      );
+      if (node) {
+        const want = el.getBoundingClientRect().top + el.clientHeight / 3;
+        const delta = node.getBoundingClientRect().top - want;
+        if (Math.abs(delta) > 2) el.scrollTop += delta;
+      }
+      if (++frames < 14) focusRaf.current = requestAnimationFrame(settle);
+      else onFocusDone?.(focus.nonce);
+    };
+    focusRaf.current = requestAnimationFrame(settle);
+  }, [focus, rows, onFocusDone]);
+  useEffect(() => () => cancelAnimationFrame(focusRaf.current), []);
+
+  const jump = () => {
+    const el = scroller.current;
+    if (!el) return;
+    manual.current = false;
+    stick.current = true;
+    if (props.onJumpLatest) {
+      void Promise.resolve(props.onJumpLatest()).then(() => {
+        stick.current = true;
+        el.scrollTop = el.scrollHeight;
+        sync();
+      });
+      return;
+    }
+    el.scrollTop = el.scrollHeight;
+    sync();
+  };
+
+  /** The indicator is a toggle: on pauses where the view is, paused jumps to the latest. */
+  const toggleFollow = () => {
+    const el = scroller.current;
+    if (!el) return;
+    if (!follow) {
+      jump();
+      return;
+    }
+    manual.current = true;
+    movedSincePause.current = false;
+    pausedTop.current = el.scrollTop;
+    stick.current = false;
+    followShown.current = false;
+    setFollow(false);
+    onScrollState({ top: el.scrollTop, atBottom: false });
+  };
+
+  const rendered: ReactNode[] = [];
+  for (let i = first; i < last; i++) {
+    const row = rows[i];
+    rendered.push(
+      elements.get({
+        row,
+        expanded: expanded.has(row.key),
+        actions,
+        decor: props.decor?.[row.key],
+      }),
+    );
+  }
+  elements.sweep();
+
+  return (
+    <div className="logcol">
+      <div className="logwrap">
+        <div
+          ref={scroller}
+          className="vlog"
+          role="region"
+          aria-label={props.label}
+          tabIndex={0}
+          data-testid={props.testId ?? 'chat-log'}
+          data-rows={rows.length}
+          data-rendered={last - first}
+        >
+          <div
+            ref={inner}
+            className="vsize"
+            style={{ paddingTop: offs[first], paddingBottom: total - offs[last] + BOTTOM_PAD }}
+          >
+            {rendered}
+          </div>
+        </div>
+        {hasMore && (
+          <div className="older" role="status">
+            {loading ? 'Loading earlier messages' : 'Earlier messages'}
+          </div>
+        )}
+        {rows.length === 0 && props.empty}
+      </div>
+      {rows.length > 0 && (
+        <div className="jumpbar" data-follow={follow ? 'on' : 'paused'}>
+          {(!atBottom || !follow || props.detached) &&
+            !(waitingCount > 0 && pendingShown && !props.detached) && (
+              <button
+                type="button"
+                className={`jump${props.waiting ? ' needs' : ''}`}
+                onClick={jump}
+                data-testid="jump-latest"
+              >
+                <Icon name="down2" />
+                {props.detached
+                  ? 'Back to latest messages'
+                  : props.waiting
+                    ? 'Needs you below'
+                    : 'Jump to latest'}
+              </button>
+            )}
+          <button
+            type="button"
+            className="autoscroll"
+            data-testid="autoscroll"
+            data-state={follow ? 'on' : 'paused'}
+            aria-pressed={follow}
+            title={follow ? 'Pause auto-scroll' : 'Turn auto-scroll back on'}
+            onClick={toggleFollow}
+          >
+            <span className="autoscroll__dot" aria-hidden="true" />
+            {follow ? 'Auto-scroll on' : 'Paused'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

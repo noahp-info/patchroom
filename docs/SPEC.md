@@ -1,6 +1,6 @@
 # Patchroom: spec v0.1 (draft for review)
 
-Status: draft, 2026-10-13. Owner: Noah. License: MIT. Platform: macOS first.
+Status: draft, 2026-10-13. Owner: Noah. License: Apache-2.0 (app); AGPL with a commercial option (future sync server). Platform: macOS first.
 
 Patchroom is a Slack-style desktop app on top of the AI coding CLIs you already use. Every DM is a real terminal session. A chat layer renders on top of it. Patchroom adds no agent, no model access, and no new permissions.
 
@@ -49,7 +49,8 @@ Every feature lists its acceptance check.
 - **DM = one session.** New DM: pick folder, provider (dropdown of CLIs onboarding found installed and signed in, with fidelity badge), optional worktree, optional name. *Check: Claude and Cursor DMs coexist.*
 - **Presence dot:** busy, idle, needs you, errored, stopped. *Check: matches `claude agents --json` within 2s of a hook event.*
 - **Unread badge** on new assistant output since last view; **needs-you badge** (red) persists until answered, not merely viewed.
-- **Cmd+K quick switcher**, Cmd+Shift+A jump to next needs-you, Option+Shift+Down next unread.
+- **Cmd+K quick switcher**, Cmd+Shift+A jump to next needs-you, Option+Shift+Down next unread. Cmd+K matches names fuzzily and first messages by whole words (open sessions included). Name matches rank above first-message matches. Its last row, "Search messages for <query>", opens message search with the query.
+- **History:** every Claude Code session on this Mac, across all folders, from a read-only scan of Claude's transcript folders. Each row shows only Claude's own title (else the first message) and the first message. Grouped by folder (default), date, model or branch from a header toggle remembered in prefs; search filters within the grouping; groups collapse and page. Opening a row resumes it with `--resume <id>` in its folder, or mirrors it when another process runs it. Sessions open in Patchroom are marked. *Check: 300 sessions list cold under 300 ms; nothing under the transcript folders changes.*
 - **Activity view:** a single inbox of everything waiting on you, oldest first.
 
 ### 3.2 Messages and steering
@@ -61,10 +62,29 @@ Every feature lists its acceptance check.
 - **Drafts** persist per conversation. **Pins** and **Saved for later**. **Full-text search** across all transcripts.
 - **Terminal toggle:** every DM can flip to the full live terminal (Cmd+J) or show it inline when the chat layer can't render something.
 
+### 3.2a Dictation (on device only)
+Decided by Noah, 2026-10-29 (D4): on-device Apple Speech. Speech never leaves the Mac.
+
+- **Use:** the composer's mic button or the shortcut (default Cmd+Shift+D; Ctrl+Cmd+D, Cmd+Shift+. or none in Settings > Dictation). Fn Fn stays macOS system dictation. Partial words appear at the cursor, and the final text replaces them. Esc, the button, Enter, leaving the window or the DM, or the silence timeout (default 8 s) stops it. Nothing ever sends by itself. *Check: `ui/tests/dictation.spec.ts`.*
+- **Mechanism:** a small Swift helper, `patchroom-dictation`, ships in `Contents/MacOS`. It captures audio with AVAudioEngine and runs `SFSpeechRecognizer` with `requiresOnDeviceRecognition = true`, streaming JSON lines on stdout (`crates/patchroom-dictation`). The app spawns it only while dictating. A separate process keeps Apple's frameworks out of the Rust code, so `unsafe_code` stays forbidden.
+- **No server fallback:** a language without an on-device model shows "On-device dictation isn't available for <language>" and a button to Keyboard > Dictation, where macOS downloads it.
+- **Permissions:** asked on the first dictation, never at launch. Denied or restricted Microphone or Speech Recognition shows a plain message and a button to that Privacy pane. Info.plist carries `NSMicrophoneUsageDescription` and `NSSpeechRecognitionUsageDescription`. The app and the helper carry the hardened-runtime `com.apple.security.device.audio-input` entitlement.
+- **Data handling:** no audio or transcript is written to disk or logged. Audio stays in memory buffers inside the helper; its stderr goes to `/dev/null`. Transcripts reach the webview in memory and land only in the draft. The helper is killed on stop, on quit, and leaves by itself when its stdin closes (an app crash). *Check: `crates/patchroom-dictation` lifecycle tests with a fake helper.*
+
 ### 3.3 Status strip
 - Renders the user's existing statusLine output verbatim under the composer.
 - Structured chips from statusLine JSON: model, context %, cost, permission mode (click cycles, same as Shift+Tab), worktree, PR link.
 - Plugins can add chips (CI budget, rate limits).
+- **Built-in modules only.** No user script runs. Each module can be reordered (drag), hidden or shown, and set up from its gear (folder name or path, context meter, cost rounding). "Suggest a module…" opens a prefilled GitHub issue form in the browser, on a click only, with no identifiers. A workflow reviews submissions with an agent and opens a PR or explains a refusal; a maintainer merges. See `docs/modules.md`.
+
+### 3.3a Model bundles
+- **Bundle:** a named set of model entries (tool plus a catalog id, a free-text model string, or `latest:<family>`), one default, a label and an emoji. A global default bundle, with optional per folder, per section and per session overrides (session wins, then section, then folder, then the default).
+- **Launch:** a new session starts on the bundle default through the tool adapter's launch flag (Claude Code: `--model <id>`). *Check: `session_create` carries `--model`.*
+- **Switch:** the status-bar model chip opens a picker limited to the active bundle. A switch types the tool's switch command (`/model <id>`) only while the session is idle, then waits for the CLI to report the model in its statusLine JSON and shows an error if it did not take. A confirmed switch is stored as the DM's `--model`, so a resume comes back on it. *Check: no keystroke while busy; a refused switch says so.*
+- **Adapters:** one tool-neutral interface (launch flag, switch command, read current model). Claude Code is implemented; Codex, Cursor CLI, Gemini CLI and opencode are declared stubs until P6. Cross-tool routing between members waits for P5.
+- **Never auto-swap a pinned model.** When the catalog has a newer model in the same family as a fixed entry, the chip shows a one-time hint with Swap and Keep, once per new model. `latest:<family>` entries follow the catalog by themselves.
+- **Labels:** each status-bar module takes a label (text plus emoji). The model chip reads the model's own label, then the Cloud (`☁️ {name}`) or Local (`💻 {name}`) template, then the plain name. Settings > Models > Labels sets each group in one click (Icon and name, or Name only) and keeps a text field for a custom template. A stored Local template still equal to the old `🏠 {name}` default moves to `💻 {name}` on load. Local means the session's `ANTHROPIC_BASE_URL` is on this machine, or the user set the model to Local.
+- **Catalog:** shipped in the app (`ui/src/lib/models/catalog.json`), refreshed by a weekly scheduled CI job that opens a PR, and fetched between builds only when the user opted in (D3).
 
 ### 3.4 Notifications and sounds
 - Native macOS notifications for needs-you and turn-complete, per conversation: all, needs-you only, mute.
@@ -115,7 +135,7 @@ Every feature lists its acceptance check.
 - Patchroom runs CLIs as the user, exactly as a terminal does. It grants nothing the terminal doesn't.
 - No TCP listeners. Bridge socket is `0600` in the user's Application Support folder.
 - Never writes the user's CLI settings. Hooks are injected per launch.
-- Never stores secrets. The claude.ai webview cookie store is the only credential state, scoped to the app.
+- Never stores secrets in its database, logs or exports. Credential state is the claude.ai webview cookie store, scoped to the app, plus task-connector tokens, which live only in the macOS Keychain.
 - Plugins: sandboxed webviews, capability manifest, no native code.
 - Bridge timeouts fail open to the CLI's own TUI (the CLI decides, as it would without Patchroom).
 
@@ -152,5 +172,43 @@ Phases are ordered by dependency. Each phase is a gauntlet loop: parallel builde
 
 ## 9. Open decisions for Noah
 
-- **D1** GitHub repo owner (personal account vs an org) and domain registration (patchroom.dev / patchroom.app).
+- **D1** GitHub repo owner (personal account vs an org). Domains: patchroom.dev registered by Noah on 2026-10-14. patchroom.app registration failed; Noah is following up. patchroom.com is taken.
 - **D2** Gauntlet budget per phase (iterations cap and model tier for builders vs judges).
+- **D4** Decided by Noah, 2026-10-29: **dictation is on-device Apple Speech only.** Speech never leaves the Mac, and there is no server fallback. See section 3.2a.
+- **D3** Decided by Noah, 2026-10-16: **opt-in.** Settings > Updates has "Check for app updates" and "Check for newer models", both off by default. The bundle editor and the model picker ask once ("Want to check for newer models?", Turn on or Not now). Nothing fetches until one is on. Each check is a plain GET (GitHub Releases, and a model catalog with a detached ed25519 signature checked against a key built into the app); Patchroom never listens. Every build still ships the latest model catalog.
+
+## 10. Business model
+
+Open core. Decided by Noah, 2026-10-14.
+
+- **Individual: free, Apache-2.0, forever.** It is the whole app, with no feature crippling. Each user brings their own CLI subscription, so Patchroom never resells model access.
+- **Team: per seat per month.** Hosted sync for channels, decisions and tasks across people. It adds decision routing to named teammates, shared plugins and a private marketplace, a team cost dashboard built from statusLine cost, and session handoff.
+- **Enterprise: annual contract.** SSO and SCIM, policy enforcement at launch (allowed CLIs and models, required hooks, permission rules, plugin allowlist), audit export, self-hosted sync, and support.
+- **Why teams pay instead of using many free copies:** a free copy is one person on one Mac. Every paid feature needs coordination between people, which only the sync layer provides.
+- **Boundaries:**
+  - The Apache-2.0 client never contains paid features.
+  - The sync server lives in its own repository, with its license decided when it is built.
+  - The data model stays sync-ready (principle 6).
+  - Trademark the name and register the domain before launch.
+- **Timing:** build no paid features until the free app has users.
+- **Licensing (decided 2026-10-14, option A):**
+  - Client: Apache-2.0, for its patent grant.
+  - Sync server: AGPL in its own repository, plus a commercial license for enterprises that will not run AGPL code.
+  - A contributor license agreement is required for outside code, from the first contribution.
+  - Releases up to commit 09fce45 were also published under MIT and stay so.
+  - Licensing does not stop a rebuild. The defense is pricing below rebuild-and-maintain cost, and charging for what is expensive to run: CLI parity upkeep, hosted sync, compliance and the ecosystem.
+
+## 11. Distribution and the host/client split
+
+Decided by Noah, 2026-10-15: **A now, C later.**
+
+- **A. Developer ID, outside the Mac App Store (now).** Signed with a Developer ID certificate, hardened runtime, notarized and stapled. Shipped as a DMG on GitHub Releases, then a Homebrew cask, with a signed in-app updater (see D3). This is how Warp, iTerm, Cursor and VS Code ship.
+- **Why not the Mac App Store for this app:** the store requires the App Sandbox, and a sandboxed app's child processes inherit it. The real CLI in a login shell (principle 1) could then not use the user's toolchain, project folders or `~/.claude`. Controlling iTerm and ending another terminal's process are also outside the sandbox.
+- **C. A sandboxed client (later).** A client app with no session host connects to a Patchroom host: the user's own Mac running the A app, a remote machine, or the team sync server (section 10). It holds no PTYs and runs no CLI, so it fits the App Sandbox and can ship on the Mac App Store, iPhone and iPad.
+
+Rules that keep C possible:
+- **The UI talks to sessions only through the IPC contract** (`src-tauri/src/commands.rs` and the `session:*`/`chat:*` events). No UI code reads files, spawns processes or calls the OS directly.
+- **Host-only work stays in the host:** PTYs, process checks and signals, terminal focus (AppleScript), transcript tailing, hooks and the bridge. A feature that needs one of these exposes a command, so a remote client can call it or hide it.
+- **The contract stays serializable** (plain JSON, no handles or paths the client must open itself), so it can later travel over an authenticated transport instead of in-process IPC. That transport is an opt-in, authenticated connection, never an open listener (principle 5).
+- **Entitlements stay minimal:** today the hardened runtime needs Apple Events (for "Show in iTerm") and audio input (for on-device dictation, section 3.2a). Anything new is justified in `src-tauri/Entitlements.plist`.
+

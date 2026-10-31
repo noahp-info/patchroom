@@ -1,0 +1,175 @@
+import { useEffect, useMemo, useState, type ComponentType, type CSSProperties } from 'react';
+import type { Terminal as XTerm } from '@xterm/xterm';
+import { resolveMode, themeVars, DEFAULT_BASE } from '../theme/index.ts';
+import type { BaseId, Theme, ThemeMode } from '../theme/index.ts';
+import type { Ipc, Prefs } from '../ipc';
+import { loadDefaultTheme } from './theme';
+
+/**
+ * The prefs piece (ui/src/components/prefs/, ui/src/sound/, ui/src/theme/runtime.ts) builds in
+ * parallel. Its index is found at build time with a glob, so a tree without it still compiles:
+ * the pane shows a placeholder, sounds stay silent and the theme falls back to Homeroom.
+ */
+const found = import.meta.glob('../components/prefs/index.ts', { eager: true }) as Record<
+  string,
+  unknown
+>;
+
+export interface ThemeRuntime {
+  base: BaseId;
+  theme: Theme;
+  mode: ThemeMode;
+  style: CSSProperties;
+}
+
+/** Settings sections a caller can open on. */
+export type PrefsTabId =
+  | 'themes'
+  | 'terminal'
+  | 'statusbar'
+  | 'notifications'
+  | 'sounds'
+  | 'dnd'
+  | 'hooks'
+  | 'links'
+  | 'dictation'
+  | 'history'
+  | 'accounts'
+  | 'models'
+  | 'updates';
+
+/** What `<PrefsPane>` takes from the workspace. */
+export interface PrefsPaneProps {
+  onClose(): void;
+  dms?: { id: string; name: string }[];
+  sections?: { id: string; name: string; folder?: string | null }[];
+  /** Section to open first. */
+  initialTab?: PrefsTabId;
+  /** A row in it to scroll to and flash (a Settings registry id). */
+  initialSetting?: string;
+  /** Open this DM's sound settings. */
+  targetDm?: string;
+}
+
+interface PrefsApi {
+  prefsGet(): Promise<Prefs>;
+  prefsSet(patch: Partial<Prefs>): Promise<Prefs>;
+  soundHooksDetect(): Promise<{ event: string; command: string; source: string }[]>;
+  notifyTest(): Promise<void>;
+  soundPacks: Ipc['soundPacks'];
+  soundFile: Ipc['soundFile'];
+  soundCustomList: Ipc['soundCustomList'];
+  soundCustomFile: Ipc['soundCustomFile'];
+  soundPickFile: Ipc['soundPickFile'];
+  soundImportFile: Ipc['soundImportFile'];
+  soundCustomRemove: Ipc['soundCustomRemove'];
+  soundClaudeProfiles: Ipc['soundClaudeProfiles'];
+  soundImportClaudeProfile: Ipc['soundImportClaudeProfile'];
+  themeImportDetect: Ipc['themeImportDetect'];
+  themeImportFile: Ipc['themeImportFile'];
+  onPrefsChanged(handler: (prefs: Prefs) => void): Promise<() => void>;
+  catalogGet: Ipc['catalogGet'];
+  catalogRefresh: Ipc['catalogRefresh'];
+  updateCheck: Ipc['updateCheck'];
+  fontsList: Ipc['fontsList'];
+  dictationLocales: Ipc['dictationLocales'];
+  dictationOpenSettings: Ipc['dictationOpenSettings'];
+  linkOpenExternal: Ipc['linkOpenExternal'];
+}
+
+interface PrefsExports {
+  PrefsPane?: ComponentType<PrefsPaneProps>;
+  playSound?: (event: string, opts?: { dmId?: string }) => unknown;
+  useThemeRuntime?: () => ThemeRuntime;
+  setPrefsApi?: (api: PrefsApi) => unknown;
+  bindTerminalTheme?: (
+    term: XTerm,
+    dmId: string,
+    onApplied?: (s: { theme: { background?: string } }) => void,
+  ) => () => void;
+}
+
+const mod: PrefsExports = (Object.values(found)[0] as PrefsExports | undefined) ?? {};
+
+export const PrefsPane: ComponentType<PrefsPaneProps> | null = mod.PrefsPane ?? null;
+
+function useFallbackThemeRuntime(): ThemeRuntime {
+  const [dark, setDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const on = () => setDark(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  const { theme } = useMemo(() => loadDefaultTheme(), []);
+  const mode = resolveMode('system', dark);
+  const style = useMemo(
+    () => ({ ...themeVars(theme, mode), colorScheme: mode }) as CSSProperties,
+    [theme, mode],
+  );
+  return { base: DEFAULT_BASE, theme, mode, style };
+}
+
+/** The app theme from prefs, live. The choice of hook is fixed at build time. */
+export const useThemeRuntime: () => ThemeRuntime = mod.useThemeRuntime ?? useFallbackThemeRuntime;
+
+/** Point the prefs layer at the app's IPC, so the pane and the backend share one `Prefs`. */
+export function installPrefsApi(ipc: Ipc): void {
+  mod.setPrefsApi?.({
+    prefsGet: () => ipc.prefsGet(),
+    prefsSet: (patch) => ipc.prefsSet(patch),
+    soundHooksDetect: () => ipc.soundHooksDetect(),
+    notifyTest: () => ipc.notifyTest(),
+    soundPacks: () => ipc.soundPacks(),
+    soundFile: (packId, event) => ipc.soundFile(packId, event),
+    soundCustomList: () => ipc.soundCustomList(),
+    soundCustomFile: (id) => ipc.soundCustomFile(id),
+    soundPickFile: () => ipc.soundPickFile(),
+    soundImportFile: (path) => ipc.soundImportFile(path),
+    soundCustomRemove: (id) => ipc.soundCustomRemove(id),
+    soundClaudeProfiles: () => ipc.soundClaudeProfiles(),
+    soundImportClaudeProfile: (id) => ipc.soundImportClaudeProfile(id),
+    themeImportDetect: () => ipc.themeImportDetect(),
+    themeImportFile: () => ipc.themeImportFile(),
+    onPrefsChanged: (handler) => ipc.on('prefs:changed', (e) => handler(e.prefs)),
+    catalogGet: () => ipc.catalogGet(),
+    catalogRefresh: () => ipc.catalogRefresh(),
+    updateCheck: () => ipc.updateCheck(),
+    fontsList: () => ipc.fontsList(),
+    dictationLocales: () => ipc.dictationLocales(),
+    dictationOpenSettings: (pane) => ipc.dictationOpenSettings(pane),
+    linkOpenExternal: (url) => ipc.linkOpenExternal(url),
+  });
+}
+
+/** Restyle one terminal from prefs now and on every change. Returns the unbind. */
+export function bindTerminalStyle(
+  term: XTerm,
+  dmId: string,
+  onApplied: (background: string | undefined) => void,
+): () => void {
+  try {
+    return (
+      mod.bindTerminalTheme?.(term, dmId, (s) => onApplied(s.theme.background)) ?? (() => undefined)
+    );
+  } catch {
+    return () => undefined;
+  }
+}
+
+declare global {
+  interface Window {
+    /** Every sound the UI was asked to play, for tests and the judge's sound log. */
+    __PR_SOUND_LOG__?: { event: string; id: string; at: number }[];
+  }
+}
+
+/** `notify:fire` arrived: the backend already decided to alert, the UI plays the sound. */
+export function playNotifySound(event: string, id: string): void {
+  (window.__PR_SOUND_LOG__ ??= []).push({ event, id, at: Date.now() });
+  try {
+    mod.playSound?.(event, { dmId: id || undefined });
+  } catch {
+    // Sound is best effort.
+  }
+}

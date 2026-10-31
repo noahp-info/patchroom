@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["src-tauri", "crates/patchroom-core", "crates/patchroom-hook"]
+members = ["src-tauri", "crates/*"]
 
 [workspace.package]
 version = "0.0.1"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/noahp-info/patchroom"
 rust-version = "1.85"
 
@@ -15,7 +15,29 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 
+# Debug builds run the search latency test and parse large transcripts; keep the hot
+# dependencies optimized so the debug app and the tests stay representative.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3
+[profile.dev.package.serde_json]
+opt-level = 3
+[profile.dev.package.patchroom-claude]
+opt-level = 2
+[profile.dev.package.patchroom-search]
+opt-level = 2
+[profile.dev.package.patchroom-folders]
+opt-level = 2
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = true
+# Window capture encodes PNGs in the debug app; keep it fast enough to time.
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.crc32fast]
+opt-level = 3

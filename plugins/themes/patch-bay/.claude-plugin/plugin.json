@@ -1,0 +1,23 @@
+{
+  "name": "patchroom-theme-patch-bay",
+  "version": "0.1.0",
+  "description": "Patch Bay color theme for Patchroom. Anodized panel greys, silkscreen ink, and four cable colors on warm paper.",
+  "author": {
+    "name": "Patchroom"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "patchroom",
+    "theme"
+  ],
+  "patchroom": {
+    "kind": "data",
+    "themes": [
+      {
+        "id": "patch-bay",
+        "name": "Patch Bay",
+        "file": "themes/patch-bay.json"
+      }
+    ]
+  }
+}

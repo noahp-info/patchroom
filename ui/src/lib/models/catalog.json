@@ -1,0 +1,515 @@
+{
+  "schema": 1,
+  "generated": "2026-10-26",
+  "tools": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "providers": [
+        "anthropic"
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "providers": [
+        "openai"
+      ]
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor CLI",
+      "providers": [
+        "anthropic",
+        "openai",
+        "google"
+      ]
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini CLI",
+      "providers": [
+        "google"
+      ]
+    },
+    {
+      "id": "opencode",
+      "name": "opencode",
+      "providers": [
+        "anthropic",
+        "openai",
+        "google",
+        "ollama"
+      ]
+    }
+  ],
+  "models": [
+    {
+      "id": "claude-fable-5-1",
+      "tool": "claude-code",
+      "name": "Fable 5.1",
+      "family": "fable",
+      "version": "5.1",
+      "where": "cloud",
+      "released": "2026-09-01"
+    },
+    {
+      "id": "claude-fable-5",
+      "tool": "claude-code",
+      "name": "Fable 5",
+      "family": "fable",
+      "version": "5",
+      "where": "cloud",
+      "released": "2026-06-07"
+    },
+    {
+      "id": "claude-haiku-5-5",
+      "tool": "claude-code",
+      "name": "Haiku 5.5",
+      "family": "haiku",
+      "version": "5.5",
+      "where": "cloud",
+      "released": "2026-10-07"
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "tool": "claude-code",
+      "name": "Haiku 4.5",
+      "family": "haiku",
+      "version": "4.5",
+      "where": "cloud"
+    },
+    {
+      "id": "claude-opus-5-5",
+      "tool": "claude-code",
+      "name": "Opus 5.5",
+      "family": "opus",
+      "version": "5.5",
+      "where": "cloud",
+      "released": "2026-09-22"
+    },
+    {
+      "id": "claude-opus-5",
+      "tool": "claude-code",
+      "name": "Opus 5",
+      "family": "opus",
+      "version": "5",
+      "where": "cloud",
+      "released": "2026-07-24"
+    },
+    {
+      "id": "claude-opus-4-8",
+      "tool": "claude-code",
+      "name": "Opus 4.8",
+      "family": "opus",
+      "version": "4.8",
+      "where": "cloud",
+      "released": "2026-05-28"
+    },
+    {
+      "id": "claude-opus-4-7",
+      "tool": "claude-code",
+      "name": "Opus 4.7",
+      "family": "opus",
+      "version": "4.7",
+      "where": "cloud",
+      "released": "2026-04-14"
+    },
+    {
+      "id": "claude-opus-4-6",
+      "tool": "claude-code",
+      "name": "Opus 4.6",
+      "family": "opus",
+      "version": "4.6",
+      "where": "cloud",
+      "released": "2026-02-04"
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "tool": "claude-code",
+      "name": "Sonnet 5.5",
+      "family": "sonnet",
+      "version": "5.5",
+      "where": "cloud",
+      "released": "2026-09-28"
+    },
+    {
+      "id": "claude-sonnet-5",
+      "tool": "claude-code",
+      "name": "Sonnet 5",
+      "family": "sonnet",
+      "version": "5",
+      "where": "cloud",
+      "released": "2026-06-29"
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "tool": "claude-code",
+      "name": "Sonnet 4.6",
+      "family": "sonnet",
+      "version": "4.6",
+      "where": "cloud",
+      "released": "2026-02-17"
+    },
+    {
+      "id": "gpt-5.5",
+      "tool": "codex",
+      "name": "GPT-5.5",
+      "family": "gpt",
+      "version": "5.5",
+      "released": "2026-04-23",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.4",
+      "tool": "codex",
+      "name": "GPT-5.4",
+      "family": "gpt",
+      "version": "5.4",
+      "released": "2026-03-05",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.2",
+      "tool": "codex",
+      "name": "GPT-5.2",
+      "family": "gpt",
+      "version": "5.2",
+      "released": "2025-12-11",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.1",
+      "tool": "codex",
+      "name": "GPT-5.1",
+      "family": "gpt",
+      "version": "5.1",
+      "released": "2025-11-13",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5",
+      "tool": "codex",
+      "name": "GPT-5",
+      "family": "gpt",
+      "version": "5",
+      "released": "2025-08-07",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-6-astra",
+      "tool": "codex",
+      "name": "GPT-6 Astra",
+      "family": "gpt-astra",
+      "version": "6",
+      "released": "2026-09-04",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.3-codex",
+      "tool": "codex",
+      "name": "GPT-5.3 Codex",
+      "family": "gpt-codex",
+      "version": "5.3",
+      "released": "2026-02-05",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.3-codex-spark",
+      "tool": "codex",
+      "name": "GPT-5.3 Codex Spark",
+      "family": "gpt-codex-spark",
+      "version": "5.3",
+      "released": "2026-02-05",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-6-luna",
+      "tool": "codex",
+      "name": "GPT-6 Luna",
+      "family": "gpt-luna",
+      "version": "6",
+      "released": "2026-09-22",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "tool": "codex",
+      "name": "GPT-5.6 Luna",
+      "family": "gpt-luna",
+      "version": "5.6",
+      "released": "2026-07-09",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "tool": "codex",
+      "name": "GPT-5.4 mini",
+      "family": "gpt-mini",
+      "version": "5.4",
+      "released": "2026-03-17",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5-mini",
+      "tool": "codex",
+      "name": "GPT-5 Mini",
+      "family": "gpt-mini",
+      "version": "5",
+      "released": "2025-08-07",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.4-nano",
+      "tool": "codex",
+      "name": "GPT-5.4 nano",
+      "family": "gpt-nano",
+      "version": "5.4",
+      "released": "2026-03-17",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5-nano",
+      "tool": "codex",
+      "name": "GPT-5 Nano",
+      "family": "gpt-nano",
+      "version": "5",
+      "released": "2025-08-07",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.5-pro",
+      "tool": "codex",
+      "name": "GPT-5.5 Pro",
+      "family": "gpt-pro",
+      "version": "5.5",
+      "released": "2026-04-23",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.4-pro",
+      "tool": "codex",
+      "name": "GPT-5.4 Pro",
+      "family": "gpt-pro",
+      "version": "5.4",
+      "released": "2026-03-05",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.2-pro",
+      "tool": "codex",
+      "name": "GPT-5.2 Pro",
+      "family": "gpt-pro",
+      "version": "5.2",
+      "released": "2025-12-11",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5-pro",
+      "tool": "codex",
+      "name": "GPT-5 Pro",
+      "family": "gpt-pro",
+      "version": "5",
+      "released": "2025-10-06",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-6.1-sol",
+      "tool": "codex",
+      "name": "GPT-6.1 Sol",
+      "family": "gpt-sol",
+      "version": "6.1",
+      "released": "2026-09-29",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-6-sol",
+      "tool": "codex",
+      "name": "GPT-6 Sol",
+      "family": "gpt-sol",
+      "version": "6",
+      "released": "2026-09-22",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.6",
+      "tool": "codex",
+      "name": "GPT-5.6",
+      "family": "gpt-sol",
+      "version": "5.6",
+      "released": "2026-07-09",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.6-sol",
+      "tool": "codex",
+      "name": "GPT-5.6 Sol",
+      "family": "gpt-sol",
+      "version": "5.6",
+      "released": "2026-07-09",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "tool": "codex",
+      "name": "GPT-5.6 Terra",
+      "family": "gpt-terra",
+      "version": "5.6",
+      "released": "2026-07-09",
+      "where": "cloud"
+    },
+    {
+      "id": "o3-pro",
+      "tool": "codex",
+      "name": "o3-pro",
+      "family": "o-pro",
+      "version": "3",
+      "released": "2025-06-10",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-4-argon",
+      "tool": "gemini",
+      "name": "Gemini 4 Argon",
+      "family": "gemini",
+      "version": "4",
+      "released": "2026-10-13",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "tool": "gemini",
+      "name": "Gemini 3.8 Flash",
+      "family": "gemini-flash",
+      "version": "3.8",
+      "released": "2026-09-02",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-3.7-flash",
+      "tool": "gemini",
+      "name": "Gemini 3.7 Flash",
+      "family": "gemini-flash",
+      "version": "3.7",
+      "released": "2026-08-13",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-3.6-flash",
+      "tool": "gemini",
+      "name": "Gemini 3.6 Flash",
+      "family": "gemini-flash",
+      "version": "3.6",
+      "released": "2026-07-21",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-3.5-flash",
+      "tool": "gemini",
+      "name": "Gemini 3.5 Flash",
+      "family": "gemini-flash",
+      "version": "3.5",
+      "released": "2026-05-19",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-3-flash-preview",
+      "tool": "gemini",
+      "name": "Gemini 3 Flash Preview",
+      "family": "gemini-flash",
+      "version": "3",
+      "released": "2025-12-17",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-2.5-flash",
+      "tool": "gemini",
+      "name": "Gemini 2.5 Flash",
+      "family": "gemini-flash",
+      "version": "2.5",
+      "released": "2025-06-17",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-3.5-flash-lite",
+      "tool": "gemini",
+      "name": "Gemini 3.5 Flash Lite",
+      "family": "gemini-flash-lite",
+      "version": "3.5",
+      "released": "2026-07-21",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-3.1-flash-lite",
+      "tool": "gemini",
+      "name": "Gemini 3.1 Flash Lite",
+      "family": "gemini-flash-lite",
+      "version": "3.1",
+      "released": "2026-05-07",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-3.1-flash-lite-preview",
+      "tool": "gemini",
+      "name": "Gemini 3.1 Flash Lite Preview",
+      "family": "gemini-flash-lite",
+      "version": "3.1",
+      "released": "2026-03-03",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-2.5-flash-lite",
+      "tool": "gemini",
+      "name": "Gemini 2.5 Flash-Lite",
+      "family": "gemini-flash-lite",
+      "version": "2.5",
+      "released": "2025-06-17",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-3.1-pro-preview",
+      "tool": "gemini",
+      "name": "Gemini 3.1 Pro Preview",
+      "family": "gemini-pro",
+      "version": "3.1",
+      "released": "2026-02-19",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-3.1-pro-preview-customtools",
+      "tool": "gemini",
+      "name": "Gemini 3.1 Pro Preview Custom Tools",
+      "family": "gemini-pro",
+      "version": "3.1",
+      "released": "2026-02-19",
+      "where": "cloud"
+    },
+    {
+      "id": "gemini-2.5-pro",
+      "tool": "gemini",
+      "name": "Gemini 2.5 Pro",
+      "family": "gemini-pro",
+      "version": "2.5",
+      "released": "2025-06-17",
+      "where": "cloud"
+    },
+    {
+      "id": "gemma-4-26b-a4b-it",
+      "tool": "gemini",
+      "name": "Gemma 4 26B A4B IT",
+      "family": "gemma",
+      "version": "4",
+      "released": "2026-04-02",
+      "where": "cloud"
+    },
+    {
+      "id": "gemma-4-31b-it",
+      "tool": "gemini",
+      "name": "Gemma 4 31B IT",
+      "family": "gemma",
+      "version": "4",
+      "released": "2026-04-02",
+      "where": "cloud"
+    }
+  ]
+}

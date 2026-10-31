@@ -1,0 +1,19 @@
+[package]
+name = "patchroom-bridge"
+description = "Patchroom hook bridge: unix socket server, per-prompt arbiter, status events, claude agents reconciler."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

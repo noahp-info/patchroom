@@ -1,0 +1,726 @@
+/* global window, document */
+// The bar's live "both" script: the real claude CLI (haiku) behind the real Patchroom UI.
+// Loaded by `patchroom --e2e-script` in a debug build (scripts/e2e-live.sh). `t` is the runner in
+// ui/src/e2e/runner.ts. Every action is a DOM event on a real control. Directories come from the
+// environment as PATCHROOM_E2E_DIR_A and PATCHROOM_E2E_DIR_B.
+
+window.__PR_E2E_SCENARIO__ = async function scenario(t) {
+  const A = await t.requireParam('DIR_A');
+  const B = await t.requireParam('DIR_B');
+  const NAME_A = A.split('/').pop();
+  const NAME_B = 'beta';
+  const TURN_MS = 120_000;
+  // Wait for a widget; if haiku did not raise it in time, nudge once with a follow-up prompt.
+  const widgetOrNudge = async (kind, nudge) => {
+    try {
+      return await t.awaitWidget(kind, 75_000);
+    } catch {
+      t.fact(`nudged_${kind}`, true);
+      await turnIdle(NAME_A).catch(() => undefined);
+      await t.sendFromComposer(nudge);
+      return t.awaitWidget(kind, TURN_MS);
+    }
+  };
+  // An 8x8 solid PNG.
+  const PNG_B64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC';
+
+  const strip = (s) =>
+    s
+      // eslint-disable-next-line no-control-regex
+      .replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')
+      .split('\u00a0')
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const hooks = async () => (await t.pgrep('patchroom-hook')).length;
+  const lastDone = (kind) => {
+    const all = [
+      ...document.querySelectorAll(
+        `[data-testid="chat"]:not(.chat--hidden) .ask[data-kind="${kind}"][data-state="resolved"] .ask-done`,
+      ),
+    ];
+    return all.length ? (all[all.length - 1].textContent || '').trim() : '';
+  };
+  const countDone = (kind) =>
+    document.querySelectorAll(
+      `[data-testid="chat"]:not(.chat--hidden) .ask[data-kind="${kind}"][data-state="resolved"]`,
+    ).length;
+
+  const trustShown = (name) => /Yes, I trust this folder/.test(t.termText(t.dm(name).id));
+  const tuiUp = (name) =>
+    /\? for shortcuts|mode on|bypass permissions|accept edits|plan mode|shift\+tab/i.test(
+      t
+        .termLines(t.dm(name).id)
+        .filter((l) => l.trim())
+        .slice(-6)
+        .join('\n'),
+    );
+
+  /** Accept the folder trust dialog through the terminal view: move to "Yes", press Enter. */
+  async function clearTrust(name) {
+    if (!trustShown(name)) return false;
+    await t.showView('Terminal');
+    for (let i = 0; i < 3; i++) {
+      const lines = t.termLines(t.dm(name).id);
+      const cur = lines.filter((l) => l.includes('\u276f')).pop() || '';
+      if (/Yes, I trust/.test(cur)) break;
+      t.termKeys(['ArrowDown']);
+      await t.sleep(300);
+    }
+    t.termKeys(['Enter']);
+    await t.sleep(1500);
+    await t.showView('Chat');
+    return true;
+  }
+
+  /** Wait until the DM's TUI is up and idle, accepting the trust dialog if claude shows it. */
+  async function ready(name) {
+    await t.waitFor(
+      `${name} TUI up`,
+      async () => {
+        if (await clearTrust(name)) return false;
+        const d = t.dm(name);
+        return d.status === 'idle' && t.chat(d.id).loaded && tuiUp(name) && !trustShown(name);
+      },
+      120_000,
+    );
+    t.fact(
+      `tuiTail:${name}`,
+      t
+        .termLines(t.dm(name).id)
+        .filter((l) => l.trim())
+        .slice(-8),
+    );
+  }
+
+  /** Wait for the turn to finish, allowing any permission asked on the way. */
+  async function settle(label) {
+    await t.waitFor(
+      `${label}: turn done`,
+      () => {
+        const w = t.widget('permission');
+        if (w) t.clickButton(w, 'Allow');
+        return t.dm(t.activeName).status === 'idle';
+      },
+      TURN_MS,
+    );
+  }
+
+  async function turnIdle(name) {
+    await t.waitFor(`${name} idle`, () => t.dm(name).status === 'idle', TURN_MS);
+  }
+
+  t.startLogTrace();
+
+  // ---- phase 2: after the mid-script restart ---------------------------------------------------
+  // The app relaunched on the same data dir. Only what must survive a restart is checked here.
+  if ((await t.param('phase')) === 'persist') {
+    const store = () => window.__PR_STORE__;
+    const snap = () => store().getSnapshot();
+    await t.step('restart: DMs are back, ended until resumed', async () => {
+      await t.waitFor('store ready', () => snap().ready && snap().sessions.length >= 3, 30_000);
+      return `${snap().sessions.length} DMs`;
+    });
+    await t.step('restart: the section and its DM filing survive', async () => {
+      const sec = snap().sections.find((x) => x.name === 'Live checks');
+      if (!sec) throw new Error('section "Live checks" is gone');
+      const b = snap().sessions.find((x) => x.name === NAME_B);
+      if (!b) throw new Error('DM beta is gone');
+      // Beta was dragged into the folder section last, so that is where it must be.
+      const folder = snap().sections.find((x) => x.folder === A);
+      if (!folder) throw new Error('the folder section is gone');
+      if (b.sectionId !== folder.id) throw new Error(`beta is filed in ${b.sectionId}`);
+    });
+    await t.step(
+      'restart: the folder section keeps its folder and re-lists its sessions',
+      async () => {
+        const folder = snap().sections.find((x) => x.folder === A);
+        await t.waitFor(
+          'folder listing',
+          () => (snap().folders[folder.id]?.sessions.length ?? 0) >= 2,
+          20_000,
+        );
+        const linked = snap().folders[folder.id].sessions.filter((x) => x.dmId);
+        if (linked.length < 1) throw new Error('no listed session is linked to its DM');
+        t.fact('folderSessionsAfterRestart', snap().folders[folder.id].sessions.length);
+      },
+    );
+    await t.step('restart: the folder chip survives on the dragged DM', async () => {
+      const b = snap().sessions.find((x) => x.name === NAME_B);
+      await t.waitFor('chip', () =>
+        document.querySelector(`.side .row[data-dm="${b.id}"] [data-testid="folder-chip"]`),
+      );
+    });
+    await t.step('restart: the unsent draft and the pin survive', async () => {
+      const a = snap().sessions.find((x) => x.name === NAME_A);
+      await t.waitFor('draft pencil', () =>
+        document.querySelector(`.side .row[data-dm="${a.id}"] [data-testid="draft-mark"]`),
+      );
+      await t.waitFor('pin stored', () => snap().marks.some((m) => m.kind === 'pin'));
+    });
+    await t.finish(true);
+    return;
+  }
+
+  // ---- 0. the DM from --open-dm ---------------------------------------------------------------
+  await t.step('first DM opens as chat', async () => {
+    await t.waitFor('one DM', () => t.sessionCount() >= 1, 30_000);
+    await t.waitFor('chat view', () => t.view() === 'Chat', 10_000);
+    t.activeName = NAME_A;
+    await ready(NAME_A);
+    const sel = '[data-testid="chat"]:not(.chat--hidden) [data-testid="composer-input"]';
+    if (!document.querySelector(sel)) throw new Error('no composer');
+    return `DM ${NAME_A} idle`;
+  });
+
+  // ---- 1. composer send ---------------------------------------------------------------------
+  await t.step('composer send appears once', async () => {
+    const text = 'Reply with exactly the single word PONG and nothing else.';
+    await t.sendFromComposer(text);
+    await t.waitFor(
+      'user message',
+      () => t.userTexts().some((x) => x.includes('single word PONG')),
+      15_000,
+    );
+    await t.waitFor(
+      'assistant PONG',
+      () => t.assistantTexts().some((x) => /PONG/.test(x)),
+      TURN_MS,
+    );
+    await turnIdle(NAME_A);
+    await t.sleep(2000);
+    const n = t.userTexts().filter((x) => x.includes('single word PONG')).length;
+    const dom = [
+      ...document.querySelectorAll('[data-testid="chat"]:not(.chat--hidden) .msg.user'),
+    ].filter((e) => (e.textContent || '').includes('single word PONG')).length;
+    if (n !== 1) throw new Error(`user message count in the chat model is ${n}`);
+    if (dom !== 1) throw new Error(`user message count in the DOM is ${dom}`);
+    return 'one user message, one reply';
+  });
+
+  // ---- 1b. image paste ------------------------------------------------------------------------
+  await t.step('pasted image becomes a path and the sent message carries an image', async () => {
+    const before = t.userImageCounts().length;
+    t.pasteImageIntoComposer(PNG_B64);
+    await t.waitFor(
+      'path in the composer',
+      () => {
+        const v = document.querySelector(
+          '[data-testid="chat"]:not(.chat--hidden) [data-testid="composer-input"]',
+        ).value;
+        return /\/pastes\/\S+\.png/.test(v) ? v : null;
+      },
+      10_000,
+    );
+    t.pressEnterInComposer();
+    await t.waitFor(
+      'user message with an image',
+      () => {
+        const c = t.userImageCounts();
+        return c.length > before && c[c.length - 1] > 0;
+      },
+      30_000,
+    );
+    // claude may ask to Read the pasted file after the image attached: allow it and let the turn end.
+    const end = Date.now() + TURN_MS;
+    while (t.dm(NAME_A).status !== 'idle' && Date.now() < end) {
+      const ask = document.querySelector(
+        '[data-testid="chat"]:not(.chat--hidden) .ask[data-state="pending"]',
+      );
+      if (ask) t.clickButton(ask, 'Allow');
+      await t.sleep(500);
+    }
+    await turnIdle(NAME_A);
+    return 'user message carries an image';
+  });
+
+  // ---- 2. second DM (used for badges) -------------------------------------------------------
+  await t.step('second DM starts through the New session dialog', async () => {
+    await t.newDm(B, NAME_B);
+    await t.waitFor('second DM', () => t.sessionCount() >= 2, 20_000);
+    await ready(NAME_B);
+    t.selectDm(NAME_A);
+    await t.waitFor('back on first DM', () => t.badge(NAME_A).active, 5000);
+    t.activeName = NAME_A;
+    await t.showView('Chat');
+  });
+
+  // ---- 3. permission allowed from chat ---------------------------------------------------------
+  await t.step('permission: allow from chat, no hook left within 2s', async () => {
+    await t.sendFromComposer(
+      `Use the Bash tool to run exactly this command and nothing else: touch ${A}/allowed.txt`,
+    );
+    const w = await t.awaitWidget('permission', TURN_MS);
+    if (!/touch/.test(w.textContent || '')) throw new Error('widget does not show the command');
+    if (t.badge(NAME_A).needs < 1)
+      throw new Error('needs-you badge missing while the prompt waits');
+    const before = countDone('permission');
+    const t0 = Date.now();
+    t.clickButton(w, 'Allow');
+    await t.waitFor('widget resolved', () => countDone('permission') > before, 10_000);
+    if (!/Allowed in chat/.test(lastDone('permission')))
+      throw new Error(`widget says "${lastDone('permission')}"`);
+    await t.waitFor(
+      'no patchroom-hook within 2s of the click',
+      async () => (await hooks()) === 0,
+      2000 - (Date.now() - t0) + 100,
+    );
+    const ms = Date.now() - t0;
+    await t.waitFor(
+      'Bash ran ok',
+      () =>
+        t
+          .chat()
+          .items.some(
+            (i) =>
+              i.kind === 'tool' &&
+              i.name === 'Bash' &&
+              i.state === 'ok' &&
+              JSON.stringify(i.input).includes('allowed.txt'),
+          ),
+      60_000,
+    );
+    await turnIdle(NAME_A);
+    if (t.badge(NAME_A).needs !== 0) throw new Error('needs-you badge stayed after the answer');
+    return `hook gone ${ms} ms after Allow`;
+  });
+
+  // ---- 4. permission answered in the terminal ----------------------------------------------------
+  await t.step(
+    'permission: answered in terminal shows "Answered in terminal", no hook left',
+    async () => {
+      await t.sendFromComposer(
+        `Use the Bash tool to run exactly this command and nothing else: touch ${A}/terminal.txt`,
+      );
+      await t.awaitWidget('permission', TURN_MS);
+      const before = countDone('permission');
+      await t.showView('Terminal');
+      await t.waitFor(
+        'TUI dialog',
+        () => /Do you want to proceed|1\. Yes/.test(t.termText()),
+        15_000,
+      );
+      t.termKeys(['1']);
+      const t0 = Date.now();
+      await t.showView('Chat');
+      await t.waitFor('widget resolved', () => countDone('permission') > before, 15_000);
+      if (!/Answered in terminal/.test(lastDone('permission')))
+        throw new Error(`widget says "${lastDone('permission')}"`);
+      await t.waitFor(
+        'no patchroom-hook within 2s',
+        async () => (await hooks()) === 0,
+        Math.max(500, 2100 - (Date.now() - t0)),
+      );
+      await turnIdle(NAME_A);
+      return `resolved and hook gone ${Date.now() - t0} ms after the keystroke`;
+    },
+  );
+
+  // ---- 5. AskUserQuestion from chat, with Other text --------------------------------------------------
+  await t.step('question: answered from chat with Other text', async () => {
+    await t.sendFromComposer(
+      'Use the AskUserQuestion tool once. Ask the single-select question "Which fruit?" with the options "Apple" and "Banana". When I answer, reply with only the answer I gave.',
+    );
+    const w = await t.awaitWidget('question', TURN_MS);
+    const block = w.querySelector('.qblock');
+    t.fillOther(block, 'Dragonfruit');
+    const before = countDone('question');
+    t.clickButton(w, 'Send answer');
+    await t.waitFor('widget resolved', () => countDone('question') > before, 15_000);
+    if (!/Answered in chat/.test(lastDone('question')))
+      throw new Error(`widget says "${lastDone('question')}"`);
+    await t.waitFor(
+      'claude saw Dragonfruit',
+      () => t.assistantTexts().some((x) => /Dragonfruit/i.test(x)),
+      TURN_MS,
+    );
+    await turnIdle(NAME_A);
+    if (t.badge(NAME_A).needs !== 0) throw new Error('needs-you badge stayed');
+  });
+
+  // ---- 6. AskUserQuestion from the terminal -------------------------------------------------------------
+  await t.step('question: answered in the terminal', async () => {
+    await t.sendFromComposer(
+      'Use the AskUserQuestion tool once. Ask the single-select question "Which colour?" with the options "Red" and "Blue". When I answer, reply with only the answer I gave.',
+    );
+    await t.awaitWidget('question', TURN_MS);
+    const before = countDone('question');
+    await t.showView('Terminal');
+    await t.waitFor(
+      'TUI picker',
+      () =>
+        /Red/.test(t.termLines().slice(-40).join('\n')) &&
+        /Blue/.test(t.termLines().slice(-40).join('\n')),
+      15_000,
+    );
+    t.termKeys(['1']);
+    await t.showView('Chat');
+    await t.waitFor('widget resolved', () => countDone('question') > before, 20_000);
+    if (!/Answered in terminal/.test(lastDone('question')))
+      throw new Error(`widget says "${lastDone('question')}"`);
+    await t.waitFor(
+      'claude saw Red',
+      () => t.assistantTexts().some((x) => /\bRed\b/.test(x)),
+      TURN_MS,
+    );
+    await turnIdle(NAME_A);
+    if ((await hooks()) !== 0) throw new Error('a hook is still running');
+  });
+
+  // ---- 7. plan approval from chat ----------------------------------------------------------------------------
+  await t.step('plan: approved from chat', async () => {
+    // Shift+Tab through the status strip mode chip until the CLI is in plan mode.
+    const chip = () =>
+      document.querySelector('[data-testid="chat"]:not(.chat--hidden) [data-chip="mode"]');
+    await t.waitFor('mode chip', () => chip(), 30_000);
+    for (let i = 0; i < 5 && !/plan/i.test(chip()?.textContent || ''); i++) {
+      const before = chip()?.textContent;
+      t.clickButton(chip().parentElement, before.trim());
+      await t
+        .waitFor('mode chip changes', () => chip()?.textContent !== before, 8000)
+        .catch(() => undefined);
+    }
+    if (!/plan/i.test(chip()?.textContent || ''))
+      throw new Error(`mode chip says "${chip()?.textContent}"`);
+    await t.sendFromComposer(
+      `Plan only: write a two step plan to create a file ${A}/plan-out.txt that contains the word hi, then present it for approval.`,
+    );
+    const w = await widgetOrNudge(
+      'plan',
+      'Present the plan now by calling the ExitPlanMode tool so I can approve it.',
+    );
+    const before = countDone('plan');
+    t.clickButton(w, 'Approve plan');
+    await t.waitFor('widget resolved', () => countDone('plan') > before, 30_000);
+    if (!/approved in chat/i.test(lastDone('plan')))
+      throw new Error(`widget says "${lastDone('plan')}"`);
+    await settle('plan');
+    if ((await hooks()) !== 0) throw new Error('a hook is still running');
+  });
+
+  // ---- 8. needs-you persists across a DM switch --------------------------------------------------------------------
+  await t.step('needs-you badge persists across DM switches until answered', async () => {
+    await t.sendFromComposer(
+      `Use the Bash tool to run exactly this command and nothing else: touch ${A}/persist.txt`,
+    );
+    await widgetOrNudge('permission', `Run the Bash command now: touch ${A}/persist.txt`);
+    t.selectDm(NAME_B);
+    await t.waitFor('on beta', () => t.badge(NAME_B).active, 5000);
+    await t.sleep(1500);
+    if (t.badge(NAME_A).needs < 1) throw new Error('needs-you badge gone after switching away');
+    t.selectDm(NAME_A);
+    await t.waitFor('on first DM', () => t.badge(NAME_A).active, 5000);
+    await t.showView('Chat');
+    await t.sleep(1500);
+    if (t.badge(NAME_A).needs < 1) throw new Error('needs-you badge gone after viewing the DM');
+    const w = await t.awaitWidget('permission', 5000);
+    t.clickButton(w, 'Allow');
+    await t.waitFor('badge cleared by the answer', () => t.badge(NAME_A).needs === 0, 15_000);
+    await turnIdle(NAME_A);
+  });
+
+  // ---- 9. background unread ----------------------------------------------------------------------------------------------
+  await t.step('background DM unread badge clears on view', async () => {
+    t.selectDm(NAME_B);
+    await t.waitFor('on beta', () => t.badge(NAME_B).active, 5000);
+    t.activeName = NAME_B;
+    await t.showView('Chat');
+    await t.sendFromComposer('Reply with exactly the single word PING and nothing else.');
+    await t.waitFor(
+      'user message in beta',
+      () => t.userTexts().some((x) => x.includes('word PING')),
+      15_000,
+    );
+    t.selectDm(NAME_A);
+    await t.waitFor('on first DM', () => t.badge(NAME_A).active, 5000);
+    t.activeName = NAME_A;
+    await t.waitFor('unread badge on beta', () => t.badgesOf(NAME_B).unread > 0, TURN_MS);
+    if (t.badge(NAME_B).unread < 1) throw new Error('sidebar shows no unread badge on beta');
+    t.selectDm(NAME_B);
+    t.activeName = NAME_B;
+    await t.waitFor('unread cleared on view', () => t.badgesOf(NAME_B).unread === 0, 10_000);
+    await turnIdle(NAME_B);
+    await t.sleep(1000);
+    if (t.badgesOf(NAME_B).unread !== 0) throw new Error('unread came back while viewing');
+    t.selectDm(NAME_A);
+    t.activeName = NAME_A;
+  });
+
+  // ---- 10. status strip ----------------------------------------------------------------------------------------------------------
+  await t.step('status strip text equals the TUI status line', async () => {
+    await t.showView('Chat');
+    const stripText = await t.waitFor(
+      'status strip text',
+      () => strip(t.statusStripText()),
+      30_000,
+    );
+    await t.showView('Terminal');
+    await t.sleep(500);
+    const rows = t.termLines().map(strip).filter(Boolean);
+    t.fact('statusStrip', stripText);
+    t.fact('terminalTail', rows.slice(-8));
+    await t.showView('Chat');
+    if (
+      !rows.some(
+        (r) => r === stripText || r.includes(stripText) || (stripText.includes(r) && r.length > 8),
+      )
+    ) {
+      throw new Error(`strip "${stripText}" is not in the terminal tail`);
+    }
+    return stripText;
+  });
+
+  // ---- 10b. P3 Slack layer ---------------------------------------------------------------------------------------------------
+  const rowOf = (name) =>
+    [...document.querySelectorAll('.side .row')].find(
+      (r) => r.querySelector('.nm')?.textContent === name,
+    );
+  const sel = (name) => `.side .row[data-dm="${t.dm(name).id}"]`;
+
+  await t.step('P3: a new section holds a DM and keeps it after a re-read', async () => {
+    await t.showView('Chat');
+    await t.chooseNew('New section');
+    const input = await t.waitFor('section name field', () =>
+      document.querySelector('input[aria-label="Section name"]'),
+    );
+    input.focus();
+    t.typeFocused('Live checks');
+    t.clickButton(document.querySelector('.side-add'), 'Add');
+    await t.waitFor('section shown', () =>
+      [...document.querySelectorAll('.side [data-kind="section"]')].some((s) =>
+        (s.textContent || '').includes('Live checks'),
+      ),
+    );
+    t.contextMenuOn(sel(NAME_B));
+    const item = await t.waitFor('move item', () =>
+      [...document.querySelectorAll('[role="menuitem"]')].find(
+        (b) => (b.textContent || '') === 'Move to Live checks',
+      ),
+    );
+    item.click();
+    await t.waitFor('DM moved', () => {
+      const sec = [...document.querySelectorAll('.side [data-kind="section"]')].find((s) =>
+        (s.textContent || '').includes('Live checks'),
+      );
+      return !!sec && !!sec.querySelector(`[data-dm="${t.dm(NAME_B).id}"]`);
+    });
+    await t.reread();
+    const sec = [...document.querySelectorAll('.side [data-kind="section"]')].find((s) =>
+      (s.textContent || '').includes('Live checks'),
+    );
+    if (!sec || !sec.querySelector(`[data-dm="${t.dm(NAME_B).id}"]`)) {
+      throw new Error('the backend did not keep the DM in its section');
+    }
+  });
+
+  await t.step(
+    'P3: the + menu offers New session, New section, New divider and New section from folder',
+    async () => {
+      const plus = document.querySelector('aside.side button[aria-label="Create new"]');
+      plus.click();
+      const items = await t.waitFor('+ menu items', () => {
+        const list = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')];
+        return list.length === 4 ? list.map((b) => (b.textContent || '').trim()) : null;
+      });
+      const want = ['New session', 'New section', 'New divider', 'New section from folder...'];
+      if (items.join('|') !== want.join('|')) throw new Error(`menu items: ${items.join(' | ')}`);
+      await t.waitFor('focus in the menu', () => document.activeElement?.closest('[role="menu"]'));
+      t.chord('ArrowDown');
+      t.chord('Escape');
+      await t.waitFor('menu closed', () => !document.querySelector('[role="menu"]'));
+      if (document.activeElement !== plus) throw new Error('focus did not return to the + button');
+    },
+  );
+
+  await t.step('P3: Terminal look... opens Preferences > Terminal at the DM row', async () => {
+    t.contextMenuOn(sel(NAME_A));
+    const item = await t.waitFor('Terminal look item', () =>
+      [...document.querySelectorAll('[role="menuitem"]')].find(
+        (b) => (b.textContent || '') === 'Terminal look...',
+      ),
+    );
+    item.click();
+    const row = await t.waitFor('the DM terminal row', () =>
+      document.querySelector(
+        `.prefs [data-testid="term-row-${t.dm(NAME_A).id}"][data-target="true"]`,
+      ),
+    );
+    if (!document.querySelector('.prefs [data-testid="prefs-terminal"]'))
+      throw new Error('Preferences did not open on the Terminal tab');
+    if (!row.contains(document.activeElement)) throw new Error('focus is not on the DM row');
+    window.__PR_STORE__.closePanel();
+    await t.waitFor('prefs closed', () => !document.querySelector('.prefs'));
+  });
+
+  await t.step('P3: Cmd+K opens a DM by name', async () => {
+    t.chord('k', { meta: true });
+    await t.waitFor('switcher', () =>
+      document.querySelector('[role="dialog"][aria-label="Quick switcher"]'),
+    );
+    document.querySelector('input[aria-label="Jump to a session"]').focus();
+    t.typeFocused(NAME_B.slice(0, 3));
+    await t.sleep(200);
+    t.chord('Enter');
+    await t.waitFor('DM opened', () => t.activeId() === t.dm(NAME_B).id);
+    t.activeName = NAME_B;
+    t.selectDm(NAME_A);
+    t.activeName = NAME_A;
+  });
+
+  await t.step(
+    'P3: a draft shows a pencil, survives a DM switch and a backend re-read',
+    async () => {
+      const box = document.querySelector(
+        '[data-testid="chat"]:not(.chat--hidden) [data-testid="composer-input"]',
+      );
+      box.focus();
+      t.typeFocused('unsent live draft');
+      await t.sleep(900);
+      t.selectDm(NAME_B);
+      t.activeName = NAME_B;
+      await t.waitFor('draft pencil on A', () =>
+        rowOf(NAME_A)?.querySelector('[data-testid="draft-mark"]'),
+      );
+      // The marker after a re-read comes from the backend's session_list, so it was stored.
+      await t.reread();
+      if (!rowOf(NAME_A)?.querySelector('[data-testid="draft-mark"]'))
+        throw new Error('draft not stored by the backend');
+      t.selectDm(NAME_A);
+      t.activeName = NAME_A;
+      const v = await t.waitFor('draft restored', () => {
+        const b = document.querySelector(
+          '[data-testid="chat"]:not(.chat--hidden) [data-testid="composer-input"]',
+        );
+        return b && b.value ? b.value : '';
+      });
+      if (v !== 'unsent live draft') throw new Error(`draft came back as "${v}"`);
+    },
+  );
+
+  await t.step(
+    'P3: pin a message; a reaction reaches the label list and never the PTY',
+    async () => {
+      // A fresh short turn in beta (alpha holds the unsent draft), so the newest message is
+      // on screen and not scrolled out of the virtualized log.
+      t.selectDm(NAME_B);
+      t.activeName = NAME_B;
+      await t.waitFor('on beta', () => t.badge(NAME_B).active, 5000);
+      await t.sendFromComposer('Reply with exactly the single word PINME and nothing else.');
+      await t.waitFor(
+        'assistant PINME',
+        () => t.assistantTexts().some((x) => /PINME/.test(x)),
+        TURN_MS,
+      );
+      await turnIdle(NAME_B);
+      const msg = await t.waitFor('an assistant message', () =>
+        [
+          ...document.querySelectorAll(
+            '[data-testid="chat"]:not(.chat--hidden) .msg[data-kind="assistant"]',
+          ),
+        ].pop(),
+      );
+      const before = t.termText().length;
+      const key = msg.dataset.key;
+      msg.querySelector('.hbar button[aria-label="Pin"]').click();
+      await t.waitFor('pin mark', () =>
+        document.querySelector(`.msg[data-key="${key}"] .mtag[data-mark="pin"]`),
+      );
+      msg.querySelector('.hbar button[aria-label="React"]').click();
+      const pick = await t.waitFor('emoji picker', () =>
+        document.querySelector('.picker .emoji[data-emoji="✅"]'),
+      );
+      pick.click();
+      await t.waitFor('reaction chip', () =>
+        document.querySelector(`.msg[data-key="${key}"] .rchip[data-emoji="✅"]`),
+      );
+      await t.sleep(1500);
+      if (t.termText().includes('✅')) throw new Error('the reaction reached the terminal');
+      if (t.termText().length !== before) t.fact('termGrewDuringReaction', true);
+    },
+  );
+
+  // ---- 10c. folder sections ----------------------------------------------------------------------------------------------
+  // The folder picker is a native dialog, so the section is made through the store with the path
+  // the picker would return. Everything after that is the real sidebar.
+  let folderSection = '';
+  await t.step(
+    'folder: a forgotten session lists as a row and resumes with its history',
+    async () => {
+      await t.newDm(A, 'forgotten');
+      t.activeName = 'forgotten';
+      await ready('forgotten');
+      await t.sendFromComposer('Reply with exactly the single word LANTERN and nothing else.');
+      await t.waitFor(
+        'assistant LANTERN',
+        () => t.assistantTexts().some((x) => /LANTERN/.test(x)),
+        TURN_MS,
+      );
+      await turnIdle('forgotten');
+      // Forget the DM: the process ends, the transcript stays.
+      await window.__PR_STORE__.deleteSession(t.dm('forgotten').id);
+      t.selectDm(NAME_A);
+      t.activeName = NAME_A;
+      folderSection = await window.__PR_STORE__.createFolderSection(A);
+      if (!folderSection) throw new Error('the folder section was not created');
+      const found = await t.waitFor(
+        'the forgotten session in the listing',
+        () =>
+          window.__PR_STORE__
+            .getSnapshot()
+            .folders[folderSection]?.sessions.find((x) => /LANTERN/.test(x.firstPrompt) && !x.dmId),
+        30_000,
+      );
+      t.clickSel(
+        `.side [data-folder-body="${folderSection}"] [data-fs-session="${found.sessionId}"]`,
+      );
+      const dm = await t.waitFor('resumed DM in the section', () =>
+        window.__PR_STORE__.getSnapshot().sessions.find((x) => x.sectionId === folderSection),
+      );
+      t.activeName = dm.name;
+      await t.waitFor(
+        'history in chat',
+        () => t.userTexts().some((x) => /LANTERN/.test(x)),
+        60_000,
+      );
+      await t.waitFor(
+        'row gone from the list',
+        () => !document.querySelector(`[data-fs-session="${found.sessionId}"]`),
+      );
+      await ready(dm.name);
+      t.selectDm(NAME_A);
+      t.activeName = NAME_A;
+    },
+  );
+
+  await t.step('folder: a DM from another folder keeps its process and wears a chip', async () => {
+    const before = await t.pgrep('--settings');
+    const b = t.dm(NAME_B).id;
+    const inSection = window.__PR_STORE__
+      .getSnapshot()
+      .sessions.filter((x) => x.sectionId === folderSection)
+      .map((x) => x.id);
+    await window.__PR_STORE__.dropSession(b, { kind: 'section', sectionId: folderSection }, [
+      ...inSection,
+      b,
+    ]);
+    const chip = await t.waitFor('folder chip', () =>
+      document.querySelector(`.side .row[data-dm="${b}"] [data-testid="folder-chip"]`),
+    );
+    if (chip.textContent.trim() !== B.split('/').pop()) {
+      throw new Error(`chip says "${chip.textContent}"`);
+    }
+    await t.sleep(1500);
+    const after = await t.pgrep('--settings');
+    const gone = before.filter((p) => !after.includes(p));
+    if (gone.length) throw new Error(`processes ended by the drop: ${gone}`);
+    if (t.dm(NAME_B).status === 'exited') throw new Error('beta ended');
+  });
+
+  // ---- 11. quit ----------------------------------------------------------------------------------------------------------------------
+  await t.step('quit path', async () => {
+    t.fact('hooksBeforeQuit', await hooks());
+  });
+  // Restart on the same data dir: phase 2 (above) checks what survived.
+  await t.restart('persist');
+};

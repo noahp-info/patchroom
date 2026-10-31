@@ -8,6 +8,14 @@ dist/
 /target/
 ui/dist/
 src-tauri/gen/
-.claude/.state/
-.claude/settings.local.json
 .env
+
+# Agent-local and personal files (scripts/check-repo-hygiene.sh enforces these).
+**/.claude/.state/
+**/.claude/settings.local.json
+CLAUDE.local.md
+MEMORY.md
+.env.*
+!.env.example
+*.jsonl
+!ui/tests/fixtures/*.jsonl

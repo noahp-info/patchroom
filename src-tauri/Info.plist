@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Patchroom brings the iTerm or Terminal tab that runs a session to the front when you click Show in iTerm.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Patchroom listens only while you dictate into a message. Audio stays on this Mac.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Patchroom turns your speech into text on this Mac. Nothing you say is sent anywhere.</string>
+</dict>
+</plist>

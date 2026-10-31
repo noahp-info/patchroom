@@ -1,0 +1,18 @@
+{
+  "note": "Synthetic copies of Slack's published sidebar theme strings, ten colors each.",
+  "themes": [
+    {
+      "name": "Aubergine",
+      "string": "#3F0E40,#350D36,#1164A3,#FFFFFF,#350D36,#FFFFFF,#2BAC76,#CD2553,#19171D,#FFFFFF"
+    },
+    {
+      "name": "Hoth",
+      "string": "#F8F8FA,#F8F8FA,#121016,#FFFFFF,#121016,#121016,#2BAC76,#CD2553,#FFFFFF,#121016"
+    },
+    {
+      "name": "Monument",
+      "string": "#0D7E83,#F8F8FA,#F15340,#FFFFFF,#0A6569,#FFFFFF,#F15340,#F15340,#0D7E83,#FFFFFF"
+    }
+  ],
+  "bad": ["not a theme", "#3F0E40,#350D36,#1164A3", "#3F0E40,#350D36,#1164A3,#GGGGGG"]
+}

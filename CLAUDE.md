@@ -42,6 +42,13 @@ Run all checks before every push. CI runs the same set.
 - Merge only with the owner's consent, and never on red CI.
 - Poll CI at most once a minute: `gh pr checks --watch --interval 60`. The GitHub quota is shared.
 
+## Batch changes
+
+- Small feedback accumulates and ships as one PR. Never open one PR per chore.
+- Collect the batch on one branch, run every check locally, then push once.
+- Each push re-runs CI, and macOS minutes bill at 10x. A second push costs a second full run.
+- CI is path filtered (`.github/workflows/ci.yml`): docs-only changes run no build or test job, the macOS build runs only for Rust, Tauri config, icons and bundle resources, and Playwright only for `ui/`. A squash merge of an up-to-date branch does not re-run on `dev`. Rebase onto `dev` before the merge to get that skip.
+
 ## Spec principles (do not violate)
 
 1. Wrapper, not replacement: each session is the real CLI in a real PTY from the login shell.
@@ -50,6 +57,38 @@ Run all checks before every push. CI runs the same set.
 4. Never edit user config. Inject hooks per launch (`--settings <json>`).
 5. Local only: no network listeners, no telemetry. Bridge is a `0600` unix socket.
 6. Sync-ready data: SQLite, ULID ids, authorship on every row.
+
+## UI work: spacing rule (hard)
+
+- A control row and the text next to it are always at least the group gap apart: `--group-gap`, 12px (`ui/src/theme/base.css`).
+- Never let blocks touch. A button row, field, segmented control or list of controls never sits flush against a hint, description or status line.
+- Use the token, not a literal. `ui/tests/prefs-spacing.spec.ts` enforces it in Settings.
+- Details and the inside-a-card exception: DESIGN.md, Layout, Spacing rule.
+
+## UI work: ring rule (hard)
+
+- Any outline, ring, border or highlight box keeps at least `--ring-pad` (8px) between itself and its content.
+- Two outlined siblings never touch: at least `--ring-gap` (6px) apart.
+- Give every row in a list the ring room, so a row that gains a ring never shifts.
+- Use the tokens (`ui/src/theme/base.css`), never literals. `ringFindings` in `ui/tests/qa.ts` enforces it in Settings, the sidebar, menus and pickers.
+- Single-line controls (buttons, fields, chips, segmented controls) are exempt. Their height sets the room.
+
+## UI work: overlap rule (hard)
+
+- Nothing draws over anything else unless it is an intentional layer: a menu, picker, popover, dialog or the screenshot overlay.
+- A hover bar or toolbar never covers content. Reserve room for it in flow or put it in a gutter.
+- Text never clips without an ellipsis. Nothing scrolls the window sideways.
+- A narrow window collapses controls (container queries), it never stacks them on each other. The name wins room before the path.
+- Every overlay registers with the overlay registry (`useOverlay`, `ui/src/state/overlays.ts`). The side-pane viewer is a native view above all HTML, so it steps aside for any registered overlay.
+- Every build runs `expectNoOverlap` (`ui/tests/qa.ts`) through `ui/tests/overlap-qa.spec.ts`: each main surface, every Settings section, pickers, the hover bar and every overlay with the side pane open, at the minimum window, a narrow split and 1440, in both themes. A new surface or overlay gets a step there.
+- Before the single push of a UI batch, run the vision pass: screenshot the same surfaces and widths, give them to fresh context-free judge subagents with the 10-point checklist (text overlap, clipping, wrapping, tap targets, spacing, overflow, missing content, readability, fixed bars covering content, window chrome). Fix every critical and major finding. Put the findings table in the PR body.
+
+## UI work: first-time hints
+
+- Every feature ships with its first-use path designed. If a person could miss the setting behind it, add a hint.
+- Use the one shared hint (`ui/src/components/Hint.tsx`, entries in `ui/src/lib/hints.ts`). Seen ids live in prefs (`hints.seen`).
+- At most one hint at a time. It shows once, ever. It is dismissible, sits in flow and never blocks.
+- Each hint has a button that opens the setting it mentions.
 
 ## UI work: de-slop before merge
 
@@ -61,3 +100,14 @@ Every UI change runs the `/impeccable` skill (critique and polish) before merge.
 - Tauri capabilities: grant per-feature permissions in `src-tauri/capabilities/`. No wildcards.
 - No secrets in the tree. gitleaks runs in the pre-commit hook and CI.
 - Do not modify files under a user's `~/.claude` or shell profiles from app code or tests.
+
+## Repo hygiene (hard; this repo is public)
+
+- Never commit agent-local or personal files: `.claude/settings.local.json`, `.claude/.state/`, `CLAUDE.local.md`, `MEMORY.md`, `.env` and `.env.*` (`.env.example` is fine).
+- Never commit Claude transcripts. A `.jsonl` file lives only under `ui/tests/fixtures/`, and only as a scrubbed recording from a `/tmp` test run.
+- Never commit a real home path, email or machine detail. Use a placeholder: `/Users/alex/...`, `/home/runner/...`. The allowlist is at the top of `scripts/check-repo-hygiene.sh`.
+- Plans, gauntlet bars and notes that name other projects or local paths live outside the repo.
+- `scripts/check-repo-hygiene.sh` enforces this. The pre-commit hook runs it on staged files, and the CI `changes` job runs it on the whole tree.
+- `scripts/test-repo-hygiene.sh` proves every rule still fires. Change both together.
+- Commits carry a GitHub noreply email (`git config user.email <id>+<login>@users.noreply.github.com`). `scripts/check-author-emails.sh` checks it in the pre-push hook and in CI on every PR.
+- If the check fires, fix the file. Never bypass it with `--no-verify`.

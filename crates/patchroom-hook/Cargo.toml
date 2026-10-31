@@ -1,14 +1,26 @@
 [package]
 name = "patchroom-hook"
-description = "Tiny binary that forwards CLI hook JSON to the Patchroom bridge socket."
+description = "Tiny binaries: patchroom-hook forwards CLI hook JSON to the Patchroom bridge socket; patchroom-statusline wraps the user statusLine."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-[lints]
-workspace = true
+[[bin]]
+name = "patchroom-hook"
+path = "src/main.rs"
+
+[[bin]]
+name = "patchroom-statusline"
+path = "src/statusline.rs"
 
 [dependencies]
-patchroom-core = { path = "../patchroom-core" }
+patchroom-bridge = { path = "../patchroom-bridge" }
+serde_json = "1"
+
+[dev-dependencies]
+portable-pty = "0.9"
+
+[lints]
+workspace = true

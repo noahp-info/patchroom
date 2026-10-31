@@ -1,0 +1,614 @@
+import { expect, test, type Page } from '@playwright/test';
+import { openChat, openWithDm, revealRow, seedChat, watchErrors } from './helpers';
+
+// Ask widgets: permission, AskUserQuestion and plan approval, answered from chat or the terminal.
+
+type Answer = { id: string; promptId: string; answer: unknown };
+
+const answers = (page: Page): Promise<Answer[]> =>
+  page.evaluate(() => window.__PR_MOCK__!.answers as Answer[]);
+
+async function prompt(page: Page, id: string, which: 'permission' | 'question' | 'plan') {
+  await page.evaluate(
+    ({ sid, w }) => {
+      const p = {
+        permission: {
+          promptId: 'p-perm',
+          kind: 'permission' as const,
+          toolName: 'Bash',
+          toolInput: { command: 'rm -rf build && cargo build' },
+          toolUseId: 'tu-new',
+        },
+        question: {
+          promptId: 'p-q',
+          kind: 'question' as const,
+          toolName: 'AskUserQuestion',
+          toolInput: {},
+          toolUseId: 'tu-q-new',
+          questions: [
+            {
+              question: 'When the bridge times out, what should the hook do?',
+              header: 'Timeout',
+              multiSelect: false,
+              options: [
+                {
+                  label: 'Fall through to the TUI (Recommended)',
+                  description: 'Return no decision.',
+                },
+                { label: 'Deny the tool call', description: 'Safer when unattended.' },
+              ],
+            },
+            {
+              question: 'Which checks should run?',
+              header: 'Checks',
+              multiSelect: true,
+              options: [{ label: 'Unit' }, { label: 'Lint' }, { label: 'E2E' }],
+            },
+          ],
+        },
+        plan: {
+          promptId: 'p-plan',
+          kind: 'plan' as const,
+          toolName: 'ExitPlanMode',
+          toolInput: { plan: '## Plan\n\n1. Add the timeout\n2. Add a test\n' },
+          toolUseId: 'tu-plan-new',
+        },
+      }[w];
+      window.__PR_MOCK__!.emitPrompt(sid, p);
+    },
+    { sid: id, w: which },
+  );
+}
+
+test.describe('ask widgets', () => {
+  test('permission: Allow answers from chat and the widget shows how it resolved', async ({
+    page,
+  }) => {
+    const errs = watchErrors(page);
+    const id = await openChat(page, []);
+    await prompt(page, id, 'permission');
+    const ask = page.locator('.ask[data-kind="permission"]');
+    await expect(ask).toBeVisible();
+    await expect(ask).toContainText('Claude wants to use Bash');
+    await expect(ask).toContainText('rm -rf build && cargo build');
+    await expect(ask.locator('.needs-pill')).toHaveText('Needs you');
+    await ask.getByRole('button', { name: 'Allow', exact: true }).click();
+    expect(await answers(page)).toEqual([{ id, promptId: 'p-perm', answer: { kind: 'allow' } }]);
+    await expect(ask).toHaveAttribute('data-state', 'resolved');
+    await expect(ask.locator('.ask-done')).toHaveText('Allowed in chat');
+    await expect(ask.getByRole('button', { name: 'Allow', exact: true })).toHaveCount(0);
+    expect(errs).toEqual([]);
+  });
+
+  test('permission: Deny and Always allow send their own answers', async ({ page }) => {
+    const id = await openChat(page, []);
+    await prompt(page, id, 'permission');
+    const ask = page.locator('.ask[data-kind="permission"]');
+    await ask.getByRole('button', { name: 'Always allow' }).click();
+    await expect(ask.locator('.ask-done')).toHaveText('Always allowed in chat');
+    await page.evaluate((sid) => {
+      window.__PR_MOCK__!.emitPrompt(sid, {
+        promptId: 'p-perm-2',
+        kind: 'permission',
+        toolName: 'Edit',
+        toolInput: { file_path: '/work/a.ts' },
+      });
+    }, id);
+    const second = page.locator('.ask[data-kind="permission"][data-state="pending"]');
+    await second.getByRole('button', { name: 'Deny' }).click();
+    expect((await answers(page)).map((a) => a.answer)).toEqual([
+      { kind: 'allow_always' },
+      { kind: 'deny' },
+    ]);
+    await expect(page.locator('.ask-done').last()).toHaveText('Denied in chat');
+  });
+
+  test('permission: Answer in terminal hands the prompt to the TUI, and the terminal answer resolves it', async ({
+    page,
+  }) => {
+    const id = await openChat(page, []);
+    await prompt(page, id, 'permission');
+    const ask = page.locator('.ask[data-kind="permission"]');
+    await ask.getByRole('button', { name: 'Answer in terminal' }).click();
+    // The hook is released so the TUI dialog answers; the terminal comes to the front.
+    expect(await answers(page)).toEqual([{ id, promptId: 'p-perm', answer: { kind: 'terminal' } }]);
+    await expect(page.getByTestId('view-label')).toHaveText('Terminal');
+    await expect(page.locator('.term--active .xterm')).toBeVisible();
+    await page.keyboard.press('Meta+j');
+    // Still pending, now waiting on the terminal: no second way to answer from chat.
+    await expect(ask).toHaveAttribute('data-state', 'pending');
+    await expect(ask).toContainText('Waiting for your answer in the terminal');
+    await expect(ask.getByRole('button', { name: 'Allow', exact: true })).toHaveCount(0);
+    // The terminal answers: the arbiter reports it and the widget settles.
+    await page.evaluate((sid) => window.__PR_MOCK__!.resolvePrompt(sid, 'p-perm', 'terminal'), id);
+    await expect(ask.locator('.ask-done')).toHaveText('Answered in terminal');
+    await expect(ask.getByRole('button')).toHaveCount(0);
+    expect(await answers(page)).toHaveLength(1);
+  });
+
+  test('permission: Always allow is offered only when the CLI suggested a rule', async ({
+    page,
+  }) => {
+    const id = await openChat(page, []);
+    await page.evaluate((sid) => {
+      window.__PR_MOCK__!.emitPrompt(sid, {
+        promptId: 'p-noalways',
+        kind: 'permission',
+        toolName: 'Bash',
+        toolInput: { command: 'ls' },
+        canAlways: false,
+      });
+    }, id);
+    const ask = page.locator('.ask[data-kind="permission"]');
+    await expect(ask.getByRole('button', { name: 'Allow', exact: true })).toBeVisible();
+    await expect(ask.getByRole('button', { name: 'Always allow' })).toHaveCount(0);
+  });
+
+  test('question: Answer in terminal releases the picker to the TUI', async ({ page }) => {
+    const id = await openChat(page, []);
+    await prompt(page, id, 'question');
+    await page
+      .locator('.ask[data-kind="question"]')
+      .getByRole('button', { name: 'Answer in terminal' })
+      .click();
+    expect(await answers(page)).toEqual([{ id, promptId: 'p-q', answer: { kind: 'terminal' } }]);
+    await expect(page.getByTestId('view-label')).toHaveText('Terminal');
+  });
+
+  test('permission: a timeout and an interrupt are shown as such', async ({ page }) => {
+    const id = await openChat(page, []);
+    await prompt(page, id, 'permission');
+    await page.evaluate((sid) => window.__PR_MOCK__!.resolvePrompt(sid, 'p-perm', 'timeout'), id);
+    await expect(page.locator('.ask-done')).toHaveText('Moved to terminal');
+    await page.evaluate((sid) => {
+      window.__PR_MOCK__!.emitPrompt(sid, {
+        promptId: 'p2',
+        kind: 'permission',
+        toolName: 'Bash',
+        toolInput: { command: 'ls' },
+      });
+      window.__PR_MOCK__!.resolvePrompt(sid, 'p2', 'interrupt');
+    }, id);
+    await expect(page.locator('.ask-done').last()).toHaveText('Interrupted');
+  });
+
+  test('permission: a timed-out card says where the prompt went and opens the terminal', async ({
+    page,
+  }) => {
+    const errs = watchErrors(page);
+    const id = await openChat(page, []);
+    await prompt(page, id, 'permission');
+    await page.evaluate((sid) => window.__PR_MOCK__!.resolvePrompt(sid, 'p-perm', 'timeout'), id);
+    const ask = page.locator('.ask[data-kind="permission"]');
+    await expect(ask).toHaveAttribute('data-state', 'resolved');
+    const moved = ask.locator('[data-moved="terminal"]');
+    await expect(moved).toContainText('Moved to the terminal after 5 min.');
+    // Not a dead label: one button, and it only shows the terminal (the hook is long gone).
+    await moved.getByRole('button', { name: 'Answer in terminal' }).click();
+    await expect(page.getByTestId('view-label')).toHaveText('Terminal');
+    expect(await answers(page)).toEqual([]);
+    // An interrupted card has no such row.
+    await page.keyboard.press('Meta+j');
+    await page.evaluate((sid) => {
+      window.__PR_MOCK__!.emitPrompt(sid, {
+        promptId: 'p-int',
+        kind: 'permission',
+        toolName: 'Bash',
+        toolInput: { command: 'ls' },
+      });
+      window.__PR_MOCK__!.resolvePrompt(sid, 'p-int', 'interrupt');
+    }, id);
+    await expect(page.locator('[data-moved="terminal"]')).toHaveCount(1);
+    expect(errs).toEqual([]);
+  });
+
+  test('question: stays answerable long past the old two-minute limit', async ({ page }) => {
+    await page.clock.install();
+    const id = await openChat(page, []);
+    await prompt(page, id, 'question');
+    const ask = page.locator('.ask[data-kind="question"]');
+    await expect(ask).toHaveAttribute('data-state', 'pending');
+    // Fake time: well past the old 120 s bridge hold, and past the 5 min permission wait.
+    await page.clock.runFor('30:00');
+    await expect(ask).toHaveAttribute('data-state', 'pending');
+    await expect(ask.locator('.needs-pill')).toHaveText('Needs you');
+    await expect(ask.locator('[data-moved]')).toHaveCount(0);
+    await ask.getByRole('radio', { name: /Fall through/ }).check();
+    await ask.getByRole('checkbox', { name: 'Unit' }).check();
+    await ask.getByRole('button', { name: 'Send answer' }).click();
+    expect((await answers(page)).map((a) => a.answer)).toEqual([
+      {
+        kind: 'questions',
+        answers: {
+          'When the bridge times out, what should the hook do?': 'Fall through to the TUI',
+          'Which checks should run?': 'Unit',
+        },
+      },
+    ]);
+  });
+
+  test('question and plan on the permission path render as their own cards, never raw JSON', async ({
+    page,
+  }) => {
+    const errs = watchErrors(page);
+    const id = await openChat(page, []);
+    const questions = [
+      {
+        question: 'Which database?',
+        header: 'DB',
+        multiSelect: false,
+        options: [{ label: 'SQLite' }, { label: 'Postgres' }],
+      },
+    ];
+    // The backend's shape: a `question` prompt with no toolUseId (PermissionRequest has none).
+    await page.evaluate(
+      ({ sid, qs }) =>
+        window.__PR_MOCK__!.emitPrompt(sid, {
+          promptId: 'p-pq',
+          kind: 'question',
+          toolName: 'AskUserQuestion',
+          toolInput: { questions: qs },
+          questions: qs,
+        }),
+      { sid: id, qs: questions },
+    );
+    const q = page.locator('.ask[data-kind="question"]');
+    await expect(q).toContainText('Which database?');
+    await q.getByRole('radio', { name: 'Postgres' }).check();
+    await q.getByRole('button', { name: 'Send answer' }).click();
+    expect((await answers(page)).map((a) => a.answer)).toEqual([
+      { kind: 'questions', answers: { 'Which database?': 'Postgres' } },
+    ]);
+    // A plain permission prompt for either tool (an older backend) still shows the card.
+    await page.evaluate(
+      ({ sid, qs }) => {
+        const m = window.__PR_MOCK__!;
+        m.emitPrompt(sid, {
+          promptId: 'p-rawq',
+          kind: 'permission',
+          toolName: 'AskUserQuestion',
+          toolInput: { questions: qs },
+        });
+        m.emitPrompt(sid, {
+          promptId: 'p-rawp',
+          kind: 'permission',
+          toolName: 'ExitPlanMode',
+          toolInput: { plan: '## Plan\n\n1. Ship it\n' },
+        });
+      },
+      { sid: id, qs: questions },
+    );
+    const rawq = page.locator('.ask[data-kind="question"][data-state="pending"]');
+    await expect(rawq).toContainText('Claude is asking');
+    await expect(rawq).toContainText('Which database?');
+    const rawp = page.locator('.ask[data-kind="plan"][data-state="pending"]');
+    await expect(rawp).toContainText('Claude has a plan');
+    await expect(rawp.locator('.ask-plan')).toContainText('Ship it');
+    await expect(page.locator('.ask-pre')).toHaveCount(0);
+    await expect(page.getByText('"questions"')).toHaveCount(0);
+    await expect(page.getByText('Claude wants to use AskUserQuestion')).toHaveCount(0);
+    // Chat cannot answer those: the terminal picker does.
+    await expect(rawq.getByRole('button', { name: 'Send answer' })).toHaveCount(0);
+    await rawq.getByRole('button', { name: 'Answer in terminal' }).click();
+    expect((await answers(page)).at(-1)).toEqual({
+      id,
+      promptId: 'p-rawq',
+      answer: { kind: 'terminal' },
+    });
+    await expect(page.getByTestId('view-label')).toHaveText('Terminal');
+    expect(errs).toEqual([]);
+  });
+
+  test('question: single select, with a Recommended tag, sends the label', async ({ page }) => {
+    const id = await openChat(page, []);
+    await prompt(page, id, 'question');
+    const ask = page.locator('.ask[data-kind="question"]');
+    await expect(ask).toContainText('Claude is asking');
+    await expect(ask.locator('.rec')).toHaveText('Recommended');
+    const send = ask.getByRole('button', { name: 'Send answer' });
+    await expect(send).toBeDisabled();
+    await ask.getByRole('radio', { name: /Fall through to the TUI/ }).check();
+    await expect(send).toBeDisabled(); // the second question is still open
+    await ask.getByRole('checkbox', { name: /Unit/ }).check();
+    await ask.getByRole('checkbox', { name: /E2E/ }).check();
+    await expect(send).toBeEnabled();
+    await send.click();
+    expect(await answers(page)).toEqual([
+      {
+        id,
+        promptId: 'p-q',
+        answer: {
+          kind: 'questions',
+          answers: {
+            'When the bridge times out, what should the hook do?': 'Fall through to the TUI',
+            'Which checks should run?': 'Unit, E2E',
+          },
+        },
+      },
+    ]);
+    await expect(ask.locator('.ask-done')).toHaveText('Answered in chat');
+    await expect(ask.locator('.qdone-a').first()).toHaveText('Fall through to the TUI');
+  });
+
+  test('question: Other takes free text, single and multi', async ({ page }) => {
+    const id = await openChat(page, []);
+    await prompt(page, id, 'question');
+    const ask = page.locator('.ask[data-kind="question"]');
+    const send = ask.getByRole('button', { name: 'Send answer' });
+    // Typing in Other selects it and drops the radio choice.
+    await ask.getByRole('radio', { name: /Deny the tool call/ }).check();
+    await ask
+      .getByLabel('Other answer for: When the bridge times out, what should the hook do?')
+      .fill('Retry once, then fall through');
+    await expect(ask.getByRole('radio', { name: /Deny the tool call/ })).not.toBeChecked();
+    await ask.getByRole('checkbox', { name: /Lint/ }).check();
+    await ask.getByLabel('Other answer for: Which checks should run?').fill('smoke test');
+    await expect(send).toBeEnabled();
+    await send.click();
+    const [a] = await answers(page);
+    expect(a.answer).toEqual({
+      kind: 'questions',
+      answers: {
+        'When the bridge times out, what should the hook do?': 'Retry once, then fall through',
+        'Which checks should run?': 'Lint, smoke test',
+      },
+    });
+  });
+
+  test('question: the Other control lines up with the option controls', async ({ page }) => {
+    const id = await openChat(page, []);
+    await prompt(page, id, 'question');
+    const ask = page.locator('.ask[data-kind="question"]');
+    for (const block of await ask.locator('.qblock').all()) {
+      const opt = await block.locator('.opt .radio').first().boundingBox();
+      const other = await block.locator('.other .radio').boundingBox();
+      expect(opt && other).toBeTruthy();
+      expect(Math.abs(other!.x - opt!.x)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test('question: an empty Other blocks Send', async ({ page }) => {
+    const id = await openChat(page, []);
+    await prompt(page, id, 'question');
+    const ask = page.locator('.ask[data-kind="question"]');
+    await ask.getByRole('radio', { name: 'Other' }).first().check();
+    await ask.getByRole('checkbox', { name: /Unit/ }).check();
+    await expect(ask.getByRole('button', { name: 'Send answer' })).toBeDisabled();
+  });
+
+  test('question: answered in the terminal, the widget says so and keeps no answers', async ({
+    page,
+  }) => {
+    const id = await openChat(page, []);
+    await prompt(page, id, 'question');
+    await page.evaluate((sid) => window.__PR_MOCK__!.resolvePrompt(sid, 'p-q', 'terminal'), id);
+    const ask = page.locator('.ask[data-kind="question"]');
+    await expect(ask.locator('.ask-done')).toHaveText('Answered in terminal');
+    await expect(ask.getByRole('button', { name: 'Send answer' })).toHaveCount(0);
+  });
+
+  test('a question prompt fills the matching question item instead of adding a second widget', async ({
+    page,
+  }) => {
+    const id = await openWithDm(page, 'mock', 'chat');
+    await seedChat(page, id, [
+      {
+        key: 'q-item',
+        ts: Date.now(),
+        kind: 'question',
+        toolUseId: 'tu-q-new',
+        state: 'pending',
+        questions: [
+          {
+            question: 'Pick one',
+            header: 'Pick',
+            multiSelect: false,
+            options: [{ label: 'A' }, { label: 'B' }],
+          },
+        ],
+      },
+    ]);
+    await prompt(page, id, 'question');
+    // The prompt carries its own questions; one widget exists, at the item's place.
+    await expect(page.locator('.ask[data-kind="question"]')).toHaveCount(1);
+    await expect(page.locator('.msg[data-key="q-item"] .ask[data-kind="question"]')).toHaveCount(1);
+  });
+
+  test('plan: Approve sends allow, Revise sends feedback as deny', async ({ page }) => {
+    const id = await openChat(page, []);
+    await prompt(page, id, 'plan');
+    const ask = page.locator('.ask[data-kind="plan"]');
+    await expect(ask).toContainText('Claude has a plan');
+    await expect(ask).toContainText('Add the timeout');
+    await ask.getByRole('button', { name: 'Approve plan' }).click();
+    expect((await answers(page))[0].answer).toEqual({ kind: 'allow' });
+    await expect(ask.locator('.ask-done')).toHaveText('Plan approved in chat');
+
+    await prompt(page, id, 'plan'); // same id: ignored, no duplicate widget
+    await page.evaluate((sid) => {
+      window.__PR_MOCK__!.emitPrompt(sid, {
+        promptId: 'p-plan-2',
+        kind: 'plan',
+        toolName: 'ExitPlanMode',
+        toolInput: { plan: 'Second plan' },
+      });
+    }, id);
+    const second = page.locator('.ask[data-kind="plan"][data-state="pending"]');
+    await second.getByRole('button', { name: 'Revise' }).click();
+    await second.getByLabel('Revision feedback').fill('Add a rollback step');
+    await second.getByRole('button', { name: 'Send feedback' }).click();
+    expect((await answers(page))[1].answer).toEqual({
+      kind: 'deny',
+      message: 'Add a rollback step',
+    });
+  });
+
+  test('a pending prompt is announced and offers a jump when scrolled away', async ({ page }) => {
+    const id = await openChat(page);
+    await page.getByTestId('chat-log').evaluate((el) => (el.scrollTop = 0));
+    await prompt(page, id, 'permission');
+    await expect(
+      page.getByRole('status').filter({ hasText: 'request needs your answer' }),
+    ).toHaveCount(1);
+    const jump = page.getByTestId('jump-latest');
+    await expect(jump).toContainText('Needs you below');
+    await jump.click();
+    await expect(page.locator('.ask[data-kind="permission"]')).toBeVisible();
+  });
+
+  test('no "Needs you below" while the pending widget is on screen, even with a waiting tool row', async ({
+    page,
+  }) => {
+    const ts = '2026-10-14T10:00:00.000Z';
+    const N_BETWEEN = 6; // puts the waiting tool row in the overscan, just above the view
+    const filler = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        key: `f-${n}-${i}`,
+        ts,
+        kind: 'assistant',
+        text: `Line ${i} of the running commentary.`,
+      }));
+    const id = await openChat(page, [
+      ...filler(20),
+      {
+        key: 'tool-wait',
+        ts,
+        kind: 'tool',
+        toolUseId: 'tu-wait',
+        name: 'WebFetch',
+        input: { url: 'https://example.com' },
+        state: 'pending',
+      },
+      ...filler(N_BETWEEN),
+      // The prompt's own tool row: the widget renders inline here, mid-log.
+      {
+        key: 'tool-new',
+        ts,
+        kind: 'tool',
+        toolUseId: 'tu-new',
+        name: 'Bash',
+        input: { command: 'rm -rf build && cargo build' },
+        state: 'pending',
+      },
+    ]);
+    await prompt(page, id, 'permission');
+    await page.evaluate((sid) => {
+      window.__PR_MOCK__!.pushItems(
+        sid,
+        Array.from({ length: 40 }, (_, i) => ({
+          key: `after-${i}`,
+          ts: '2026-10-14T10:01:00.000Z',
+          kind: 'assistant' as const,
+          text: `Later line ${i}.`,
+        })),
+      );
+    }, id);
+    // Scroll so the widget sits fully in view with newer rows below it (not stuck to the end).
+    await revealRow(page, 'tool-new');
+    const ask = page.locator('.ask[data-state="pending"]');
+    for (let i = 0; i < 3; i++) {
+      await ask.evaluate((el) => {
+        const log = document.querySelector<HTMLElement>('[data-testid="chat-log"]')!;
+        log.scrollTop += el.getBoundingClientRect().top - log.getBoundingClientRect().top - 120;
+      });
+    }
+    // The waiting tool row is rendered (overscan) but above the visible area.
+    const where = await page.evaluate(() => {
+      const box = document.querySelector('[data-testid="chat-log"]')!.getBoundingClientRect();
+      const tool = document
+        .querySelector('.toolbox[data-state="pending"]')
+        ?.getBoundingClientRect();
+      const ask = document.querySelector('.ask[data-state="pending"]')!.getBoundingClientRect();
+      return {
+        toolAbove: tool ? tool.bottom <= box.top : null,
+        ok: ask.top >= box.top - 1 && ask.bottom <= box.bottom - 40,
+        dbg: [box.top, box.bottom, tool?.top, ask.top, ask.bottom],
+      };
+    });
+    expect(where.toolAbove).toBe(true);
+    const inView = where;
+    expect(inView.ok).toBe(true);
+    await expect(
+      page.getByTestId('jump-latest').filter({ hasText: 'Needs you below' }),
+    ).toHaveCount(0);
+  });
+
+  test('a repeated prompt:pending fills in the toolUseId of the open widget', async ({ page }) => {
+    // Old timestamps: an unlinked prompt goes to the end of the log, a linked one right after
+    // its tool row.
+    const id = await openChat(page, [
+      {
+        key: 'tool-late',
+        ts: '2026-01-01T10:00:00.000Z',
+        kind: 'tool',
+        toolUseId: 'tu-late',
+        name: 'Bash',
+        input: { command: 'make' },
+        state: 'pending',
+      },
+      {
+        key: 'after-tool',
+        ts: '2026-01-01T10:00:01.000Z',
+        kind: 'assistant',
+        text: 'Still going.',
+      },
+    ]);
+    const base = {
+      promptId: 'p-late',
+      kind: 'permission' as const,
+      toolName: 'Bash',
+      toolInput: { command: 'make' },
+    };
+    const order = () =>
+      page.evaluate(() =>
+        Array.from(document.querySelectorAll('.vrow')).map((r) =>
+          r.querySelector('.ask') ? 'ask' : (r.getAttribute('data-rk') ?? ''),
+        ),
+      );
+    await page.evaluate(([sid, p]) => window.__PR_MOCK__!.emitPrompt(sid, p), [id, base] as const);
+    await expect(page.locator('.ask[data-kind="permission"]')).toHaveCount(1);
+    expect((await order()).filter((k) => k !== '' && !k.startsWith('day')).slice(-1)).toEqual([
+      'ask',
+    ]);
+    await page.evaluate(
+      ([sid, p]) => window.__PR_MOCK__!.emitPrompt(sid, { ...p, toolUseId: 'tu-late' }),
+      [id, base] as const,
+    );
+    await expect
+      .poll(async () => {
+        const o = await order();
+        return o.indexOf('ask') < o.indexOf('after-tool');
+      })
+      .toBe(true);
+    await expect(page.locator('.ask[data-kind="permission"]')).toHaveCount(1);
+  });
+
+  test('a reloaded view catches up on prompts announced before it loaded', async ({ page }) => {
+    const id = await openChat(page, []);
+    await page.evaluate(async (sid) => {
+      window.__PR_MOCK__!.seedPrompt(sid, {
+        promptId: 'p-missed',
+        kind: 'permission',
+        toolName: 'Bash',
+        toolInput: { command: 'cargo test' },
+      });
+      await (
+        window as unknown as { __PR_CHATS__: Record<string, { reload(): Promise<void> }> }
+      ).__PR_CHATS__[sid].reload();
+    }, id);
+    await expect(page.locator('.ask[data-kind="permission"]')).toContainText('cargo test');
+  });
+
+  test('widgets are keyboard reachable: radios by arrow keys, buttons by Tab', async ({ page }) => {
+    const id = await openChat(page, []);
+    await prompt(page, id, 'question');
+    const ask = page.locator('.ask[data-kind="question"]');
+    const first = ask.getByRole('radio', { name: /Fall through/ });
+    await first.focus();
+    await page.keyboard.press('Space');
+    await expect(first).toBeChecked();
+    await page.keyboard.press('ArrowDown');
+    await expect(ask.getByRole('radio', { name: /Deny the tool/ })).toBeChecked();
+    await expect(ask.locator('.opt.sel')).toHaveCount(1);
+  });
+});

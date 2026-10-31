@@ -1,0 +1,31 @@
+{
+  "name": "patchroom-themes",
+  "owner": {
+    "name": "Patchroom"
+  },
+  "metadata": {
+    "description": "First-party Patchroom color themes. Data only, no code."
+  },
+  "plugins": [
+    {
+      "name": "patchroom-theme-homeroom",
+      "source": "./homeroom",
+      "description": "Deep jade sidebar band with a marigold active row. The default palette, from the Patchroom mark."
+    },
+    {
+      "name": "patchroom-theme-patch-bay",
+      "source": "./patch-bay",
+      "description": "Anodized panel greys, silkscreen ink, and four cable colors on warm paper."
+    },
+    {
+      "name": "patchroom-theme-ansi-slate",
+      "source": "./ansi-slate",
+      "description": "Cool slate with ANSI cyan, red and amber. Made for people who live in a terminal."
+    },
+    {
+      "name": "patchroom-theme-cool-paper",
+      "source": "./cool-paper",
+      "description": "Cool grey paper with copy-editor blue and red pencil."
+    }
+  ]
+}

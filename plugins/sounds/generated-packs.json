@@ -1,0 +1,585 @@
+{
+ "packs": [
+  {
+   "id": "patchtones",
+   "name": "Patch Tones",
+   "source": "Generated in the app (default)",
+   "blurb": "The current default. Soft sine and triangle tones.",
+   "notes": {
+    "needs": [
+     {
+      "f": 659.25,
+      "at": 0,
+      "len": 0.16,
+      "type": "sine",
+      "gain": 0.45
+     },
+     {
+      "f": 987.77,
+      "at": 0.13,
+      "len": 0.3,
+      "type": "sine",
+      "gain": 0.45
+     }
+    ],
+    "done": [
+     {
+      "f": 523.25,
+      "at": 0,
+      "len": 0.2,
+      "type": "triangle",
+      "gain": 0.45
+     },
+     {
+      "f": 659.25,
+      "at": 0.09,
+      "len": 0.2,
+      "type": "triangle",
+      "gain": 0.45
+     },
+     {
+      "f": 783.99,
+      "at": 0.18,
+      "len": 0.36,
+      "type": "triangle",
+      "gain": 0.45
+     }
+    ],
+    "message": [
+     {
+      "f": 880,
+      "at": 0,
+      "len": 0.11,
+      "type": "sine",
+      "gain": 0.4
+     }
+    ],
+    "error": [
+     {
+      "f": 220,
+      "at": 0,
+      "len": 0.2,
+      "type": "square",
+      "gain": 0.18,
+      "to": 174.61
+     },
+     {
+      "f": 174.61,
+      "at": 0.16,
+      "len": 0.3,
+      "type": "square",
+      "gain": 0.18,
+      "to": 130.81
+     }
+    ],
+    "bell": [
+     {
+      "f": 1318.51,
+      "at": 0,
+      "len": 0.7,
+      "type": "sine",
+      "gain": 0.4
+     },
+     {
+      "f": 2637.02,
+      "at": 0,
+      "len": 0.35,
+      "type": "sine",
+      "gain": 0.12
+     }
+    ],
+    "decision": [
+     {
+      "f": 783.99,
+      "at": 0,
+      "len": 0.14,
+      "type": "sine",
+      "gain": 0.45
+     },
+     {
+      "f": 659.25,
+      "at": 0.12,
+      "len": 0.14,
+      "type": "sine",
+      "gain": 0.45
+     },
+     {
+      "f": 987.77,
+      "at": 0.24,
+      "len": 0.32,
+      "type": "sine",
+      "gain": 0.45
+     }
+    ],
+    "due": [
+     {
+      "f": 1046.5,
+      "at": 0,
+      "len": 0.12,
+      "type": "triangle",
+      "gain": 0.45
+     },
+     {
+      "f": 1046.5,
+      "at": 0.18,
+      "len": 0.12,
+      "type": "triangle",
+      "gain": 0.45
+     },
+     {
+      "f": 1318.51,
+      "at": 0.36,
+      "len": 0.4,
+      "type": "triangle",
+      "gain": 0.45
+     }
+    ],
+    "session": [
+     {
+      "f": 392,
+      "at": 0,
+      "len": 0.25,
+      "type": "triangle",
+      "gain": 0.3,
+      "to": 523.25
+     }
+    ]
+   }
+  },
+  {
+   "id": "telegraph",
+   "name": "Telegraph",
+   "source": "Generated in the app",
+   "blurb": "Square-wave key taps, like a wire office. Very terminal.",
+   "notes": {
+    "needs": [
+     {
+      "f": 740,
+      "at": 0,
+      "len": 0.07,
+      "type": "square",
+      "gain": 0.16
+     },
+     {
+      "f": 740,
+      "at": 0.1,
+      "len": 0.07,
+      "type": "square",
+      "gain": 0.16
+     },
+     {
+      "f": 740,
+      "at": 0.2,
+      "len": 0.22,
+      "type": "square",
+      "gain": 0.16
+     }
+    ],
+    "done": [
+     {
+      "f": 880,
+      "at": 0,
+      "len": 0.06,
+      "type": "square",
+      "gain": 0.14
+     },
+     {
+      "f": 880,
+      "at": 0.09,
+      "len": 0.18,
+      "type": "square",
+      "gain": 0.14
+     }
+    ],
+    "message": [
+     {
+      "f": 990,
+      "at": 0,
+      "len": 0.05,
+      "type": "square",
+      "gain": 0.12
+     }
+    ],
+    "error": [
+     {
+      "f": 330,
+      "at": 0,
+      "len": 0.22,
+      "type": "square",
+      "gain": 0.16
+     },
+     {
+      "f": 330,
+      "at": 0.28,
+      "len": 0.22,
+      "type": "square",
+      "gain": 0.16
+     }
+    ],
+    "bell": [
+     {
+      "f": 1480,
+      "at": 0,
+      "len": 0.08,
+      "type": "square",
+      "gain": 0.12
+     },
+     {
+      "f": 1480,
+      "at": 0.12,
+      "len": 0.08,
+      "type": "square",
+      "gain": 0.12
+     }
+    ],
+    "decision": [
+     {
+      "f": 740,
+      "at": 0,
+      "len": 0.18,
+      "type": "square",
+      "gain": 0.15
+     },
+     {
+      "f": 880,
+      "at": 0.24,
+      "len": 0.07,
+      "type": "square",
+      "gain": 0.15
+     },
+     {
+      "f": 740,
+      "at": 0.35,
+      "len": 0.18,
+      "type": "square",
+      "gain": 0.15
+     }
+    ],
+    "due": [
+     {
+      "f": 880,
+      "at": 0,
+      "len": 0.07,
+      "type": "square",
+      "gain": 0.14
+     },
+     {
+      "f": 880,
+      "at": 0.1,
+      "len": 0.07,
+      "type": "square",
+      "gain": 0.14
+     },
+     {
+      "f": 880,
+      "at": 0.2,
+      "len": 0.07,
+      "type": "square",
+      "gain": 0.14
+     },
+     {
+      "f": 1175,
+      "at": 0.32,
+      "len": 0.2,
+      "type": "square",
+      "gain": 0.14
+     }
+    ],
+    "session": [
+     {
+      "f": 660,
+      "at": 0,
+      "len": 0.06,
+      "type": "square",
+      "gain": 0.12
+     },
+     {
+      "f": 990,
+      "at": 0.09,
+      "len": 0.06,
+      "type": "square",
+      "gain": 0.12
+     }
+    ]
+   }
+  },
+  {
+   "id": "nightshift",
+   "name": "Night Shift",
+   "source": "Generated in the app",
+   "blurb": "Low, rounded and quiet, for late sessions. Nothing sharp.",
+   "notes": {
+    "needs": [
+     {
+      "f": 392,
+      "at": 0,
+      "len": 0.3,
+      "type": "sine",
+      "gain": 0.4,
+      "lp": 1200
+     },
+     {
+      "f": 523.25,
+      "at": 0.22,
+      "len": 0.45,
+      "type": "sine",
+      "gain": 0.4,
+      "lp": 1200
+     }
+    ],
+    "done": [
+     {
+      "f": 261.63,
+      "at": 0,
+      "len": 0.5,
+      "type": "triangle",
+      "gain": 0.35,
+      "lp": 900
+     },
+     {
+      "f": 392,
+      "at": 0.12,
+      "len": 0.6,
+      "type": "triangle",
+      "gain": 0.3,
+      "lp": 900
+     }
+    ],
+    "message": [
+     {
+      "f": 523.25,
+      "at": 0,
+      "len": 0.18,
+      "type": "sine",
+      "gain": 0.3,
+      "lp": 1000
+     }
+    ],
+    "error": [
+     {
+      "f": 196,
+      "at": 0,
+      "len": 0.5,
+      "type": "triangle",
+      "gain": 0.4,
+      "to": 164.81,
+      "lp": 700
+     }
+    ],
+    "bell": [
+     {
+      "f": 659.25,
+      "at": 0,
+      "len": 0.9,
+      "type": "sine",
+      "gain": 0.3,
+      "lp": 1400
+     }
+    ],
+    "decision": [
+     {
+      "f": 329.63,
+      "at": 0,
+      "len": 0.3,
+      "type": "sine",
+      "gain": 0.35,
+      "lp": 1100
+     },
+     {
+      "f": 440,
+      "at": 0.25,
+      "len": 0.5,
+      "type": "sine",
+      "gain": 0.35,
+      "lp": 1100
+     }
+    ],
+    "due": [
+     {
+      "f": 349.23,
+      "at": 0,
+      "len": 0.35,
+      "type": "sine",
+      "gain": 0.35,
+      "lp": 1100
+     },
+     {
+      "f": 440,
+      "at": 0.3,
+      "len": 0.35,
+      "type": "sine",
+      "gain": 0.35,
+      "lp": 1100
+     },
+     {
+      "f": 523.25,
+      "at": 0.6,
+      "len": 0.6,
+      "type": "sine",
+      "gain": 0.35,
+      "lp": 1100
+     }
+    ],
+    "session": [
+     {
+      "f": 261.63,
+      "at": 0,
+      "len": 0.6,
+      "type": "sine",
+      "gain": 0.25,
+      "lp": 800,
+      "to": 329.63
+     }
+    ]
+   }
+  },
+  {
+   "id": "modular",
+   "name": "Modular",
+   "source": "Generated in the app",
+   "blurb": "Sawtooth through a filter with pitch glides. A patch-cable synth.",
+   "notes": {
+    "needs": [
+     {
+      "f": 220,
+      "at": 0,
+      "len": 0.35,
+      "type": "sawtooth",
+      "gain": 0.2,
+      "to": 440,
+      "lp": 1800
+     },
+     {
+      "f": 440,
+      "at": 0.3,
+      "len": 0.3,
+      "type": "sawtooth",
+      "gain": 0.18,
+      "lp": 2400
+     }
+    ],
+    "done": [
+     {
+      "f": 330,
+      "at": 0,
+      "len": 0.15,
+      "type": "sawtooth",
+      "gain": 0.16,
+      "lp": 2000
+     },
+     {
+      "f": 440,
+      "at": 0.12,
+      "len": 0.15,
+      "type": "sawtooth",
+      "gain": 0.16,
+      "lp": 2400
+     },
+     {
+      "f": 660,
+      "at": 0.24,
+      "len": 0.35,
+      "type": "sawtooth",
+      "gain": 0.16,
+      "lp": 3000
+     }
+    ],
+    "message": [
+     {
+      "f": 660,
+      "at": 0,
+      "len": 0.09,
+      "type": "sawtooth",
+      "gain": 0.14,
+      "lp": 2500
+     }
+    ],
+    "error": [
+     {
+      "f": 165,
+      "at": 0,
+      "len": 0.45,
+      "type": "sawtooth",
+      "gain": 0.22,
+      "to": 82.41,
+      "lp": 900
+     }
+    ],
+    "bell": [
+     {
+      "f": 880,
+      "at": 0,
+      "len": 0.5,
+      "type": "triangle",
+      "gain": 0.3,
+      "to": 1760
+     }
+    ],
+    "decision": [
+     {
+      "f": 440,
+      "at": 0,
+      "len": 0.25,
+      "type": "sawtooth",
+      "gain": 0.18,
+      "to": 330,
+      "lp": 1600
+     },
+     {
+      "f": 554.37,
+      "at": 0.22,
+      "len": 0.3,
+      "type": "sawtooth",
+      "gain": 0.16,
+      "lp": 2400
+     }
+    ],
+    "due": [
+     {
+      "f": 220,
+      "at": 0,
+      "len": 0.12,
+      "type": "sawtooth",
+      "gain": 0.18,
+      "lp": 1500
+     },
+     {
+      "f": 330,
+      "at": 0.12,
+      "len": 0.12,
+      "type": "sawtooth",
+      "gain": 0.18,
+      "lp": 1800
+     },
+     {
+      "f": 440,
+      "at": 0.24,
+      "len": 0.12,
+      "type": "sawtooth",
+      "gain": 0.18,
+      "lp": 2100
+     },
+     {
+      "f": 880,
+      "at": 0.36,
+      "len": 0.35,
+      "type": "sawtooth",
+      "gain": 0.16,
+      "lp": 3200
+     }
+    ],
+    "session": [
+     {
+      "f": 110,
+      "at": 0,
+      "len": 0.6,
+      "type": "sawtooth",
+      "gain": 0.16,
+      "to": 220,
+      "lp": 1200
+     }
+    ]
+   }
+  }
+ ]
+}

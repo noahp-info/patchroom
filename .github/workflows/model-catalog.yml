@@ -1,0 +1,54 @@
+# Weekly model catalog refresh. Reads the providers' published model lists (the public
+# models.dev catalog, no key and no secret), merges them with catalog/sources.json and opens a
+# PR into dev when ui/src/lib/models/catalog.json changed. Never runs on push or pull_request.
+# Needs the repo setting "Allow GitHub Actions to create and approve pull requests".
+name: Model catalog
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: model-catalog
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    name: Refresh the model catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: dev
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Merge the published model lists
+        run: node scripts/update-model-catalog.mjs
+      - name: Open a PR when the catalog changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- ui/src/lib/models/catalog.json; then
+            echo "No catalog change."
+            exit 0
+          fi
+          branch="chore/model-catalog-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add ui/src/lib/models/catalog.json
+          git commit -m "Model catalog: weekly refresh"
+          git push origin "$branch"
+          gh pr create --base dev --head "$branch" \
+            --title "Model catalog: weekly refresh" \
+            --body "Automated weekly refresh of ui/src/lib/models/catalog.json from the providers' published model lists (models.dev) merged with catalog/sources.json. To publish it between builds, sign it with patchroom-catalog-sign and upload it to the model-catalog release."
