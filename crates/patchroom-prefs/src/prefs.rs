@@ -1195,6 +1195,11 @@ mod tests {
             !p.chat.carry_draft,
             "the chat draft stays in chat by default"
         );
+        assert!(p.chat.up_history, "Up brings back sent messages by default");
+        let off = Prefs::default()
+            .patched(&json!({"chat": {"autoScroll": true, "upHistory": false}}))
+            .unwrap();
+        assert!(!off.chat.up_history && !off.chat.carry_draft);
         assert_eq!(p.emoji.chat, crate::models::Flavor::Apple);
         let p = Prefs::default()
             .patched(&json!({

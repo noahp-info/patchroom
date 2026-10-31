@@ -710,7 +710,7 @@ export interface Prefs {
    * Chat view. Absent: logs follow new messages, and the draft stays in chat on a switch to the
    * terminal (`carryDraft` on: it is typed into claude's input, unsent).
    */
-  chat?: { autoScroll: boolean; carryDraft?: boolean };
+  chat?: { autoScroll: boolean; carryDraft?: boolean; upHistory?: boolean };
   /** Fonts per area, and the chat font per section or session. Absent: base defaults. */
   fonts?: FontPrefs;
   /** On-device dictation in the composer. Absent: on, system language, Cmd+Shift+D, 8s. */

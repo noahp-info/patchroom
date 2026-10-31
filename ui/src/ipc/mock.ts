@@ -142,6 +142,8 @@ export interface MockControl {
    * interrupts: the session goes idle and the text returns to the prompt (`returned`).
    */
   queuedInput: Record<string, string[]>;
+  /** Queued input that Up took back out of Claude's queue, per DM. */
+  pulled: Record<string, string[]>;
   /** Claude reads the queued input: one user entry with every held message, in order. */
   dequeue(id: string): void;
   /** Esc during a turn with queued input: idle, nothing written, text back in the prompt. */
@@ -566,6 +568,7 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
     autoEcho: true,
     queuedInput: {},
     returned: {},
+    pulled: {},
     dequeue(id) {
       const held = control.queuedInput[id] ?? [];
       if (!held.length) return;
@@ -856,7 +859,11 @@ export function createMockIpc(opts: { banner?: boolean; persist?: boolean } = {}
       // Claude Code's queued input: Ctrl+X Ctrl+S sends it now, Esc interrupts the turn.
       const held = control.queuedInput[id]?.length ?? 0;
       const str = String.fromCharCode(...bytes);
-      if (held && str === '\x18\x13') setTimeout(() => control.dequeue(id), 20);
+      // Up in Claude's prompt pulls the whole queue back into its input; backspaces clear it.
+      if (held && str.startsWith('\x1b[A')) {
+        control.pulled[id] = [...(control.pulled[id] ?? []), ...control.queuedInput[id]];
+        control.queuedInput[id] = [];
+      } else if (held && str === '\x18\x13') setTimeout(() => control.dequeue(id), 20);
       else if (held && str === '\x1b') setTimeout(() => control.interrupt(id), 20);
       else if (str === '\r' && control.returned[id]?.length) {
         // Enter on text an interrupt put back in the prompt sends it.

@@ -572,6 +572,12 @@ export class AppStore {
       this.set({ error: `Could not send the message: ${String(err)}` });
       return 'error';
     }
+    if (outcome === 'sent' || outcome === 'queued') {
+      chat.noteSent(text);
+      // The third message in a session: Up can bring them back (shown once, ever).
+      if (chat.sentCount >= 3 && this.state.prefs?.chat?.upHistory !== false)
+        this.showHint('composer.history');
+    }
     if (outcome === 'blocked_dialog') {
       chat.setNotice({
         kind: 'blocked',
@@ -766,6 +772,30 @@ export class AppStore {
 
   removeQueued(id: string, qid: string): void {
     this.chat(id).removeQueued(qid);
+  }
+
+  /**
+   * Up on an empty composer with queued messages: take them back to edit, as Claude Code's own
+   * prompt does. Up in Claude's prompt pulls its whole queue into the input (joined by newlines)
+   * and empties the queue; the backspaces then clear that input, so nothing is left to send. A
+   * backspace on an empty prompt does nothing, so the count only has to be enough. Returns the
+   * text for the composer, or null when nothing waits.
+   */
+  pullQueued(id: string): string | null {
+    const chat = this.chat(id);
+    const held = chat.pendingQueued();
+    if (held.length === 0) return null;
+    const s = this.state.sessions.find((x) => x.id === id);
+    if (!s || s.status === 'exited' || s.mirror) return null;
+    const text = held.map((q) => q.text).join('\n');
+    const erase = '\x7f'.repeat(text.length + held.length + 8);
+    void this.ipc.sessionWrite(id, utf8ToBase64(`\x1b[A${erase}`)).catch(() => undefined);
+    for (const q of held) {
+      chat.removeQueued(q.id);
+      chat.forgetSent(q.text);
+    }
+    window.clearTimeout(this.queueTimers.get(id));
+    return text;
   }
 
   private started = false;

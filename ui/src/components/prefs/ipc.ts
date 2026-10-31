@@ -160,7 +160,7 @@ export interface Prefs {
   /** How emoji in chat are drawn. */
   emoji?: { chat: EmojiFlavor };
   /** Chat view: logs follow new messages. */
-  chat?: { autoScroll: boolean; carryDraft?: boolean };
+  chat?: { autoScroll: boolean; carryDraft?: boolean; upHistory?: boolean };
   /** Fonts per area, and the chat font per section or session (Settings > Themes > Fonts). */
   fonts?: FontPrefs;
   /** On-device dictation (Settings > Dictation). */

@@ -503,6 +503,14 @@ export function ChatView({
               active: visible,
               onUsed: () => store.showHint('dictation.settings'),
             }}
+            history={
+              prefs?.chat?.upHistory === false
+                ? undefined
+                : {
+                    entries: () => model.historyEntries(),
+                    pullQueued: () => store.pullQueued(id),
+                  }
+            }
           />
           {placed('strip')}
           <StatusStrip
