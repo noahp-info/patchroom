@@ -27,7 +27,7 @@ export const EVENT_INFO: Record<SoundEvent, { name: string; blurb: string }> = {
   bell: { name: 'Terminal bell', blurb: 'A terminal rang its bell.' },
   decision: { name: 'Decision', blurb: 'A choice needs your answer. Arrives in a later release.' },
   due: { name: 'Due', blurb: 'A reminder came due. Arrives in a later release.' },
-  session: { name: 'Session start', blurb: 'A session began. Arrives in a later release.' },
+  session: { name: 'Session start', blurb: 'A session began or resumed.' },
 };
 
 interface GeneratedPack {
@@ -88,9 +88,29 @@ export function notesPeak(notes: Note[]): number {
   return peak;
 }
 
+/**
+ * Resume (or create) the shared context inside the person's first click or key press. A webview
+ * that holds audio until a gesture then plays every later event sound without one.
+ */
+export function unlockOnGesture(target: Window = window): void {
+  const kinds = ['pointerdown', 'keydown'] as const;
+  const unlock = () => {
+    const c = context();
+    if (!c) return;
+    void c
+      .resume()
+      .catch(() => undefined)
+      .then(() => {
+        if (c.state === 'running')
+          for (const k of kinds) target.removeEventListener(k, unlock, true);
+      });
+  };
+  for (const k of kinds) target.addEventListener(k, unlock, true);
+}
+
 /** The shared audio context, or null where Web Audio is missing. */
 export function context(): AudioContext | null {
-  if (ctx) return ctx;
+  if (ctx && ctx.state !== 'closed') return ctx;
   const Ctor =
     window.AudioContext ??
     (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -117,7 +137,9 @@ export function synth(
   const notes = (GENERATED[packId] ?? GENERATED[DEFAULT_PACK]).notes[event];
   const c = context();
   if (!c || !notes) return false;
-  if (c.state === 'suspended') void c.resume().catch(() => undefined);
+  // WebKit can leave a context suspended (no gesture yet) or interrupted (sleep, a device
+  // change). Notes are scheduled on its clock, so they play once it runs again.
+  if (c.state !== 'running') void c.resume().catch(() => undefined);
   const t0 = c.currentTime + 0.01;
   const master = c.createGain();
   master.gain.value = effectiveGain({

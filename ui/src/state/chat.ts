@@ -1,4 +1,5 @@
 import type { DraftComment } from '../lib/comments';
+import { historyEntries } from '../lib/composerHistory';
 import type {
   ChatItem,
   Ipc,
@@ -245,6 +246,38 @@ export class ChatModel {
   replaceDraft(text: string): void {
     this.setDraft(text);
     for (const fn of this.draftListeners) fn();
+  }
+
+  // ---- composer history ------------------------------------------------------------------
+
+  /** Messages this window sent, oldest first, until the transcript has them (Up recalls them). */
+  private sentLog: string[] = [];
+
+  /** Messages sent from this window, for the first-time hint after the third. */
+  sentCount = 0;
+
+  /** A message went to Claude (sent or queued). */
+  noteSent(text: string): void {
+    if (text.trim() === '') return;
+    this.sentCount += 1;
+    this.sentLog.push(text);
+    if (this.sentLog.length > 500) this.sentLog.shift();
+  }
+
+  /** A queued message came back to the composer: it was never sent. */
+  forgetSent(text: string): void {
+    const i = this.sentLog.lastIndexOf(text);
+    if (i >= 0) this.sentLog.splice(i, 1);
+  }
+
+  /** What Up cycles through, oldest first: this session's messages, as Claude Code's prompt. */
+  historyEntries(): string[] {
+    const items: ChatItem[] = [];
+    for (const k of this.order) {
+      const it = this.byKey.get(k);
+      if (it) items.push(it);
+    }
+    return historyEntries(items, this.sentLog);
   }
 
   /** Paths of images pasted into the draft, as inserted (quoted). They stay in chat on a carry. */

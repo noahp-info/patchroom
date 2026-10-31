@@ -1,4 +1,5 @@
 import { HINTS, hintText, type HintDef, type HintId } from '../lib/hints';
+import { CopyLine } from './CopyLine';
 import { Icon } from './Icon';
 
 /** What a hint's buttons call: the app store, or a Settings section showing its own hint. */
@@ -28,6 +29,7 @@ export function Hint({
     <div className="hint" role="status" aria-live="polite" data-testid="hint" data-hint={id}>
       <Icon name="bell" />
       <span className="hint__text">{hintText(id, vars)}</span>
+      {h.code && <CopyLine text={h.code} label="Copy line" ariaLabel="Copy the guard line" />}
       <div className="hint__btns">
         {h.choices?.map((c) => (
           <button

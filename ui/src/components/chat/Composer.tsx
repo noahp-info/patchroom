@@ -21,6 +21,8 @@ import {
   type DictationPrefs,
 } from '../../lib/dictation';
 import type { DictationController, DictationSnapshot } from '../../state/dictation';
+import { overlayCount } from '../../state/overlays';
+import { caretRows, stepDown, stepUp, type Cycle, type Step } from '../../lib/composerHistory';
 import { Icon } from '../Icon';
 
 /** On-device dictation for this composer. Absent: no mic button. */
@@ -33,6 +35,14 @@ export interface ComposerDictation {
   active: boolean;
   /** A run ended with words heard (the first-time hint). */
   onUsed?(): void;
+}
+
+/** Up and Down through sent messages, as in Claude Code's prompt. Absent: the keys only move. */
+export interface ComposerHistory {
+  /** Sent messages, oldest first. */
+  entries(): string[];
+  /** Take queued messages back to edit (Up in an empty box). Null when none wait. */
+  pullQueued(): string | null;
 }
 
 export interface ComposerProps {
@@ -63,6 +73,7 @@ export interface ComposerProps {
   /** A side-pane comment line's jump back. */
   onRevealLink?(link: string, quote: string): void;
   dictation?: ComposerDictation;
+  history?: ComposerHistory;
 }
 
 const MAX_HEIGHT = 200;
@@ -87,6 +98,7 @@ export function Composer({
   onShot,
   onRevealLink,
   dictation,
+  history,
 }: ComposerProps) {
   const [text, setText] = useState(model.draft);
   const { comments } = useSyncExternalStore(model.subscribe, model.getSnapshot);
@@ -113,6 +125,12 @@ export function Composer({
   }, [text]);
 
   const off = ended || !!readOnly;
+
+  // ---- history: Up and Down through sent messages ----------------------------------------
+  const cycle = useRef<Cycle | null>(null);
+  useEffect(() => {
+    cycle.current = null;
+  }, [model]);
 
   // ---- dictation ----------------------------------------------------------------------------
   const ctl = dictation?.controller ?? null;
@@ -255,6 +273,7 @@ export function Composer({
       return;
     }
     const sent = text;
+    cycle.current = null;
     const lines = model.takeComments();
     setText('');
     model.setDraft('');
@@ -269,11 +288,80 @@ export function Composer({
     });
   }, [off, empty, text, blocked, onBlocked, onSend, model, listening, stopDictation]);
 
+  /** Put `t` in the box with the caret at `at`. */
+  const place = (el: HTMLTextAreaElement, t: string, at: number) => {
+    if (t === text) el.setSelectionRange(at, at);
+    else {
+      caret.current = at;
+      setText(t);
+    }
+  };
+
+  const applyStep = (el: HTMLTextAreaElement, step: Step, caretAtEnd: boolean): boolean => {
+    if (step.kind === 'pass') return false;
+    if (step.kind === 'stay') return true;
+    if (step.kind === 'restore') {
+      cycle.current = null;
+      place(el, step.text, step.text.length);
+      return true;
+    }
+    cycle.current = step.cycle;
+    place(el, step.text, caretAtEnd ? step.text.length : 0);
+    return true;
+  };
+
+  /**
+   * A picker or menu open on the box (a combobox, any registered overlay) or a handler before
+   * this one owns the arrow keys and Esc.
+   */
+  const keysTaken = (e: KeyboardEvent<HTMLTextAreaElement>) =>
+    e.defaultPrevented ||
+    overlayCount() > 0 ||
+    e.currentTarget.getAttribute('aria-expanded') === 'true';
+
+  /** Up and Down: history. True when the key was used. */
+  const historyKey = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    if (!history || off || listening || keysTaken(e)) return false;
+    if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return false;
+    const el = e.currentTarget;
+    // An edit (or text set from outside) ended the cycle: the box holds a normal draft now.
+    if (cycle.current && cycle.current.shown !== text) cycle.current = null;
+    const rows = caretRows(mirror.current, text, el.selectionStart, el.selectionEnd);
+    if (e.key === 'ArrowUp') {
+      if (text !== '' && !rows.first) return false;
+      // Claude Code's prompt: Up with queued input takes it back to edit.
+      if (text === '' && !cycle.current && comments.length === 0 && !blocked) {
+        const pulled = history.pullQueued();
+        if (pulled !== null) {
+          place(el, pulled, pulled.length);
+          return true;
+        }
+      }
+      return applyStep(el, stepUp(history.entries(), cycle.current, text), false);
+    }
+    if (!cycle.current || !rows.last) return false;
+    return applyStep(el, stepDown(history.entries(), cycle.current), true);
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && historyKey(e)) {
+      e.preventDefault();
+    } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       send();
+    } else if (
+      e.key === 'Escape' &&
+      cycle.current &&
+      cycle.current.shown === text &&
+      !listening &&
+      !keysTaken(e)
+    ) {
+      // Esc while cycling brings back the draft from before the first Up.
+      e.preventDefault();
+      const draft = cycle.current.draft;
+      cycle.current = null;
+      place(e.currentTarget, draft, draft.length);
     } else if (e.key === 'Escape' && listening) {
       e.preventDefault();
       stopDictation();
@@ -408,6 +496,8 @@ export function Composer({
                 };
               }
               if (dictNotice) ctl?.dismiss(owner);
+              // Editing a recalled message makes it a normal draft; history never changes.
+              if (cycle.current && v !== cycle.current.shown) cycle.current = null;
               setText(v);
             }}
             onKeyDown={onKeyDown}

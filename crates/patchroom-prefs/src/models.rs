@@ -78,6 +78,9 @@ pub struct ChatPrefs {
     /// Switching a session from chat to terminal types the chat draft into claude's input
     /// (without Enter) and clears it in chat. Off by default.
     pub carry_draft: bool,
+    /// Up in an empty composer (or on its first line) brings back sent messages, as Claude
+    /// Code's prompt does. On by default.
+    pub up_history: bool,
 }
 
 impl Default for ChatPrefs {
@@ -85,6 +88,7 @@ impl Default for ChatPrefs {
         Self {
             auto_scroll: true,
             carry_draft: false,
+            up_history: true,
         }
     }
 }

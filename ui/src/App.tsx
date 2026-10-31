@@ -18,7 +18,7 @@ import { Sidebar } from './components/Sidebar';
 import { clampSidebar, SIDEBAR_DEFAULT } from './components/SidebarResizer';
 import { PatchCable } from './theme/PatchCable';
 import { Terminal } from './components/Terminal';
-import { playNotifySound, useThemeRuntime } from './lib/prefsModule';
+import { playNotifySound, useSoundHookOverlap, useThemeRuntime } from './lib/prefsModule';
 import { ITERM_THEME } from './lib/sessionTerminal';
 import { cwdParts } from './lib/cwd';
 import { launchFolders } from './lib/folder';
@@ -126,6 +126,15 @@ export function App() {
 
   // The backend decides whether to alert; this only plays the matching sound.
   useEffect(() => store.onNotify((e) => playNotifySound(e.event, e.id)), [store]);
+
+  // The person's own Claude Code hooks also sound in Patchroom sessions: say so once. Waits for
+  // any other hint to go first.
+  const hookOverlap = useSoundHookOverlap();
+  const hintUp = state.hint !== null;
+  const prefsIn = state.prefs !== null;
+  useEffect(() => {
+    if (hookOverlap && !hintUp && prefsIn) store.showHint('sounds.hooks');
+  }, [store, hookOverlap, hintUp, prefsIn]);
 
   // Dropping files on the window pastes their paths, like iTerm2. Tauri only: the browser
   // never exposes real paths.

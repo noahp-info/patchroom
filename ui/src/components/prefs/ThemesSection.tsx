@@ -216,6 +216,27 @@ export function ThemesSection() {
         </p>
       </fieldset>
 
+      <fieldset className="pf-group" data-testid="chat-up-history" data-setting="themes.uphistory">
+        <legend>Composer</legend>
+        <label className="chk">
+          <input
+            type="checkbox"
+            checked={prefs.chat?.upHistory ?? true}
+            onChange={(e) =>
+              void store.update({
+                chat: { autoScroll: true, ...prefs.chat, upHistory: e.target.checked },
+              })
+            }
+          />
+          <span>Up arrow brings back sent messages</span>
+        </label>
+        <p className="pf-hint">
+          Up in an empty box, or on its first line, shows your last message in this session. Each Up
+          goes further back. Down goes forward, then back to your draft. Esc also brings back the
+          draft. With messages queued, Up takes them back to edit.
+        </p>
+      </fieldset>
+
       <fieldset
         className="pf-group"
         data-testid="chat-carry-draft"

@@ -1073,6 +1073,51 @@ fn a_finished_turn_notifies_done_and_respects_the_users_own_stop_hook() {
 }
 
 #[test]
+fn a_session_start_sounds_once_with_no_notification_and_skips_clear() {
+    let e = env();
+    let id = e.sh("start", "sleep 60");
+    let sock = e.data.path().join("bridge.sock");
+    // Focus never hides the start cue.
+    e.m.session_focus(Some(&id));
+    e.probe.0.store(true, Ordering::SeqCst);
+    drop(send_hook(
+        &sock,
+        &id,
+        json!({"hook_event_name":"SessionStart","source":"startup"}),
+        1000,
+    ));
+    let fire = e.sink.wait_fire("session", Duration::from_secs(5));
+    assert_eq!(fire["id"], id);
+    assert!(
+        e.posts.0.lock().unwrap().is_empty(),
+        "sound only, no banner"
+    );
+    // A /clear is not a new session; a burst (a restart reopening sessions) sounds once.
+    std::thread::sleep(Duration::from_millis(2100));
+    drop(send_hook(
+        &sock,
+        &id,
+        json!({"hook_event_name":"SessionStart","source":"clear"}),
+        1000,
+    ));
+    for _ in 0..2 {
+        drop(send_hook(
+            &sock,
+            &id,
+            json!({"hook_event_name":"SessionStart","source":"resume"}),
+            1000,
+        ));
+    }
+    wait_until("both resume decisions", Duration::from_secs(5), || {
+        e.log().matches("event=session").count() >= 3
+    });
+    assert_eq!(e.sink.count("notify:fire"), 2, "{}", e.log());
+    assert!(e.log().contains("event=session"), "{}", e.log());
+    assert!(e.log().contains("reason=duplicate"), "{}", e.log());
+    e.m.shutdown();
+}
+
+#[test]
 fn notify_test_posts_and_fires_regardless_of_dnd() {
     let e = env();
     e.m.prefs_set(&json!({"dnd": {"manual": true, "schedule": null}}))

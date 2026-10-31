@@ -652,7 +652,7 @@ export interface ActivityRow {
 }
 
 export type NotifyLevel = 'all' | 'needs' | 'mute';
-export type NotifyEventName = 'needs' | 'done' | 'message' | 'error' | 'bell';
+export type NotifyEventName = 'needs' | 'done' | 'message' | 'error' | 'bell' | 'session';
 export type SoundEventName = 'needs' | 'done' | 'message' | 'error';
 
 export type {
@@ -710,7 +710,7 @@ export interface Prefs {
    * Chat view. Absent: logs follow new messages, and the draft stays in chat on a switch to the
    * terminal (`carryDraft` on: it is typed into claude's input, unsent).
    */
-  chat?: { autoScroll: boolean; carryDraft?: boolean };
+  chat?: { autoScroll: boolean; carryDraft?: boolean; upHistory?: boolean };
   /** Fonts per area, and the chat font per section or session. Absent: base defaults. */
   fonts?: FontPrefs;
   /** On-device dictation in the composer. Absent: on, system language, Cmd+Shift+D, 8s. */
@@ -817,6 +817,11 @@ export interface DetectedHook {
   event: string;
   command: string;
   source: string;
+  path?: string;
+  /** The wrapper script that plays the sound, as the command names it. Absent: inline. */
+  script?: string | null;
+  /** The hook already tests `PATCHROOM_SESSION`, so it is quiet in Patchroom sessions. */
+  guarded?: boolean;
 }
 
 export interface NotifyFireEvent {

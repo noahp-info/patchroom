@@ -88,16 +88,20 @@ export async function playFile(
       el.preload = 'auto';
       elements.set(key, el);
     }
+    // Every play checks the context, not just the first: WebKit suspends it on sleep and on an
+    // output device change, and an element routed through a stopped context is silent.
+    const c = await running();
     let node = nodes.get(el);
-    if (!node) {
-      const c = await running();
-      if (c) {
-        node = c.createGain();
-        node.gain.value = level;
-        c.createMediaElementSource(el).connect(node);
-        node.connect(c.destination);
-        nodes.set(el, node);
-      }
+    if (node && !c) {
+      // This element only sounds through the context. Play a plain copy this time.
+      el = new Audio(file.dataUrl);
+      node = undefined;
+    } else if (!node && c) {
+      node = c.createGain();
+      node.gain.value = level;
+      c.createMediaElementSource(el).connect(node);
+      node.connect(c.destination);
+      nodes.set(el, node);
     }
     if (node) {
       node.gain.value = level;

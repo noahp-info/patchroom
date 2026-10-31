@@ -8,7 +8,11 @@ import { getPrefsStore } from '../components/prefs/store.ts';
 import { decideSound, type SoundDecision } from './decide.ts';
 import { playFile } from './files.ts';
 import { choiceGain, isCustom, isOff, resolveChoice } from './mix.ts';
-import { isGenerated, synth } from './pack.ts';
+import { isGenerated, synth, unlockOnGesture } from './pack.ts';
+
+// Event sounds fire without a click. Wake audio on the first one, so a webview that waits for
+// a gesture never swallows them.
+if (typeof window !== 'undefined') unlockOnGesture();
 
 export { dndActive, dndSummary, scheduleActive } from './dnd.ts';
 export { decideSound, eventsForHook, hookKeepsEvent } from './decide.ts';

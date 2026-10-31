@@ -171,6 +171,14 @@ for (const scheme of SCHEMES) {
       await check('dictation unavailable notice');
       await page.getByTestId('dictation-dismiss').click();
 
+      // The composer history hint above the strip, and the sound-hooks hint with its copy line.
+      for (const h of ['composer.history', 'sounds.hooks'] as const) {
+        await page.evaluate((x) => window.__PR_STORE__!.showHint(x), h);
+        await expect(page.locator(`[data-hint="${h}"]`)).toBeVisible();
+        await check(`${h} hint`);
+        await page.getByRole('button', { name: 'Dismiss hint' }).click();
+      }
+
       // The hover bar of a named row and of a continuation row (the tool rows).
       const named = page.locator('.msg.head[data-key]').first();
       await named.hover();
@@ -288,7 +296,25 @@ for (const scheme of SCHEMES) {
       // Every overlay draws over the pane: the native viewer steps aside for each.
       let mark = (await viewerLog(page)).length;
 
-      // Settings, every section.
+      // Settings, every section. Sounds shows the note on your own sound hooks (fixture hooks:
+      // one wrapper script, one inline command), found again when the section opens.
+      await page.evaluate(() => {
+        window.__PR_MOCK__!.soundHooks.push(
+          {
+            event: 'Stop',
+            command: '$HOME/.claude/sounds/play.sh stop',
+            source: 'user',
+            script: '$HOME/.claude/sounds/play.sh',
+            guarded: false,
+          },
+          {
+            event: 'Notification',
+            command: 'afplay /System/Library/Sounds/Glass.aiff -v 0.4',
+            source: 'project',
+            guarded: false,
+          },
+        );
+      });
       await page.keyboard.press('Meta+,');
       const dlg = page.getByRole('dialog', { name: 'Settings' });
       await expect(dlg).toBeVisible();

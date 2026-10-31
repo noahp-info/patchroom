@@ -52,7 +52,17 @@ pub struct DetectedHook {
     pub source: String,
     /// The settings file it came from.
     pub path: String,
+    /// The wrapper script that plays the sound, as the command names it (for example
+    /// `$HOME/.claude/sounds/play.sh`). `None`: the command plays audio inline.
+    pub script: Option<String>,
+    /// The hook already checks `PATCHROOM_SESSION` (in the command or its script), so it stays
+    /// quiet in Patchroom sessions and Patchroom's own sound is the only one.
+    pub guarded: bool,
 }
+
+/// The variable Patchroom sets in every session's environment. A hook that tests it can stay
+/// quiet inside Patchroom.
+pub const SESSION_VAR: &str = "PATCHROOM_SESSION";
 
 /// Does this shell command play audio?
 #[must_use]
@@ -129,6 +139,61 @@ fn expand_home(word: &str) -> Option<PathBuf> {
     None
 }
 
+/// The program word of one command segment, after assignments, flags and prefixes like `nohup`.
+fn program_word(segment: &str) -> Option<&str> {
+    let mut words = segment.split_whitespace().map(unquote);
+    words.find(|w| {
+        let assignment = w.contains('=') && !w.contains('/') && !w.starts_with('-');
+        !(assignment || w.starts_with('-') || PREFIXES.contains(w))
+    })
+}
+
+/// The wrapper script a command plays its sound through, as written in the command. `None`
+/// when the audio program is called inline (or no script plays audio).
+fn audio_script(command: &str) -> Option<String> {
+    let command = command.replace("${HOME}", "$HOME");
+    for segment in command.split([';', '&', '|', '\n', '(', ')', '{', '}', '`']) {
+        let Some(first) = program_word(segment) else {
+            continue;
+        };
+        let program = first.rsplit('/').next().unwrap_or(first);
+        if AUDIO_PROGRAMS.contains(&program) {
+            return None;
+        }
+        if script_plays_audio(first, 0) {
+            return Some(first.to_owned());
+        }
+        if matches!(program, "sh" | "bash" | "zsh" | "dash") {
+            let script = segment
+                .split_whitespace()
+                .map(unquote)
+                .skip_while(|w| *w != first)
+                .skip(1)
+                .find(|w| !w.starts_with('-'));
+            if let Some(w) = script.filter(|w| script_plays_audio(w, 0)) {
+                return Some(w.to_owned());
+            }
+        }
+    }
+    None
+}
+
+/// Does the command, or the script it plays through, test `PATCHROOM_SESSION`? Read only.
+fn is_guarded(command: &str, script: Option<&str>) -> bool {
+    if command.contains(SESSION_VAR) {
+        return true;
+    }
+    let Some(path) = script.and_then(expand_home) else {
+        return false;
+    };
+    std::fs::metadata(&path).is_ok_and(|m| m.is_file() && m.len() <= MAX_SCRIPT_BYTES)
+        && std::fs::read_to_string(&path).is_ok_and(|text| {
+            text.lines()
+                .filter(|l| !l.trim_start().starts_with('#'))
+                .any(|l| l.contains(SESSION_VAR))
+        })
+}
+
 /// Is `word` a readable script file whose text plays audio? The file is read only. Wrapper
 /// scripts such as `play.sh stop` that call `afplay` inside are the common case.
 fn script_plays_audio(word: &str, depth: u8) -> bool {
@@ -182,11 +247,14 @@ fn hooks_in(doc: &Value, source: &str, path: &Path, out: &mut Vec<DetectedHook>)
                     continue;
                 };
                 if is_command && plays_audio(cmd) {
+                    let script = audio_script(cmd);
                     out.push(DetectedHook {
                         event: event.clone(),
                         command: cmd.trim().chars().take(MAX_COMMAND_CHARS).collect(),
                         source: source.to_owned(),
                         path: path.to_string_lossy().into_owned(),
+                        guarded: is_guarded(cmd, script.as_deref()),
+                        script,
                     });
                 }
             }
@@ -234,8 +302,9 @@ pub fn detect_sound_hooks(
 pub fn hook_events_for(event: &str) -> &'static [&'static str] {
     match event {
         "needs" => &["Notification", "PermissionRequest", "Elicitation"],
-        "done" => &["Stop", "TaskCompleted"],
-        "error" => &["StopFailure"],
+        "done" => &["Stop", "TaskCompleted", "SubagentStop"],
+        "error" => &["StopFailure", "PostToolUseFailure"],
+        "session" => &["SessionStart"],
         _ => &[],
     }
 }
@@ -475,6 +544,60 @@ mod tests {
             .collect();
         events.sort();
         assert_eq!(events, ["SessionStart", "Stop", "TaskCompleted"]);
+    }
+
+    #[test]
+    fn reports_the_wrapper_script_and_the_patchroom_guard() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("cfg");
+        let sounds = cfg.join("sounds");
+        std::fs::create_dir_all(&sounds).unwrap();
+        let play = sounds.join("play.sh");
+        std::fs::write(&play, "#!/bin/bash\n/usr/bin/afplay \"$1.aiff\"\n").unwrap();
+        let quiet = sounds.join("quiet.sh");
+        std::fs::write(
+            &quiet,
+            format!(
+                "#!/bin/bash\n{}\n# PATCHROOM_SESSION in a comment does not count\nafplay x.aiff\n",
+                "[ -n \"$PATCHROOM_SESSION\" ] && exit 0"
+            ),
+        )
+        .unwrap();
+        let commented = sounds.join("commented.sh");
+        std::fs::write(
+            &commented,
+            "#!/bin/bash\n# [ -n \"$PATCHROOM_SESSION\" ] && exit 0\nafplay x.aiff\n",
+        )
+        .unwrap();
+        let group = |cmd: String| json!([{"hooks": [{"type": "command", "command": cmd}]}]);
+        write(
+            &cfg.join("settings.json"),
+            &json!({"hooks": {
+                "Stop": group(format!("{} stop", play.display())),
+                "SessionStart": group(format!("bash {} session", quiet.display())),
+                "TaskCompleted": group(format!("{} task", commented.display())),
+                "Notification": group("afplay /System/Library/Sounds/Glass.aiff".into()),
+                "SubagentStop": group(format!("{} || afplay x.aiff", "[ -n \"$PATCHROOM_SESSION\" ]")),
+            }}),
+        );
+        let before = std::fs::read(cfg.join("settings.json")).unwrap();
+        let got = detect_sound_hooks(Some(&cfg), &[]);
+        let by = |e: &str| got.iter().find(|h| h.event == e).unwrap();
+        assert_eq!(
+            by("Stop").script.as_deref(),
+            Some(&*play.display().to_string())
+        );
+        assert!(!by("Stop").guarded);
+        assert_eq!(
+            by("SessionStart").script.as_deref(),
+            Some(&*quiet.display().to_string())
+        );
+        assert!(by("SessionStart").guarded, "the script tests the variable");
+        assert!(!by("TaskCompleted").guarded, "a comment is not a guard");
+        assert_eq!(by("Notification").script, None, "inline");
+        assert!(!by("Notification").guarded);
+        assert!(by("SubagentStop").guarded, "an inline guard");
+        assert_eq!(before, std::fs::read(cfg.join("settings.json")).unwrap());
     }
 
     /// Read-only check against the machine's real settings: `cargo test -- --ignored real_`.

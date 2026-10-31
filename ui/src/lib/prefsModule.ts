@@ -82,6 +82,7 @@ interface PrefsExports {
   playSound?: (event: string, opts?: { dmId?: string }) => unknown;
   useThemeRuntime?: () => ThemeRuntime;
   setPrefsApi?: (api: PrefsApi) => unknown;
+  useSoundHookOverlap?: () => boolean;
   bindTerminalTheme?: (
     term: XTerm,
     dmId: string,
@@ -112,6 +113,12 @@ function useFallbackThemeRuntime(): ThemeRuntime {
 
 /** The app theme from prefs, live. The choice of hook is fixed at build time. */
 export const useThemeRuntime: () => ThemeRuntime = mod.useThemeRuntime ?? useFallbackThemeRuntime;
+
+/**
+ * The person's own Claude Code hooks play sounds that Patchroom sessions also run (found read
+ * only at launch and when Settings > Sounds opens), and none of them is guarded yet.
+ */
+export const useSoundHookOverlap: () => boolean = mod.useSoundHookOverlap ?? (() => false);
 
 /** Point the prefs layer at the app's IPC, so the pane and the backend share one `Prefs`. */
 export function installPrefsApi(ipc: Ipc): void {

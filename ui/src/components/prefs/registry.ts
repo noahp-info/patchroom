@@ -63,6 +63,22 @@ export const SETTINGS: readonly SettingEntry[] = [
     keywords: ['chat', 'scroll', 'follow', 'paused'],
   },
   {
+    id: 'themes.uphistory',
+    section: 'themes',
+    label: 'Up arrow brings back sent messages',
+    description: "Up in the composer cycles through this session's messages, as in Claude Code.",
+    keywords: [
+      'history',
+      'up',
+      'arrow',
+      'previous',
+      'recall',
+      'last message',
+      'composer',
+      'queued',
+    ],
+  },
+  {
     id: 'themes.carrydraft',
     section: 'themes',
     label: 'Carry chat draft to the terminal',
@@ -233,6 +249,15 @@ export const SETTINGS: readonly SettingEntry[] = [
     label: 'Play sounds',
     description: 'Turn every sound on or off, and set the volume.',
     keywords: ['volume', 'mute', 'audio', 'loud'],
+  },
+  {
+    id: 'sounds.hooks',
+    section: 'sounds',
+    label: 'Your own Claude Code hooks play here too',
+    description:
+      'Your own hooks also play in Patchroom sessions. A one-line guard keeps them quiet here.',
+    keywords: ['hooks', 'double', 'twice', 'both', 'afplay', 'say', 'guard', 'PATCHROOM_SESSION'],
+    conditional: true,
   },
   {
     id: 'sounds.mix',

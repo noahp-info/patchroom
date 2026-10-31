@@ -37,7 +37,10 @@ export function hookKeepsEvent(
   policy: Prefs['sound']['hookPolicy'],
 ): boolean {
   return detected.some(
-    (h) => eventsForHook(h.event).includes(event) && (policy[h.event] ?? 'keep') === 'keep',
+    (h) =>
+      !h.guarded &&
+      eventsForHook(h.event).includes(event) &&
+      (policy[h.event] ?? 'keep') === 'keep',
   );
 }
 
