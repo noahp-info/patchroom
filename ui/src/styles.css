@@ -440,9 +440,9 @@ body {
   gap: 4px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--box-line);
+  border: 0;
   border-radius: var(--r-sm);
-  background: var(--box-bg);
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   cursor: pointer;
@@ -1517,24 +1517,25 @@ body {
 }
 
 /* View switch: chat and terminal as one segmented control. The pressed segment is the view. */
+/* A filled track with a ground-colored thumb, no outline (DESIGN.md, Box rule). */
 .pr-app .ch .tools .viewseg {
   display: inline-flex;
   flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--chip);
 }
 .pr-app .ch .tools .viewseg button {
-  border-radius: 0;
-  padding: 0 8px;
-}
-.pr-app .ch .tools .viewseg button:first-child {
-  border-radius: 6px 0 0 6px;
-}
-.pr-app .ch .tools .viewseg button:last-child {
-  border-radius: 0 6px 6px 0;
-  margin-left: -1px;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
 }
 .pr-app .ch .tools .viewseg button[aria-pressed='true'] {
-  background: var(--chip);
-  color: var(--chip-fg);
+  background: var(--bg);
+  color: var(--fg);
 }
 .chat .jumpbar {
   position: sticky;
@@ -2000,17 +2001,21 @@ body.dragging * {
   background: var(--needs);
   color: var(--needs-fg);
 }
+/* A filled track, not an outline: it often sits inside a bordered list (DESIGN.md, Box rule). */
 .scope {
   display: flex;
+  gap: 2px;
   margin-right: 10px;
-  border: 1px solid var(--box-line);
+  padding: 2px;
   border-radius: var(--r-sm);
+  background: var(--chip);
   overflow: hidden;
 }
 .scope button {
-  height: 26px;
+  height: 24px;
   padding: 0 10px;
   border: 0;
+  border-radius: calc(var(--r-sm) - 1px);
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -2018,8 +2023,8 @@ body.dragging * {
   cursor: pointer;
 }
 .scope button[aria-pressed='true'] {
-  background: var(--chip);
-  color: var(--chip-fg);
+  background: var(--bg);
+  color: var(--fg);
   font-weight: 600;
 }
 .scope button:disabled {
@@ -2205,9 +2210,9 @@ body.dragging * {
   gap: 4px;
   height: 22px;
   padding: 0 8px;
-  border: 1px solid var(--box-line);
+  border: 1px solid transparent;
   border-radius: 11px;
-  background: var(--box-bg);
+  background: var(--chip);
   color: var(--muted);
   font: inherit;
   font-size: 12px;
@@ -2222,7 +2227,7 @@ body.dragging * {
   font-size: 14px;
 }
 .pr-app .rchip:hover {
-  border-color: var(--stop-line);
+  background: color-mix(in srgb, var(--fg) 8%, var(--chip));
 }
 
 /* panel views: Activity, Saved items */
@@ -2517,9 +2522,10 @@ body.dragging * {
 .pr-app .fs-btn {
   height: 26px;
   padding: 0 10px;
-  border: 1px solid var(--side-line);
+  border: 0;
   border-radius: var(--r-sm);
-  background: transparent;
+  /* A tint on the band, lighter than hover so the label keeps AA. */
+  background: color-mix(in srgb, var(--side-hover) 60%, var(--side-bg));
   color: var(--side-fg);
   font: inherit;
   font-weight: 600;
@@ -2725,20 +2731,20 @@ body.dragging * {
 .pr-app .picker__clear {
   margin: 0 0 6px;
   padding: 3px 8px;
-  border: 1px solid var(--box-line);
+  border: 0;
   border-radius: var(--r-sm);
-  background: transparent;
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   cursor: pointer;
 }
 .pr-app .picker__clear:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--fg) 8%, var(--chip));
 }
 /* The create row sits on the sidebar band: its button takes the sidebar tokens, not the main pane's. */
 .pr-app .side-add .btn.sec {
   height: 28px;
-  border-color: var(--side-line);
+  background: color-mix(in srgb, var(--side-hover) 60%, var(--side-bg));
   color: var(--side-fg);
 }
 .pr-app .side-add .btn.sec:hover:not(:disabled) {
@@ -2831,16 +2837,17 @@ body.dragging * {
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--box-line);
+  /* A tint inside the banner card, never a second outline (DESIGN.md, Box rule). */
+  border: 1px solid transparent;
   border-radius: var(--r-sm);
-  background: var(--box-bg);
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   cursor: pointer;
 }
 .chat .mbanner__btn:hover,
 .chat .tbanner__btn:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--fg) 8%, var(--chip));
 }
 .chat .mbanner__btn--quiet {
   border-color: transparent;
@@ -2851,7 +2858,7 @@ body.dragging * {
   cursor: default;
 }
 .chat .mbanner__btn[aria-pressed='true'] {
-  border-color: var(--link);
+  background: var(--sel);
 }
 .chat .mbanner__actions {
   flex: none;
@@ -2876,12 +2883,11 @@ body.dragging * {
 }
 /* Ending the other copy is the one destructive action here: red, and confirmed first. */
 .chat .mbanner__btn--danger {
-  border-color: color-mix(in srgb, var(--err) 55%, transparent);
-  background: none;
+  background: color-mix(in srgb, var(--err) 10%, transparent);
   color: var(--err-text);
 }
 .chat .mbanner__btn--danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--err) 12%, transparent);
+  background: color-mix(in srgb, var(--err) 18%, transparent);
 }
 .chat .mbanner__btn--danger-solid {
   border-color: var(--err-text);
@@ -3094,14 +3100,15 @@ body.dragging * {
   flex: none;
   height: 26px;
   padding: 0 10px;
-  border: 1px solid var(--box-line);
+  border: 0;
   border-radius: var(--r-sm);
-  background: var(--box-bg);
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   cursor: pointer;
 }
 .sbmenu__reset:disabled {
+  background: transparent;
   opacity: 0.5;
   cursor: default;
 }
@@ -3260,19 +3267,22 @@ body.dragging .sbe__grip {
   flex: none;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--box-line);
+  border: 0;
   border-radius: var(--r-sm);
-  background: var(--box-bg);
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   cursor: pointer;
 }
 .cfbar__btn:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--fg) 8%, var(--chip));
 }
 .cfbar__btn--warn {
-  border-color: var(--err);
+  background: color-mix(in srgb, var(--err) 10%, transparent);
   color: var(--err-text);
+}
+.cfbar__btn--warn:hover {
+  background: color-mix(in srgb, var(--err) 18%, transparent);
 }
 .cfbar :focus-visible {
   outline: 2px solid var(--link);
@@ -3558,15 +3568,15 @@ body.dragging .sbe__grip {
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--box-line);
+  border: 0;
   border-radius: var(--r-sm);
-  background: var(--box-bg);
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   cursor: pointer;
 }
 .viewer__ext:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--fg) 8%, var(--chip));
 }
 .viewer__page {
   position: relative;
@@ -3642,9 +3652,9 @@ body.dragging .sbe__grip {
   align-self: center;
   height: 26px;
   padding: 0 10px;
-  border: 1px solid var(--box-line);
+  border: 0;
   border-radius: var(--r-sm);
-  background: var(--box-bg);
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   --fs: 13px;
@@ -3965,16 +3975,16 @@ body.dragging .sbe__grip {
 .qmsg__act {
   height: 24px;
   padding: 0 8px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-sm);
-  background: transparent;
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
 .qmsg__act:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--fg) 8%, var(--chip));
 }
 .qmsg__act[data-testid='queued-remove'] {
   color: var(--err-text);
@@ -3987,7 +3997,8 @@ body.dragging .sbe__grip {
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  border: 1px solid var(--stop-line);
+  /* A tint, never an outline: it sits inside the composer box (DESIGN.md, Box rule). */
+  background: color-mix(in srgb, var(--stop) 12%, transparent);
   color: var(--stop);
   font-weight: 600;
   --fs: 12.5px;
@@ -4082,7 +4093,7 @@ body.dragging .sbe__grip {
 }
 .sbe__suggest .sbe__add {
   margin-left: 0;
-  border: 1px solid var(--line);
+  background: var(--chip);
 }
 .sbe__suggestnote {
   flex: 1 1 200px;
@@ -4125,6 +4136,13 @@ body.dragging .sbe__grip {
   overflow-wrap: anywhere;
   user-select: all;
 }
-.copyline__btn {
+/* A quiet text action next to the code, so it never reads as a second code chunk. */
+.copyline .copyline__btn {
   flex: none;
+  background: transparent;
+  color: var(--link);
+}
+.copyline .copyline__btn:hover,
+.copyline .copyline__btn:focus-visible {
+  background: var(--hover);
 }

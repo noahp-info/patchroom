@@ -75,9 +75,10 @@
   gap: 4px;
   height: 26px;
   padding: 0 8px;
-  border: 1px solid var(--line);
+  /* Unpicked: a tint. Picked: the selection fill and the one accent edge. */
+  border: 1px solid transparent;
   border-radius: var(--r-sm);
-  background: transparent;
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   font-size: 12px;
@@ -121,7 +122,7 @@
 }
 .autoscroll:hover,
 .autoscroll:focus-visible {
-  border-color: var(--line);
+  background: var(--hover);
   color: var(--fg);
 }
 .autoscroll__dot {
@@ -131,7 +132,7 @@
   background: var(--busy);
 }
 .autoscroll[data-state='paused'] {
-  border-color: var(--line);
+  background: var(--chip);
   color: var(--fg);
 }
 .autoscroll[data-state='paused'] .autoscroll__dot {
@@ -216,7 +217,8 @@
   width: 100%;
   min-height: 34px;
   padding: 4px var(--ring-pad);
-  border: 1px solid var(--line);
+  /* Rows, not boxes: a hover fill, and only the picked row carries the accent edge. */
+  border: 1px solid transparent;
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--fg);
@@ -250,11 +252,9 @@
   flex: none;
   color: var(--muted);
 }
+/* A static tag is muted text, never the button tint. */
 .mpick__tag {
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: var(--chip);
-  color: var(--chip-fg);
+  color: var(--muted);
   font-size: 11px;
 }
 .mpick__note {
@@ -342,8 +342,8 @@
   align-items: center;
   gap: 8px;
   padding: var(--ring-pad);
-  border: 1px solid var(--line);
   border-radius: var(--r-sm);
+  background: var(--hover);
 }
 .restart__row .nm {
   flex: 1;
