@@ -28,6 +28,9 @@ export function ToolLine({ item, expanded, onToggle }: ToolLineProps) {
       <button
         type="button"
         className="tool"
+        // Box rule opt-out: a tool call is one bordered line in the log, the only outline in
+        // its group, and it opens into the body below it (DESIGN.md, Components).
+        data-box-ok="tool-line"
         aria-expanded={expanded}
         aria-controls={expanded ? bodyId : undefined}
         onClick={onToggle}
