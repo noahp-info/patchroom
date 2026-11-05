@@ -73,6 +73,14 @@ Run all checks before every push. CI runs the same set.
 - Use the tokens (`ui/src/theme/base.css`), never literals. `ringFindings` in `ui/tests/qa.ts` enforces it in Settings, the sidebar, menus and pickers.
 - Single-line controls (buttons, fields, chips, segmented controls) are exempt. Their height sets the room.
 
+## UI work: box rule (hard)
+
+- No outlined text buttons. Secondary is a tint (`chip`), primary is the accent fill, quiet is plain text with a hover tint.
+- Never a box inside a box. Keycaps (`kbd`) are the exception: they keep their border everywhere.
+- At most one outline per visual group. Prefer a fill, a tint, spacing or one divider.
+- Borders that carry meaning stay: focus rings, a field's edge, the Needs-you highlight, the side-pane edge.
+- `boxFindings` in `ui/tests/qa.ts` enforces it on every `overlap-qa.spec.ts` step. Opt out only with `data-box-ok="<reason>"`, and list each opt-out in the PR. Details: DESIGN.md, Layout, Box rule.
+
 ## UI work: overlap rule (hard)
 
 - Nothing draws over anything else unless it is an intentional layer: a menu, picker, popover, dialog or the screenshot overlay.

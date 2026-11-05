@@ -1,12 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import { openWithDm, seedChat } from './helpers';
-import { expectNoOverlap, overlapFindings, ringFindings } from './qa';
+import { boxFindings, expectNoOverlap, overlapFindings, ringFindings } from './qa';
 
 /*
  * Overlap QA (CLAUDE.md, "UI work: overlap rule"). Every main surface at the minimum window,
  * a narrow split with the side pane open, and 1440, in light and dark:
  * nothing draws over anything else, text never clips silently, nothing scrolls sideways, and
- * outlined boxes keep ring room. Every overlay is opened with the side pane up, and the native
+ * outlined boxes keep ring room, and no outline sits inside another in one visual group
+ * (`boxFindings`, the box rule). Every overlay is opened with the side pane up, and the native
  * viewer must step aside for it (snapshot, hide) and come back (reveal) when it closes.
  */
 
@@ -119,8 +120,10 @@ for (const scheme of SCHEMES) {
       await page.emulateMedia({ colorScheme: scheme });
       await setup(page, size.width, size.height);
       const where = (s: string) => `${s} @ ${size.name} ${scheme}`;
-      const check = async (s: string, scope?: string) =>
+      const check = async (s: string, scope?: string) => {
         expect(await overlapFindings(page, { scope }), where(s)).toEqual([]);
+        expect(await boxFindings(page, scope ?? '.pr-app'), where(`${s} boxes`)).toEqual([]);
+      };
 
       if (size.pane) await openPane(page);
 

@@ -33,9 +33,9 @@
 .prefs__x {
   height: 28px;
   padding: 0 12px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-sm);
-  background: transparent;
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   font-size: 13px;
@@ -43,7 +43,7 @@
   cursor: pointer;
 }
 .prefs__x:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--fg) 8%, var(--chip));
 }
 .prefs__body {
   display: grid;
@@ -335,9 +335,6 @@
 .prefs .btn:disabled {
   opacity: 0.55;
   cursor: default;
-}
-.prefs .btn.sec {
-  background: transparent;
 }
 .lnk {
   padding: 0;
@@ -761,9 +758,9 @@
 .daybtn {
   width: 32px;
   height: 32px;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: 50%;
-  background: transparent;
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   font-size: 12px;
@@ -941,11 +938,9 @@
   flex: 1 1 160px;
   font-weight: 600;
 }
+/* A static tag is muted text, never the button tint next to Delete. */
 .mb-card__tag {
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: var(--chip);
-  color: var(--chip-fg);
+  color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
 }

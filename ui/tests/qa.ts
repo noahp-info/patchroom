@@ -302,3 +302,120 @@ export async function ringFindings(page: Page, scope: string): Promise<string[]>
     return [...new Set(out)];
   }, scope);
 }
+
+/**
+ * Box rule findings inside `scope` (CLAUDE.md, "UI work: box rule"). An outline is a visible
+ * border on all four sides or an inset ring. Focus outlines never count: they show only on
+ * focus.
+ *
+ * - `outlined text button`: a button with an outline, no fill and a text label. Use a tint.
+ * - `box in a box`: an outlined element whose nearest outlined ancestor is in the same visual
+ *   group: a control (button, chip, link, label) or a card or row inside a card. Layers
+ *   (dialogs, menus, Settings) and fields are frames, not groups, so a card inside a dialog
+ *   or a field inside a card is fine.
+ *
+ * Keycaps (`kbd`) keep their border everywhere: they draw a physical key. An element or an
+ * ancestor with `data-box-ok="<reason>"` opts out; list each one in the PR.
+ */
+export async function boxFindings(page: Page, scope: string): Promise<string[]> {
+  return page.evaluate((sel) => {
+    const out: string[] = [];
+    const root = document.querySelector(sel);
+    if (!root) return out;
+    const shown = (e: Element) => {
+      const r = e.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return false;
+      for (let x: Element | null = e; x; x = x.parentElement) {
+        const cs = getComputedStyle(x);
+        if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0)
+          return false;
+      }
+      return true;
+    };
+    const clear = (c: string) => /rgba\(0, 0, 0, 0\)|transparent/.test(c);
+    const alpha = (c: string) => {
+      if (clear(c)) return 0;
+      const m = /rgba?\(([^)]+)\)/.exec(c);
+      if (!m) return 1;
+      const p = m[1].split(/[ ,/]+/).filter(Boolean);
+      return p.length > 3 ? parseFloat(p[3]) : 1;
+    };
+    const outlined = (e: Element) => {
+      const cs = getComputedStyle(e);
+      const border = (['top', 'right', 'bottom', 'left'] as const).every(
+        (s) =>
+          parseFloat(cs.getPropertyValue(`border-${s}-width`)) > 0 &&
+          cs.getPropertyValue(`border-${s}-style`) !== 'none' &&
+          alpha(cs.getPropertyValue(`border-${s}-color`)) > 0.05,
+      );
+      const ring = cs.boxShadow
+        .split(/,(?![^(]*\))/)
+        .some((sh) => /inset/.test(sh) && /\b0px 0px \d+(\.\d+)?px [1-9]/.test(sh));
+      return border || ring;
+    };
+    // The ground under an element: the first ancestor that paints a fill.
+    const ground = (e: Element) => {
+      for (let p = e.parentElement; p; p = p.parentElement) {
+        const bg = getComputedStyle(p).backgroundColor;
+        if (alpha(bg) > 0.05) return bg;
+      }
+      return 'rgb(255, 255, 255)';
+    };
+    // A fill that reads as no fill: clear, or the same color as the ground under it.
+    const unfilled = (e: Element) => {
+      const cs = getComputedStyle(e);
+      if (cs.backgroundImage !== 'none') return false;
+      if (alpha(cs.backgroundColor) < 0.05) return true;
+      // Near the ground (a box fill a shade off the pane) still reads as no fill.
+      const rgb = (c: string) =>
+        (/rgba?\(([^)]+)\)/.exec(c)?.[1] ?? '').split(/[ ,/]+/).map(Number);
+      const [a, b] = [rgb(cs.backgroundColor), rgb(ground(e))];
+      return [0, 1, 2].every((i) => Math.abs(a[i] - b[i]) <= 6);
+    };
+    // A mark (presence dot, tool state ring, avatar cutout) draws a shape, not a box.
+    const mark = (e: Element) => {
+      const r = e.getBoundingClientRect();
+      return r.width <= 24 && r.height <= 24 && !e.textContent?.trim();
+    };
+    const name = (el: Element) => {
+      const c = typeof el.className === 'string' ? el.className.split(' ')[0] : '';
+      const t = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 30);
+      return `${el.tagName.toLowerCase()}${c ? '.' + c : ''}"${t}"`;
+    };
+    const SKIP = 'svg, .xterm, .tp, .tprev, .termprev';
+    const BTN = 'button, [role="button"], a.btn, .btn';
+    const CTL = `${BTN}, a[href], label, summary, .chip, [role="radio"], [role="tab"], [role="option"], [role="menuitem"], [role="switch"]`;
+    // Fields keep their edge: inputs, and buttons that act as a select (a listbox popup).
+    const FIELD = 'input, textarea, select, [aria-haspopup="listbox"], [role="combobox"]';
+    const FRAME = `${FIELD}, dialog, [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], .floating, .prefs, .qs, .shot`;
+    const ok = (e: Element) => !!e.closest('[data-box-ok]');
+    for (const el of root.querySelectorAll('*')) {
+      if (el.closest(SKIP) || ok(el) || mark(el) || !shown(el) || !outlined(el)) continue;
+      // An outlined text button: an outline and a label, no fill of its own.
+      if (el.matches(BTN) && !el.matches(FIELD)) {
+        const text = [...el.childNodes].some(
+          (c) =>
+            (c.nodeType === Node.TEXT_NODE && c.textContent?.trim()) ||
+            (c instanceof HTMLElement && !c.matches('kbd, svg, i') && c.innerText?.trim()),
+        );
+        // Single-line buttons only: a selectable card keeps its card edge.
+        if (text && unfilled(el) && el.getBoundingClientRect().height <= 40)
+          out.push(`outlined text button: ${name(el)}`);
+      }
+      // Keycaps draw a physical key: always allowed.
+      if (el.matches('kbd')) continue;
+      let outer: Element | null = null;
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        if (p.matches(FRAME)) break;
+        if (shown(p) && outlined(p)) {
+          outer = p;
+          break;
+        }
+      }
+      if (!outer || ok(outer) || el.matches(FIELD)) continue;
+      const kind = outer.matches(CTL) ? 'in a control' : 'in a card';
+      out.push(`box in a box (${kind}): ${name(el)} inside ${name(outer)}`);
+    }
+    return [...new Set(out)];
+  }, scope);
+}

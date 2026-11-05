@@ -476,7 +476,8 @@
   height: 28px;
   padding: 0 9px;
   border-radius: 6px;
-  border: 1px solid var(--line);
+  /* Header tools are quiet: no outline, a hover fill (DESIGN.md, Box rule). */
+  border: 1px solid transparent;
   font-size: 12.5px;
   color: var(--fg);
 }
@@ -788,12 +789,16 @@
 :where(.pr-app) .btn.pri:hover {
   background: var(--accent-hover);
 }
+/* Secondary: a soft tint, never an outline (DESIGN.md, Box rule). */
 :where(.pr-app) .btn.sec {
-  border: 1px solid var(--line);
+  background: var(--chip);
   color: var(--fg);
 }
 :where(.pr-app) .btn.sec:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--fg) 8%, var(--chip));
+}
+:where(.pr-app) .btn.sec:disabled {
+  background: transparent;
 }
 /* composer */
 :where(.pr-app) .composer {
@@ -907,20 +912,28 @@
 :where(.pr-app) .bar .sp {
   flex: 1;
 }
+/* Stop: accent text on a faint tint, no outline; the tint deepens on hover and focus. The tint
+   keeps it reading as a button next to the filled Send. The esc keycap keeps its own border: it
+   draws a physical key (DESIGN.md, Box rule). */
 :where(.pr-app) .stop {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  min-height: 28px;
   padding: 0 10px;
   border-radius: 6px;
-  border: 1px solid var(--stop-line);
+  background: color-mix(in srgb, var(--stop) 7%, transparent);
   color: var(--stop);
   font-size: 12.5px;
   font-weight: 600;
 }
-:where(.pr-app) .stop:hover {
-  background: var(--hover);
+:where(.pr-app) .stop:hover,
+:where(.pr-app) .stop:focus-visible {
+  background: color-mix(in srgb, var(--stop) 14%, transparent);
+}
+/* The focus ring keeps --ring-gap from Send. */
+:where(.pr-app) .bar .stop {
+  margin-right: 2px;
 }
 :where(.pr-app) .stop i {
   width: 9px;

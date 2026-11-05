@@ -67,23 +67,24 @@
 .pack__foot {
   margin-top: auto;
 }
-.chip {
+/* Play chips sit inside a pack card: a tint, never a second outline (DESIGN.md, Box rule). */
+.pack .chip {
   min-height: 28px;
   padding: 0 8px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-sm);
-  background: transparent;
+  background: var(--chip);
   color: var(--fg);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
-.chip:hover:not(:disabled) {
-  background: var(--hover);
+.pack .chip:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 8%, var(--chip));
 }
-.chip:disabled {
+.pack .chip:disabled {
+  background: transparent;
   color: var(--muted);
-  border-style: dashed;
   cursor: default;
 }
 
