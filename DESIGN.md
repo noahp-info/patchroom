@@ -272,6 +272,27 @@ An outline, ring, border or highlight box never hugs what it holds, and two of t
 - Single-line controls are exempt: buttons, fields, chips and segmented controls. Their own height sets the room.
 - Use the tokens, never literals. `ringFindings` in `ui/tests/qa.ts` checks Settings (`prefs-spacing.spec.ts`) and the sidebar, menus and pickers (`overlap-qa.spec.ts`).
 
+### Box rule (hard)
+
+One outline per visual group. Everything else separates by fill, tint, spacing or a single divider.
+
+- No outlined text buttons. A secondary button is a soft tint (`chip`, darker on hover). A primary button is the accent fill. A quiet action is plain text with a tint on hover and focus.
+- Never a box inside a box. A card, a banner, a hint or the composer box holds tinted buttons and chips, never outlined ones. A list inside a bordered panel uses filled rows or dividers.
+- Keycaps (`kbd`) are the one exception: they keep their border everywhere, inside buttons too, because they draw a physical key.
+- At most one outline per visual group. A selected item may carry the one accent edge (the picked model, the picked emoji style).
+- Borders that carry meaning stay: focus rings, a field's own edge (inputs, and buttons that open a listbox), the Needs-you highlight, the side-pane edge, the tool line.
+- `boxFindings` in `ui/tests/qa.ts` enforces it on every `overlap-qa.spec.ts` step. An element that must keep its outline sets `data-box-ok="<reason>"`, and the PR lists each one.
+
+| Where | Before | After |
+| --- | --- | --- |
+| Composer Stop | coral outlined pill around the icon, "Stop" and the `esc` keycap | coral icon and "Stop" on a faint coral tint, no outline, a deeper tint on hover and focus; the `esc` keycap keeps its border |
+| Dictation Listening | coral outlined pill inside the composer box | coral text on a soft coral tint |
+| Secondary button (`.btn.sec`) | hairline outline, no fill | `chip` tint, no outline |
+| Sound pack card | outlined play chips and an outlined Use button inside an outlined card | tinted chips and button inside the one card edge |
+| Model picker rows | every row outlined | plain rows with a hover fill; only the picked row keeps the accent edge |
+
+Current opt-outs: the tool line (`data-box-ok="tool-line"`), one bordered line per tool call by design.
+
 ### Overlap rule (hard)
 
 Nothing draws over anything else unless it is an intentional layer.
@@ -361,12 +382,12 @@ Homeroom: 5px controls, 8px panels, 14px chips, 9px count badges, 8px avatars. P
 - **Sidebar row**: icon or presence mark, name, optional badge. Unread names go bold. The active row takes `side-active`.
 - **Message**: avatar, name and time, body. Tool calls render as a single bordered line. Subagent threads render as a stacked-avatar summary.
 - **Ask widget**: header with Needs you pill, question, radio options with a Recommended tag, Other line, and footer with Answer in terminal and Send answer.
-- **Composer**: chips that prefill (never send), a box with a queued comment, an input, attach, screenshot and slash buttons, Stop, Send.
+- **Composer**: chips that prefill (never send), a box with a queued comment, an input, attach, screenshot and slash buttons, Stop, Send. Stop is `stop` text (a square and "Stop") with the `esc` keycap on a faint `stop` tint, no outline. The tint deepens on hover and focus.
 - **Status strip**: model, folder, context meter, cost, mode, PR, and a verb line.
 - **Artifact pane**: tabs, a sheet with a diff and gutters, and a note line.
 - **Side-pane viewer**: back, forward, reload, the page title, Comment on selection, Open in browser and close. A claude.ai sign-in screen adds one Sign in line above the page. Settings > Accounts is the one place to sign in to claude.ai, in the pane's own web storage, and to sign out.
 - **Screenshot-to-steer**: Cmd+Shift+2 or the composer's screenshot button freezes the window. Drag a box anywhere, side pane included. A note box pins under the box. Check adds the crop and the note as one composer line; X or Esc discards both.
-- **Dictation**: a mic button in the composer bar. While the mic is open it becomes a Listening pill in the `stop` colors with a pulsing dot. It keeps one width across Starting, Listening and Finishing. The box keeps its own border, so the red never reads as Needs you. Errors and the silence note sit in flow above the box, like the send notice, each with its fix button.
+- **Dictation**: a mic button in the composer bar. While the mic is open it becomes a Listening pill: `stop` text on a soft `stop` tint, no outline, with a pulsing dot. It keeps one width across Starting, Listening and Finishing. The box keeps its own border, so the red never reads as Needs you. Errors and the silence note sit in flow above the box, like the send notice, each with its fix button.
 - **Comment lines**: a chat quote (click jumps to the row), a side-pane quote (click scrolls the pane to it through a `#:~:text=` link) or a screenshot thumbnail, each with its note. Nothing sends before Send.
 
 ## Preview and verification
@@ -411,4 +432,5 @@ Homeroom and Patch Bay match directions A and D of the looks reference (an inter
 - Put a hex value, `rgb()` color or named color in base CSS.
 - Let a theme carry sizes, fonts or shadows.
 - Use `needs` for decoration, or gradient text, glass, or colored side-stripes on cards.
+- Outline a text button, or put an outlined element inside another outline. Keycaps are the exception.
 - Edit user config from the preview or the theme loader.
