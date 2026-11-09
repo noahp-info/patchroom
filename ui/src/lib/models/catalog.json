@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "generated": "2026-10-26",
+  "generated": "2026-11-09",
   "tools": [
     {
       "id": "claude-code",
@@ -347,6 +347,15 @@
       "family": "gpt-sol",
       "version": "5.6",
       "released": "2026-07-09",
+      "where": "cloud"
+    },
+    {
+      "id": "gpt-6.1-terra",
+      "tool": "codex",
+      "name": "GPT-6.1 Terra",
+      "family": "gpt-terra",
+      "version": "6.1",
+      "released": "2026-10-26",
       "where": "cloud"
     },
     {
